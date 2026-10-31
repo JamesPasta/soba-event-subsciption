@@ -124,16 +124,12 @@ perform a live readiness or permission check. Metadata contains `id`, `label`, `
 consumer ID or issuer settings. All credential route responses use `Cache-Control: no-store`.
 Clients keep returned keys out of shared caches, persistent state, notifications and telemetry.
 
-Migration `0066_workspace_credential_collection` removes the single-key workspace constraint,
-adds labels and types, and preserves existing records with their uppercase UUID label and API type.
 The service reserves each record before issuance and atomically reserves an active record before
-regeneration. Migration `0067_credential_types_and_forms` adds optional form ownership and a
-composite foreign key that requires the form to belong to the recorded workspace. It moves each
-existing types array into `credential_type_assignment`, referencing the seeded `credential_type`
-catalog (`api`, `web-component`). Its composite primary key prevents duplicate assignments. New
-credential rows, type assignments and the issuance audit are written in one transaction.
-The database stores metadata and secret-free audit events only; API keys are never
-persisted. Existing credentials retain their original issuer and client identity.
+regeneration. A credential may belong to a form; a composite foreign key requires that form to be
+in the credential's workspace. Types are rows in `credential_type_assignment`, one per type,
+referencing the seeded `credential_type` catalog (`api`, `web-component`). A new credential row,
+its type assignments and the issuance audit are written in one transaction. The database stores
+metadata and secret-free audit events only; API keys are never persisted.
 
 Statuses are `issuing`, `active`, `rotating`, and `unknown`. An unsuccessful upstream operation
 or failed completion is treated as an uncertain outcome. There is no automatic retry or deletion

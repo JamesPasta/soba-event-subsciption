@@ -6,10 +6,21 @@ import { sortLocale } from '../../core/middleware/sortLocale';
 import { workspaceFromResource } from '../../core/middleware/workspaceContext';
 import { Features } from '../../core/db/codes';
 import { requireUserSearchAccess } from './access';
-import { getUserSearchCapabilitiesHandler, searchUsersHandler } from './controller';
-import { UserSearchQuerySchema, UserSearchScopeParamsSchema } from './schema';
+import {
+  createUserFromSearchHandler,
+  getUserSearchCapabilitiesHandler,
+  searchUsersHandler,
+} from './controller';
+import {
+  CreateUserFromSearchBodySchema,
+  UserSearchQuerySchema,
+  UserSearchScopeParamsSchema,
+} from './schema';
 
-/** GET / searches; GET /capabilities lists what can be searched. */
+/**
+ * GET / searches; GET /capabilities lists what can be searched; POST /users makes a Soba user for
+ * a person found.
+ */
 function userSearchRouter(resolveScope: RequestHandler): express.Router {
   const router = express.Router({ mergeParams: true });
   router.use(requireFeature(Features.user_search));
@@ -28,6 +39,14 @@ function userSearchRouter(resolveScope: RequestHandler): express.Router {
     requireUserSearchAccess,
     sortLocale,
     asyncHandler(searchUsersHandler),
+  );
+  router.post(
+    '/users',
+    validateRequest({ params: UserSearchScopeParamsSchema, body: CreateUserFromSearchBodySchema }),
+    resolveScope,
+    requireUserSearchAccess,
+    sortLocale,
+    asyncHandler(createUserFromSearchHandler),
   );
   return router;
 }

@@ -42,10 +42,19 @@ class RetryableFeaturesMetaError extends Error {}
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function fetchFeaturesMetaOnce(): Promise<FeaturesMetaPayload> {
+/** Node's fetch reports every transport failure as "fetch failed"; the reason is on `cause`. */
+function transportReason(error: unknown): string {
+  const cause =
+    error instanceof Error ? (error.cause as { code?: unknown; message?: unknown }) : null;
+  if (typeof cause?.code === 'string' && cause.code) return cause.code;
+  if (typeof cause?.message === 'string' && cause.message) return cause.message;
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function fetchFeaturesMetaOnce(url: string): Promise<FeaturesMetaPayload> {
   let response: Response;
   try {
-    response = await fetch(`${getBootstrapApiBaseUrl()}/meta/features`, {
+    response = await fetch(url, {
       method: 'GET',
       cache: 'no-store',
       headers: {
@@ -54,13 +63,11 @@ async function fetchFeaturesMetaOnce(): Promise<FeaturesMetaPayload> {
     });
   } catch (error) {
     // Transport failure: DNS not resolving yet, a pod rolling, a connection reset.
-    throw new RetryableFeaturesMetaError(
-      `Failed to reach features meta: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    throw new RetryableFeaturesMetaError(transportReason(error));
   }
   if (!response.ok) {
-    const message = `Failed to load features meta: ${response.status}`;
-    throw response.status >= 500 ? new RetryableFeaturesMetaError(message) : new Error(message);
+    if (response.status >= 500) throw new RetryableFeaturesMetaError(`HTTP ${response.status}`);
+    throw new Error(`Failed to load features meta from ${url}: HTTP ${response.status}`);
   }
   const payload = (await response.json()) as unknown;
   assertFeaturesMetaShape(payload);
@@ -74,12 +81,16 @@ async function fetchFeaturesMetaOnce(): Promise<FeaturesMetaPayload> {
  * which would render as a misconfigured app instead of an unavailable one.
  */
 function fetchFeaturesMeta(): Promise<FeaturesMetaPayload> {
+  const url = `${getBootstrapApiBaseUrl()}/meta/features`;
   const tryAttempt = async (attempt: number): Promise<FeaturesMetaPayload> => {
     try {
-      return await fetchFeaturesMetaOnce();
+      return await fetchFeaturesMetaOnce(url);
     } catch (error) {
-      if (!(error instanceof RetryableFeaturesMetaError) || attempt >= FETCH_ATTEMPTS) {
-        throw error;
+      if (!(error instanceof RetryableFeaturesMetaError)) throw error;
+      if (attempt >= FETCH_ATTEMPTS) {
+        throw new Error(
+          `Features meta unavailable at ${url} after ${attempt} attempts: ${error.message}`,
+        );
       }
       await delay(RETRY_DELAY_MS * attempt);
       return tryAttempt(attempt + 1);

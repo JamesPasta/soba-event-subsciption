@@ -1,5 +1,6 @@
 export {
   USER_SEARCH_FIELDS,
+  type CreateUserFromSearchResponse,
   type UserSearchCapabilitiesResponse,
   type UserSearchField,
   type UserSearchIdentityProvider,

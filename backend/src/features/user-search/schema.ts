@@ -1,6 +1,8 @@
 import { extendZodWithOpenApi, type OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import {
+  CreateUserFromSearchBodySchema as LibCreateUserBodySchema,
+  CreateUserFromSearchResponseSchema as LibCreateUserResponseSchema,
   UserSearchCapabilitiesResponseSchema as LibCapabilitiesResponseSchema,
   UserSearchIdentityProviderSchema as LibIdentityProviderSchema,
   UserSearchPluginStatusSchema as LibPluginStatusSchema,
@@ -34,6 +36,14 @@ export const UserSearchResponseSchema = LibResponseSchema.extend({
 export const UserSearchCapabilitiesResponseSchema = LibCapabilitiesResponseSchema.extend({
   identityProviders: z.array(IdentityProviderSchema),
 }).openapi('UserSearch_CapabilitiesResponse');
+
+export const CreateUserFromSearchBodySchema = LibCreateUserBodySchema.clone().openapi(
+  'UserSearch_CreateUserBody',
+);
+
+const CreateUserFromSearchResponseSchema = LibCreateUserResponseSchema.clone().openapi(
+  'UserSearch_CreateUserResponse',
+);
 
 const TAG = 'feature.user-search';
 
@@ -89,6 +99,34 @@ export function registerUserSearchOpenApi(registry: OpenAPIRegistry) {
         },
         403: { description: scope.forbidden },
         404: { description: 'Not found, or user search is disabled' },
+        503: { description: 'No user search plugin could answer' },
+      },
+    });
+    registry.registerPath({
+      method: 'post',
+      path: `${scope.path}/users`,
+      tags: [TAG],
+      security: [{ bearerAuth: [] }],
+      summary: `Make a Soba user for a person found when adding to ${scope.subject}`,
+      description:
+        'Asks the directory again by guid and stores what it returns. A person who already has a Soba user gets it back. The new user has no access, and signs in to the same user later.',
+      request: {
+        params: UserSearchScopeParamsSchema,
+        body: { content: { 'application/json': { schema: CreateUserFromSearchBodySchema } } },
+      },
+      responses: {
+        200: {
+          description: 'The person already had a Soba user',
+          content: { 'application/json': { schema: CreateUserFromSearchResponseSchema } },
+        },
+        201: {
+          description: 'Soba user created',
+          content: { 'application/json': { schema: CreateUserFromSearchResponseSchema } },
+        },
+        400: { description: 'Invalid body, or an identity provider that cannot be searched here' },
+        403: { description: scope.forbidden },
+        404: { description: 'Not found, user search is disabled, or no one has that guid' },
+        422: { description: "The directory's identifier is not the one sign-in will send" },
         503: { description: 'No user search plugin could answer' },
       },
     });

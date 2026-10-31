@@ -6,9 +6,11 @@ import { SWRConfig } from 'swr';
 
 const searchUsers = vi.fn();
 const fetchUserSearchCapabilities = vi.fn();
+const createUserFromSearch = vi.fn();
 vi.mock('@/src/features/user-search/data/api', () => ({
   searchUsers: (...args: unknown[]) => searchUsers(...args),
   fetchUserSearchCapabilities: (...args: unknown[]) => fetchUserSearchCapabilities(...args),
+  createUserFromSearch: (...args: unknown[]) => createUserFromSearch(...args),
 }));
 const loadFeaturesMeta = vi.fn();
 vi.mock('@/src/shared/config/featuresMeta', () => ({
@@ -19,6 +21,7 @@ import makeStore from '@/lib/store';
 import { setAuthenticated, setToken } from '@/lib/slices/keycloakSlice';
 import { ApiError } from '@/src/shared/api/sobaHelpers';
 import {
+  useUserFromSearchWriter,
   useUserSearch,
   useUserSearchAllowed,
   useUserSearchCapabilities,
@@ -213,5 +216,76 @@ describe('user search hooks', () => {
     loadFeaturesMeta.mockRejectedValue(new Error('offline'));
     const { result } = renderHook(() => useUserSearchAllowed(), { wrapper });
     await waitFor(() => expect(result.current).toBe(false));
+  });
+
+  it('reads a search on screen again after making a user, and not what can be searched', async () => {
+    fetchUserSearchCapabilities.mockResolvedValue({ identityProviders: [] });
+    searchUsers.mockResolvedValue({ users: [alice], truncated: false, plugins: [] });
+    createUserFromSearch.mockResolvedValue({ userId: 'user-made', created: true });
+    const { result } = renderHook(
+      () => ({
+        search: useUserSearch(scope, { field: 'email', term: 'alice' }),
+        capabilities: useUserSearchCapabilities(scope),
+        writer: useUserFromSearchWriter(scope),
+      }),
+      { wrapper },
+    );
+    await pastTypingPause();
+    await waitFor(() => expect(result.current.search.users).toHaveLength(1));
+    await waitFor(() => expect(result.current.capabilities.loaded).toBe(true));
+    const capabilityReads = fetchUserSearchCapabilities.mock.calls.length;
+    searchUsers.mockResolvedValue({
+      users: [{ ...alice, sobaUserId: 'user-made' }],
+      truncated: false,
+      plugins: [],
+    });
+
+    let outcome: unknown;
+    await act(async () => {
+      outcome = await result.current.writer.create('token', {
+        identityProvider: 'azureidir',
+        guid: 'F0E1D2C3',
+      });
+    });
+
+    expect(outcome).toEqual({ status: 'applied', value: { userId: 'user-made', created: true } });
+    expect(createUserFromSearch).toHaveBeenCalledWith('token', scope, {
+      identityProvider: 'azureidir',
+      guid: 'F0E1D2C3',
+    });
+    await waitFor(() => expect(result.current.search.users[0]?.sobaUserId).toBe('user-made'));
+    expect(fetchUserSearchCapabilities).toHaveBeenCalledTimes(capabilityReads);
+  });
+
+  it('clears a search no one is showing after making a user, so it is not shown stale', async () => {
+    const cache = new Map();
+    const shared = ({ children }: { children: React.ReactNode }) => (
+      <Provider store={store}>
+        <SWRConfig value={{ provider: () => cache, dedupingInterval: 0 }}>{children}</SWRConfig>
+      </Provider>
+    );
+    searchUsers.mockResolvedValue({ users: [alice], truncated: false, plugins: [] });
+    const first = renderHook(() => useUserSearch(scope, { field: 'email', term: 'alice' }), {
+      wrapper: shared,
+    });
+    await pastTypingPause();
+    await waitFor(() => expect(first.result.current.users).toHaveLength(1));
+    first.unmount();
+
+    createUserFromSearch.mockResolvedValue({ userId: 'user-made', created: true });
+    const writer = renderHook(() => useUserFromSearchWriter(scope), { wrapper: shared });
+    await act(async () => {
+      await writer.result.current.create('token', {
+        identityProvider: 'azureidir',
+        guid: 'F0E1D2C3',
+      });
+    });
+
+    searchUsers.mockReturnValue(new Promise(() => undefined));
+    const again = renderHook(() => useUserSearch(scope, { field: 'email', term: 'alice' }), {
+      wrapper: shared,
+    });
+    await pastTypingPause();
+    expect(again.result.current.users).toEqual([]);
   });
 });

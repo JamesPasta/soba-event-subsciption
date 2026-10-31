@@ -1,5 +1,7 @@
 import {
   USER_SEARCH_FIELDS,
+  type CreateUserFromSearchBody,
+  type CreateUserFromSearchResponse,
   type SortLocale,
   type UserSearchCapabilitiesResponse,
   type UserSearchField,
@@ -12,6 +14,7 @@ import { ServiceUnavailableError, ValidationError } from '../../core/errors';
 import { log } from '../../core/logging';
 import { listLoginIdentityProviders } from '../../core/db/repos/identityProviderRepo';
 import { findIdentityOwners } from '../../core/db/repos/identityLookup';
+import { findOrCreateUserFromDirectory } from '../../core/db/repos/membershipRepo';
 import {
   createUserSearchAdapter,
   getEnabledUserSearchPluginCodes,
@@ -20,7 +23,15 @@ import type {
   UserSearchCapability,
   UserSearchAdapter,
 } from '../../core/integrations/user-search/UserSearchAdapter';
-import { displayNameOf, identityKey, mergeHits, orderUsers, type PluginHits } from './merge';
+import {
+  displayNameOf,
+  identityKey,
+  mergeHits,
+  orderUsers,
+  type MergedHit,
+  type PluginHits,
+} from './merge';
+import { confirmedPerson, hasGuid, profileFromHit, signInSubjectOf } from './directoryUser';
 
 /** Most hits taken from one plugin for one identity provider. */
 export const PLUGIN_LIMIT = 25;
@@ -43,6 +54,8 @@ interface LoadedPlugins {
   /** Enabled codes that could not be built or could not report capabilities. */
   failed: string[];
 }
+
+const SEARCH_UNAVAILABLE = 'User search is unavailable';
 
 const errorName = (err: unknown): string => (err instanceof Error ? err.name : 'UnknownError');
 
@@ -177,12 +190,46 @@ async function runSearches(
 }
 
 /**
- * Search every enabled plugin that accepts these filters, for the identity provider asked or else
- * every one searchable here, and merge the people they find.
- * - 400: the identity provider asked is not searchable here, no plugin accepts the filters, or
- *   every plugin asked refused them.
+ * Ask every enabled plugin that accepts these filters, for each of the identity providers, and
+ * merge the people they find.
+ * - 400: no plugin accepts the filters, or every plugin asked refused them.
  * - 503: no plugin is enabled, none asked could answer, or no plugin accepts the filters while
  *   one could not be built.
+ */
+async function findPeople(
+  identityProviders: readonly string[],
+  filters: Partial<Record<UserSearchField, string>>,
+): Promise<{ people: MergedHit[]; plugins: UserSearchPluginStatus[] }> {
+  const fields = Object.keys(filters) as UserSearchField[];
+  const { loaded, failed } = await loadPlugins();
+  const searches = loaded.flatMap((plugin) =>
+    identityProviders
+      .filter((identityProvider) => accepts(plugin.capabilities, identityProvider, fields))
+      .map((identityProvider) => ({ plugin, identityProvider })),
+  );
+  if (searches.length === 0) {
+    // Unavailable rather than invalid when no plugin loaded or one failed to load.
+    if (loaded.length === 0 || failed.length > 0) {
+      throw new ServiceUnavailableError(SEARCH_UNAVAILABLE);
+    }
+    throw new ValidationError('No user search plugin accepts these filters');
+  }
+
+  const { plugins, results } = await runSearches(searches, filters);
+  for (const code of failed) plugins.push({ code, status: 'unavailable', truncated: false });
+  if (results.length === 0) {
+    if (plugins.some(({ status }) => status === 'unavailable')) {
+      throw new ServiceUnavailableError(SEARCH_UNAVAILABLE);
+    }
+    throw new ValidationError('Every user search plugin refused the search');
+  }
+  return { people: mergeHits(results), plugins };
+}
+
+/**
+ * Search for the identity provider asked or else every one searchable here.
+ * - 400: the identity provider asked is not searchable here, or as for findPeople.
+ * - 503: as for findPeople.
  */
 export async function searchUsers(
   query: UserSearchQuery,
@@ -194,33 +241,7 @@ export async function searchUsers(
   if (asked && !allowed.includes(asked)) {
     throw new ValidationError(`${asked} users cannot be searched here`);
   }
-  const identityProviders = asked ? [asked] : allowed;
-  const filters = filtersOf(query);
-  const fields = Object.keys(filters) as UserSearchField[];
-  const { loaded, failed } = await loadPlugins();
-  const searches = loaded.flatMap((plugin) =>
-    identityProviders
-      .filter((identityProvider) => accepts(plugin.capabilities, identityProvider, fields))
-      .map((identityProvider) => ({ plugin, identityProvider })),
-  );
-  if (searches.length === 0) {
-    // Unavailable rather than invalid when no plugin loaded or one failed to load.
-    if (loaded.length === 0 || failed.length > 0) {
-      throw new ServiceUnavailableError('User search is unavailable');
-    }
-    throw new ValidationError('No user search plugin accepts these filters');
-  }
-
-  const { plugins, results } = await runSearches(searches, filters);
-  for (const code of failed) plugins.push({ code, status: 'unavailable', truncated: false });
-  if (results.length === 0) {
-    if (plugins.some(({ status }) => status === 'unavailable')) {
-      throw new ServiceUnavailableError('User search is unavailable');
-    }
-    throw new ValidationError('Every user search plugin refused the search');
-  }
-
-  const people = mergeHits(results);
+  const { people, plugins } = await findPeople(asked ? [asked] : allowed, filtersOf(query));
   const owners = await findIdentityOwners(people);
   const userIds = new Map(
     owners.map((owner) => [identityKey(owner.identityProvider, owner.subject), owner.userId]),
@@ -238,4 +259,46 @@ export async function searchUsers(
     truncated: users.length > RESULT_LIMIT || plugins.some(({ truncated }) => truncated),
     plugins,
   };
+}
+
+/**
+ * The Soba user for a person user search finds, made from the directory's details when they have
+ * never signed in. The directory is asked again by guid; nothing else the caller sends is kept. A
+ * new user has no access until something grants it.
+ * - 400: the identity provider cannot be searched here, or as for findPeople.
+ * - 404 person_not_found: the directory has no one with that guid.
+ * - 422 identity_unconfirmed: the directory's identifier is not the one sign-in will send.
+ * - 503: as for findPeople.
+ */
+export async function createUserFromSearch(
+  body: CreateUserFromSearchBody,
+  policy: UserSearchPolicy,
+  locale: SortLocale,
+  actor: { actorId: string; actorDisplayLabel: string | null },
+): Promise<CreateUserFromSearchResponse> {
+  const { identityProvider, guid } = body;
+  const allowed = await allowedIdentityProviders(policy, locale);
+  if (!allowed.some(({ code }) => code === identityProvider)) {
+    throw new ValidationError(`${identityProvider} users cannot be added here`);
+  }
+  const { people, plugins } = await findPeople([identityProvider], { guid });
+  // Not found is only an answer when every plugin asked could answer.
+  const matched = people.some((person) => hasGuid(person, identityProvider, guid));
+  if (!matched && plugins.some(({ status }) => status === 'unavailable')) {
+    throw new ServiceUnavailableError(SEARCH_UNAVAILABLE);
+  }
+  const person: MergedHit = confirmedPerson(people, identityProvider, guid);
+  const result = await findOrCreateUserFromDirectory({
+    providerCode: identityProvider,
+    subject: signInSubjectOf(identityProvider, guid),
+    profile: profileFromHit(person),
+    actorDisplayLabel: actor.actorDisplayLabel,
+  });
+  if (result.created) {
+    log.info(
+      { actorId: actor.actorId, userId: result.userId, identityProvider, sources: person.sources },
+      'User created from user search',
+    );
+  }
+  return result;
 }

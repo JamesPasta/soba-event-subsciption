@@ -109,6 +109,25 @@ describe('user-search-soba adapter', () => {
     });
   });
 
+  it('takes the guid from the subject for a user made from user search, who has no attributes yet', async () => {
+    const guid = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+    jest.mocked(searchSobaUsers).mockResolvedValue([
+      {
+        subject: `${guid}@azureidir`,
+        profile: { ...idirRow.profile, idir_username: 'JSMITH' },
+        idpAttributes: null,
+      },
+    ]);
+
+    const { hits } = await new SobaUserSearchAdapter().search({
+      identityProvider: 'azureidir',
+      filters: { guid },
+      limit: 25,
+    });
+
+    expect(hits[0]).toMatchObject({ guid, username: 'JSMITH' });
+  });
+
   it('returns at most the limit and says when the query found more', async () => {
     jest.mocked(searchSobaUsers).mockResolvedValue([idirRow, bceidRow, idirRow]);
 

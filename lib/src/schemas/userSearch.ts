@@ -34,7 +34,7 @@ export const UserSearchUserSchema = z.object({
   firstName: z.string().nullable(),
   lastName: z.string().nullable(),
   email: z.string().nullable(),
-  /** The Soba user holding this identity, or null when nobody has signed in with it. */
+  /** The Soba user holding this identity, or null when it has none yet. */
   sobaUserId: z.string().nullable(),
   /** Codes of the plugins that returned this person. */
   sources: z.array(z.string()),
@@ -65,6 +65,25 @@ export const UserSearchIdentityProviderSchema = z.object({
   fields: z.array(UserSearchFieldSchema),
 });
 export type UserSearchIdentityProvider = z.infer<typeof UserSearchIdentityProviderSchema>;
+
+/**
+ * A person found by user search, to make a Soba user for. Only the identity provider and guid are
+ * taken; the stored details come from asking the directory again.
+ */
+export const CreateUserFromSearchBodySchema = z
+  .object({
+    identityProvider: z.string().trim().min(1).max(64),
+    guid: z.string().trim().min(2).max(64),
+  })
+  .strict();
+export type CreateUserFromSearchBody = z.infer<typeof CreateUserFromSearchBodySchema>;
+
+/** The Soba user for the person; `created` is false when one already existed. */
+export const CreateUserFromSearchResponseSchema = z.object({
+  userId: z.string(),
+  created: z.boolean(),
+});
+export type CreateUserFromSearchResponse = z.infer<typeof CreateUserFromSearchResponseSchema>;
 
 export const UserSearchCapabilitiesResponseSchema = z.object({
   identityProviders: z.array(UserSearchIdentityProviderSchema),

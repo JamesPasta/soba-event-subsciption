@@ -122,8 +122,23 @@ describe('loadFeaturesMeta retries', () => {
     const fetchMock = vi.fn().mockResolvedValue(statusResponse(503));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect((await freshLoader())()).rejects.toThrow('503');
+    await expect((await freshLoader())()).rejects.toThrow(
+      /^Features meta unavailable at \S+\/meta\/features after 3 attempts: HTTP 503$/,
+    );
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('names the URL and the transport cause once the attempts run out', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValue(new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect((await freshLoader())()).rejects.toThrow(
+      /^Features meta unavailable at \S+\/meta\/features after 3 attempts: ECONNREFUSED$/,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/meta\/features$/);
   });
 
   it('does not retry a 404, which is an answer rather than a blip', async () => {

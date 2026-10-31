@@ -9,6 +9,7 @@ import {
   SOBA_ADMIN_SORT_FIELDS,
   SUBMISSION_EXPORT_SORT_FIELDS,
   SUBMISSION_SORT_FIELDS,
+  WORKSPACE_ACCESS_SORT_FIELDS,
   WORKSPACE_GROUP_SORT_FIELDS,
   WORKSPACE_SORT_FIELDS,
   sortTokensFor,
@@ -174,6 +175,13 @@ export const WORKSPACE_GROUPS_LIST_QUERY: ListQuerySpec = {
   filters: [],
   sortOptions: sortTokensFor(WORKSPACE_GROUP_SORT_FIELDS),
   defaultSort: 'name:asc',
+};
+
+export const WORKSPACE_ACCESS_LIST_QUERY: ListQuerySpec = {
+  resource: 'workspaceAccess',
+  filters: ['include'],
+  sortOptions: sortTokensFor(WORKSPACE_ACCESS_SORT_FIELDS),
+  defaultSort: 'displayLabel:asc',
 };
 
 const KEY_PREFIX = 'soba.listQuery.';

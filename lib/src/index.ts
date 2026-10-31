@@ -12,6 +12,7 @@ export * from './schemas/admin';
 export * from './schemas/jobs';
 export * from './schemas/workspaces';
 export * from './schemas/workspaceGroups';
+export * from './schemas/workspaceAccess';
 export * from './formio/normalizeSchema';
 export * from './formio/newFormSchema';
 export * from './schemas/me';

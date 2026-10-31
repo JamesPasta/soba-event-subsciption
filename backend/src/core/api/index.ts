@@ -16,6 +16,7 @@ import {
   submissionExportRouter,
 } from '../../features/submission-export';
 import { groupsDomain } from './groups';
+import { accessDomain } from './access';
 import { filesDesignRouter, filesDomain } from '../../features/files';
 import {
   documentGenerationDesignRouter,
@@ -53,6 +54,7 @@ registerOpenApiPaths((registry) => {
   registerSubmissionExportOpenApi(registry);
   registerSubmitOpenApi(registry);
   groupsDomain.registerOpenApi(registry);
+  accessDomain.registerOpenApi(registry);
   meDomain.registerOpenApi(registry);
   registerUserSearchOpenApi(registry);
   registerJobsOpenApi(registry);
@@ -110,7 +112,14 @@ coreRouter.use(credentialsRouter);
 coreRouter.use('/workspaces/:id/settings', workspaceSettingsRouter);
 coreRouter.use('/workspaces/:id/user-search', workspaceUserSearchRouter);
 coreRouter.use('/workspaces/:id/jobs', workspaceJobsRouter);
-for (const domain of [workspacesDomain, groupsDomain, meDomain, membersDomain, templatesDomain]) {
+for (const domain of [
+  workspacesDomain,
+  groupsDomain,
+  accessDomain,
+  meDomain,
+  membersDomain,
+  templatesDomain,
+]) {
   coreRouter.use(domain.path, domain.router);
 }
 coreRouter.use(notFoundHandler);

@@ -37,6 +37,7 @@ import { usePostSubmissionAvailable } from '@/src/features/post-submission/data/
 import type { UpdateWorkspaceBody, WorkspaceItem } from '@/src/types/workspaces';
 import styles from './WorkspaceForm.module.css';
 import WorkspaceGroupTab from './WorkspaceGroupTab';
+import WorkspaceAccessTab from './WorkspaceAccessTab';
 
 // How long to wait after the last keystroke, and how short a name can be, before checking it.
 const NAME_CHECK_DEBOUNCE_MS = 400;
@@ -323,6 +324,7 @@ function WorkspaceForm({ workspaceId, first = false }: Readonly<WorkspaceFormPro
       'form-settings',
       ...(postSubmissionAvailable ? ['post-submission'] : []),
       'groups',
+      'access',
       ...(canSeeJobs ? ['jobs'] : []),
     ],
     [postSubmissionAvailable, canSeeJobs],
@@ -451,6 +453,15 @@ function WorkspaceForm({ workspaceId, first = false }: Readonly<WorkspaceFormPro
       >
         <div className={styles.tabContent}>
           <WorkspaceGroupTab dict={dict} workspaceId={workspace.id} />
+        </div>
+      </Tab>
+      <Tab
+        eventKey="access"
+        title={dictWorkspaces.accessTab}
+        tabAttrs={{ 'data-testid': 'workspace-access-tab' }}
+      >
+        <div className={styles.tabContent}>
+          <WorkspaceAccessTab dict={dict} workspaceId={workspace.id} />
         </div>
       </Tab>
       {canSeeJobs && (

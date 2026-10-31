@@ -6,6 +6,7 @@ import {
   withMiddlewareErrors,
   type RegisterOpenApiPaths,
 } from '../../../../src/core/api/shared/openapi';
+import { registerAccessOpenApi } from '../../../../src/core/api/access/schema';
 import { registerAdminOpenApi } from '../../../../src/core/api/admin/schema';
 import { registerFormsOpenApi } from '../../../../src/core/api/forms/schema';
 import { registerGroupsOpenApi } from '../../../../src/core/api/groups/schema';
@@ -30,6 +31,7 @@ const REGISTRARS: RegisterOpenApiPaths[] = [
   registerSubmissionsOpenApi,
   registerSubmitOpenApi,
   registerGroupsOpenApi,
+  registerAccessOpenApi,
   registerMeOpenApi,
   registerJobsOpenApi,
   registerSubmissionExportOpenApi,

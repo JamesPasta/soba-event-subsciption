@@ -26,6 +26,7 @@ jest.mock('../../../src/core/db/repos/formAccessRepo', () => ({
   resolveWorkspacePermissions: jest.fn(),
 }));
 jest.mock('../../../src/features/user-search/service', () => ({
+  createUserFromSearch: jest.fn(),
   getUserSearchCapabilities: jest.fn(),
   searchUsers: jest.fn(),
 }));
@@ -35,17 +36,23 @@ import {
   resolveFormPermissions,
   resolveWorkspacePermissions,
 } from '../../../src/core/db/repos/formAccessRepo';
-import { getUserSearchCapabilities, searchUsers } from '../../../src/features/user-search/service';
+import {
+  createUserFromSearch,
+  getUserSearchCapabilities,
+  searchUsers,
+} from '../../../src/features/user-search/service';
 import { formUserSearchRouter, workspaceUserSearchRouter } from '../../../src/features/user-search';
 import { coreErrorHandler } from '../../../src/core/middleware/errorHandler';
 
 const app = express();
+app.use(express.json());
 app.use('/workspaces/:id/user-search', workspaceUserSearchRouter);
 app.use('/forms/:id/user-search', formUserSearchRouter);
 app.use(coreErrorHandler);
 
 const FORM_SEARCH = '/forms/form-1/user-search';
 const WORKSPACE_SEARCH = '/workspaces/ws1/user-search';
+const PERSON = { identityProvider: 'azureidir', guid: 'F0E1D2C3' };
 
 describe('user search routes', () => {
   beforeEach(() => {
@@ -145,6 +152,73 @@ describe('user search routes', () => {
       [{ firstName: 'Alice', guid: 'F0E1' }, {}, 'fr'],
       [{ identityProvider: 'azureidir', email: 'al' }, {}, 'en'],
     ]);
+  });
+
+  it.each([
+    [true, 201],
+    [false, 200],
+  ])('answers making a user, created=%s, with %s', async (created, status) => {
+    jest.mocked(createUserFromSearch).mockResolvedValue({ userId: 'user-9', created });
+
+    const res = await request(app)
+      .post(`${WORKSPACE_SEARCH}/users`)
+      .set('x-test-role', 'admin')
+      .send({ identityProvider: ' azureidir ', guid: 'F0E1D2C3' });
+
+    expect(res.status).toBe(status);
+    expect(res.body).toEqual({ userId: 'user-9', created });
+    expect(createUserFromSearch).toHaveBeenCalledWith(PERSON, {}, 'en', {
+      actorId: 'actor1',
+      actorDisplayLabel: 'Actor One',
+    });
+  });
+
+  it('lets a team_update holder on the form make a user', async () => {
+    jest.mocked(resolveFormPermissions).mockResolvedValue(new Set(['team_update']));
+    jest.mocked(createUserFromSearch).mockResolvedValue({ userId: 'user-9', created: true });
+
+    const res = await request(app)
+      .post(`${FORM_SEARCH}/users`)
+      .set('x-test-role', 'member')
+      .send(PERSON);
+
+    expect(res.status).toBe(201);
+  });
+
+  it('refuses making a user to someone who cannot search here', async () => {
+    const res = await request(app)
+      .post(`${FORM_SEARCH}/users`)
+      .set('x-test-role', 'member')
+      .send(PERSON);
+
+    expect(res.status).toBe(403);
+    expect(createUserFromSearch).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 to making a user when the feature is off', async () => {
+    jest.mocked(isFeatureEnabledCached).mockResolvedValue(false);
+
+    const res = await request(app)
+      .post(`${WORKSPACE_SEARCH}/users`)
+      .set('x-test-role', 'owner')
+      .send(PERSON);
+
+    expect(res.status).toBe(404);
+    expect(createUserFromSearch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['no guid', { identityProvider: 'azureidir' }],
+    ['a one-character guid', { identityProvider: 'azureidir', guid: 'a' }],
+    ['details beyond the identity', { ...PERSON, email: 'someone@example.com' }],
+  ])('rejects making a user with %s', async (_case, body) => {
+    const res = await request(app)
+      .post(`${WORKSPACE_SEARCH}/users`)
+      .set('x-test-role', 'owner')
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(createUserFromSearch).not.toHaveBeenCalled();
   });
 
   it('returns what can be searched', async () => {

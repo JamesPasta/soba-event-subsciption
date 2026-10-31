@@ -9,7 +9,7 @@ import {
   WorkspaceGroupSchema as LibGroupSchema,
   WorkspaceGroupSortSchema as LibGroupSortSchema,
 } from '@soba/lib';
-import { GROUP_NAME_TAKEN } from '../../messages';
+import { GROUP_NAME_TAKEN, LAST_FORM_ADMIN } from '../../messages';
 import {
   offsetQueryFields,
   rejectedCursorField,
@@ -233,6 +233,7 @@ export const registerGroupsOpenApi = (registry: OpenAPIRegistry) => {
       200: jsonResponse(OK_UPDATED_GROUP, GroupSchema),
       403: { description: ERR_MANAGE },
       404: { description: 'Workspace, group, or member not found' },
+      409: { description: LAST_FORM_ADMIN },
     },
   });
 };

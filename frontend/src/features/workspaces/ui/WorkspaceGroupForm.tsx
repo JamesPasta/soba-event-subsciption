@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   Button,
   Checkbox,
   CheckboxGroup,
   Form,
-  Heading,
   InlineAlert,
   TextField,
 } from '@bcgov/design-system-react-components';
@@ -21,6 +20,7 @@ import type { RoleWithSourceMeta, WorkspaceGroup } from '@/src/types/workspaceGr
 import { useWorkspaceGroup } from '../data/useWorkspaceGroup';
 import { useWorkspaceGroupsWriter } from '../data/useWorkspaceGroupsWriter';
 import { groupRoleLabel } from '../groupRoleLabel';
+import { TabFormSection, TabFormUnavailable } from './TabForm';
 import styles from './WorkspaceForm.module.css';
 
 export interface WorkspaceGroupFormProps {
@@ -45,27 +45,27 @@ export function WorkspaceGroupForm({
   const authDefaults = useAuthErrorDefaults();
   const roles = useRolesMeta();
   const record = useWorkspaceGroup(workspaceId, groupId ?? null);
-  const sectionRef = useRevealOnOpen();
-  const headingId = useId();
 
   let content: React.ReactNode;
   if (record.error) {
     // Editing without the record would post the empty fields as a new group.
     content = (
-      <Unavailable
+      <TabFormUnavailable
         message={messageForDataError(record.error, { ...authDefaults, failed: t.groupLoadError })}
         testId="group-load-error"
         cancelLabel={t.cancel}
+        cancelTestId="group-cancel-button"
         onCancel={onDone}
       />
     );
   } else if (roles.error) {
     // Without the role list there is nothing to choose from, and a save would send no roles.
     content = (
-      <Unavailable
+      <TabFormUnavailable
         message={messageForDataError(roles.error, { ...authDefaults, failed: t.rolesLoadError })}
         testId="group-roles-error"
         cancelLabel={t.cancel}
+        cancelTestId="group-cancel-button"
         onCancel={onDone}
       />
     );
@@ -86,56 +86,12 @@ export function WorkspaceGroupForm({
   }
 
   return (
-    <section
-      ref={sectionRef}
-      tabIndex={-1}
-      aria-labelledby={headingId}
-      className="mt-4 pt-3 border-top"
-      data-testid={groupId ? 'workspace-group-edit-form' : 'workspace-group-create-form'}
+    <TabFormSection
+      heading={groupId ? t.editGroup : t.addGroup}
+      testId={groupId ? 'workspace-group-edit-form' : 'workspace-group-create-form'}
     >
-      <Heading level={2} id={headingId}>
-        {groupId ? t.editGroup : t.addGroup}
-      </Heading>
       {content}
-    </section>
-  );
-}
-
-/**
- * The form opens under the table, which on a long list is below the fold. Bring it into view and
- * move focus to it, so the press visibly did something and a keyboard or screen reader user lands
- * on it rather than on the button above. Runs once per opening: the tab remounts the form for each.
- */
-function useRevealOnOpen() {
-  const ref = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    element.focus({ preventScroll: true });
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    // Optional: jsdom has no layout, so no scrollIntoView.
-    element.scrollIntoView?.({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
-  }, []);
-  return ref;
-}
-
-interface UnavailableProps {
-  message: string;
-  testId: string;
-  cancelLabel: string;
-  onCancel: () => void;
-}
-
-function Unavailable({ message, testId, cancelLabel, onCancel }: Readonly<UnavailableProps>) {
-  return (
-    <>
-      <InlineAlert description={message} variant="danger" data-testid={testId} />
-      <div className={styles.actions}>
-        <Button variant="secondary" onPress={onCancel} data-testid="group-cancel-button">
-          {cancelLabel}
-        </Button>
-      </div>
-    </>
+    </TabFormSection>
   );
 }
 

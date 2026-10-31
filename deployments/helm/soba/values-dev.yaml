@@ -61,7 +61,8 @@ backend:
   userSearch:
     cssV1:
       apiBaseUrl: https://api.loginproxy.gov.bc.ca/api/v1
-      environment: test
+      # Matches the SSO dev realm sign-in uses; BCeID accounts differ between CSS environments.
+      environment: dev
       tokenUrl: https://loginproxy.gov.bc.ca/auth/realms/standard/protocol/openid-connect/token
 
 frontend:

@@ -40,6 +40,77 @@ export const updateIdentityAttributes = async (
     );
 };
 
+/**
+ * Serialises creating one identity, by sign-in or from a directory: hashtext(provider, subject)
+ * under a fixed namespace int. The subject is lower-cased, as identities match without case.
+ */
+const lockIdentity = (tx: DbOrTx, providerCode: string, subject: string) => {
+  const payload = `${providerCode}\u001f${subject.toLowerCase()}`;
+  return tx.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${payload}::text), ${ADV_LOCK_FIND_OR_CREATE_IDENTITY})`,
+  );
+};
+
+/** The identity for the provider and subject, matched without case; an exact spelling wins. */
+const findIdentity = async (tx: DbOrTx, providerCode: string, subject: string) => {
+  const rows = await tx
+    .select({
+      id: userIdentities.id,
+      userId: userIdentities.userId,
+      firstSignInAt: userIdentities.firstSignInAt,
+    })
+    .from(userIdentities)
+    .where(
+      and(
+        eq(userIdentities.identityProviderCode, providerCode),
+        sql`lower(${userIdentities.subject}) = ${subject.toLowerCase()}`,
+      ),
+    )
+    .orderBy(sql`${userIdentities.subject} = ${subject} desc`)
+    .limit(1);
+  return rows[0] ?? null;
+};
+
+/** Inserts a user and its identity. Returns the user id. */
+const insertUserWithIdentity = async (
+  tx: DbOrTx,
+  args: {
+    providerCode: string;
+    subject: string;
+    profile: NormalizedProfile | null | undefined;
+    idpAttributes: IdpAttributes | null | undefined;
+    firstSignInAt: Date | null;
+    /** The audit stamp; defaults to the new user's own label. */
+    createdBy?: string | null;
+  },
+): Promise<string> => {
+  const displayLabel = profileHelpers.getDisplayLabel(args.profile, args.subject) ?? args.subject;
+  const stamp = args.createdBy === undefined ? displayLabel : args.createdBy;
+  const createdUser = await tx
+    .insert(appUsers)
+    .values({
+      id: uuidv7(),
+      displayLabel,
+      profile: args.profile ?? { displayName: args.subject },
+      status: 'active',
+      createdBy: stamp,
+      updatedBy: stamp,
+    })
+    .returning({ id: appUsers.id });
+  const userId = createdUser[0].id;
+  await tx.insert(userIdentities).values({
+    id: uuidv7(),
+    userId,
+    identityProviderCode: args.providerCode,
+    subject: args.subject,
+    idpAttributes: args.idpAttributes ?? undefined,
+    firstSignInAt: args.firstSignInAt,
+    createdBy: stamp,
+    updatedBy: stamp,
+  });
+  return userId;
+};
+
 export const findOrCreateUserByIdentity = (
   providerCode: string,
   subject: string,
@@ -63,58 +134,108 @@ export const findOrCreateUserByIdentity = (
       );
     }
 
-    // Serialises first sign-ins of one identity: hashtext(provider, subject) under a fixed namespace int.
-    const identityLockPayload = `${provider.code}\u001f${subject}`;
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtext(${identityLockPayload}::text), ${ADV_LOCK_FIND_OR_CREATE_IDENTITY})`,
-    );
+    await lockIdentity(tx, provider.code, subject);
 
-    const existing = await tx
-      .select({ userId: userIdentities.userId, id: userIdentities.id })
-      .from(userIdentities)
-      .where(
-        and(
-          eq(userIdentities.identityProviderCode, provider.code),
-          eq(userIdentities.subject, subject),
-        ),
-      )
-      .limit(1);
-
-    const existingRow = existing[0];
+    const existingRow = await findIdentity(tx, provider.code, subject);
 
     if (existingRow) {
-      if (idpAttributes != null) await updateIdentityAttributes(existingRow.id, idpAttributes, tx);
+      // No sign-in has used this identity yet, as with one made from user search.
+      if (!existingRow.firstSignInAt) {
+        await markFirstSignIn(tx, {
+          identityId: existingRow.id,
+          userId: existingRow.userId,
+          subject,
+          profile,
+          idpAttributes: idpAttributes ?? {},
+        });
+      } else if (idpAttributes != null) {
+        await updateIdentityAttributes(existingRow.id, idpAttributes, tx);
+      }
       return existingRow.userId;
     }
 
-    const displayLabel = profileHelpers.getDisplayLabel(profile, subject) ?? subject;
-    const createdUser = await tx
-      .insert(appUsers)
-      .values({
-        id: uuidv7(),
-        displayLabel,
-        profile: profile ?? { displayName: subject },
-        status: 'active',
-        createdBy: displayLabel,
-        updatedBy: displayLabel,
-      })
-      .returning({ id: appUsers.id });
-
-    const userId = createdUser[0].id;
-
-    await tx.insert(userIdentities).values({
-      id: uuidv7(),
-      userId,
-      identityProviderCode: provider.code,
+    return insertUserWithIdentity(tx, {
+      providerCode: provider.code,
       subject,
-      idpAttributes: idpAttributes ?? undefined,
-      createdBy: displayLabel,
-      updatedBy: displayLabel,
+      profile,
+      idpAttributes,
+      firstSignInAt: new Date(),
     });
-
-    return userId;
   });
 };
+
+/**
+ * The user holding this identity, or a new one made from directory details for a person who has
+ * not signed in. The new identity's first sign-in stays unset, so that sign-in replaces the profile
+ * with the token's. Subjects match without case, as user search matches them.
+ */
+export const findOrCreateUserFromDirectory = (args: {
+  providerCode: string;
+  subject: string;
+  profile: NormalizedProfile;
+  actorDisplayLabel: string | null;
+}): Promise<{ userId: string; created: boolean }> =>
+  db.transaction(async (tx) => {
+    await lockIdentity(tx, args.providerCode, args.subject);
+    const existing = await findIdentity(tx, args.providerCode, args.subject);
+    if (existing) return { userId: existing.userId, created: false };
+    const userId = await insertUserWithIdentity(tx, {
+      providerCode: args.providerCode,
+      subject: args.subject,
+      profile: args.profile,
+      idpAttributes: null,
+      firstSignInAt: null,
+      createdBy: args.actorDisplayLabel,
+    });
+    return { userId, created: true };
+  });
+
+interface FirstSignIn {
+  identityId: string;
+  userId: string;
+  subject: string;
+  profile: NormalizedProfile | null | undefined;
+  idpAttributes: IdpAttributes;
+}
+
+/**
+ * Marks the identity's first sign-in. The request that marks it also replaces the user's profile
+ * and display label with the token's, keeping stored preferences. Returns whether it marked it.
+ */
+async function markFirstSignIn(tx: DbOrTx, args: FirstSignIn): Promise<boolean> {
+  const now = new Date();
+  const marked = await tx
+    .update(userIdentities)
+    .set({ firstSignInAt: now, idpAttributes: args.idpAttributes, updatedAt: now })
+    .where(and(eq(userIdentities.id, args.identityId), isNull(userIdentities.firstSignInAt)))
+    .returning({ id: userIdentities.id });
+  if (!marked[0]) return false;
+
+  const users = await tx
+    .select({ profile: appUsers.profile })
+    .from(appUsers)
+    .where(eq(appUsers.id, args.userId))
+    .for('update');
+  const preferences = (users[0]?.profile as NormalizedProfile | null)?.preferences;
+  const displayLabel = profileHelpers.getDisplayLabel(args.profile, args.subject) ?? args.subject;
+  await tx
+    .update(appUsers)
+    .set({
+      profile: {
+        ...(args.profile ?? { displayName: args.subject }),
+        ...(preferences && { preferences }),
+      },
+      displayLabel,
+      updatedBy: displayLabel,
+      updatedAt: now,
+    })
+    .where(eq(appUsers.id, args.userId));
+  return true;
+}
+
+/** markFirstSignIn in its own transaction. */
+export const completeFirstSignIn = (args: FirstSignIn): Promise<boolean> =>
+  db.transaction((tx) => markFirstSignIn(tx, args));
 
 export const actorBelongsToWorkspace = async (workspaceId: string, userId: string) => {
   const row = await db

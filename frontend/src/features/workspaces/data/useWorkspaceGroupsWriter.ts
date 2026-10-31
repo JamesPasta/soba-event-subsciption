@@ -10,6 +10,7 @@ import {
   renameWorkspaceGroup,
   setWorkspaceGroupRoles,
 } from './api';
+import { WORKSPACE_ACCESS_KEY } from './useWorkspaceAccess';
 import { WORKSPACE_GROUPS_KEY } from './useWorkspaceGroups';
 
 /** What the group form edits. */
@@ -22,13 +23,19 @@ export interface WorkspaceGroupFields {
 const sameRoles = (a: string[], b: string[]) =>
   a.length === b.length && a.every((code) => b.includes(code));
 
-/** Create, update or remove the workspace's groups. Each write re-reads the groups list. */
+/**
+ * Create, update or remove the workspace's groups. Each write re-reads the groups list and the
+ * access list, whose rows carry group names.
+ */
 export function useWorkspaceGroupsWriter(workspaceId: string) {
   const { mutate } = useSWRConfig();
   const refresh = useCallback(
     () =>
       mutate(
-        (key) => Array.isArray(key) && key[0] === WORKSPACE_GROUPS_KEY && key[1] === workspaceId,
+        (key) =>
+          Array.isArray(key) &&
+          (key[0] === WORKSPACE_GROUPS_KEY || key[0] === WORKSPACE_ACCESS_KEY) &&
+          key[1] === workspaceId,
       ),
     [mutate, workspaceId],
   );
