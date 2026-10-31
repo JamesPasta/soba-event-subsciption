@@ -29,8 +29,8 @@ backend:
     eventStreamDefaultCode: eventstream-redis
     documentGenerationDefaultCode: cdogs-v2
     tenantEngineDefaultCode: cstar-v1
-    # APS service-account credentials are read from this deployment's Vault secret.
-    credentialIssuerDefaultCode: aps-credential-issuer-v3
+    # Switch to aps-credential-issuer-v3 after adding Vault credentials.
+    credentialIssuerDefaultCode: credential-issuer-noop
     workflowEngineDefaultCode: cs-workflow-v1
     notificationDefaultCode: notify-v1
     userSearchPlugins: css-v1,user-search-soba

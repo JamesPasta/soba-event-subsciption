@@ -43,9 +43,9 @@ requires `Namespace.Manage`; perform it during setup rather than granting it to 
 OAuth scopes, when required, must currently be supplied by the service account's default scopes.
 
 In Helm, set `backend.config.credentialIssuerDefaultCode` and `backend.credentialIssuer.apsCredentialIssuerV3`.
-The base chart keeps the no-op default. Dev and PR select APS; test and prod declare their APS
-connection settings and gateway IDs but keep the no-op until their product environment appIds
-and Vault credentials are supplied. Vault injects `PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_ID` and
+The base chart and every environment use the no-op. Each environment declares its APS connection
+settings and gateway ID; dev and PR also have their product environment appIds. Select APS for an
+environment once its appId and Vault credentials are supplied. Vault injects `PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_ID` and
 `PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_SECRET` only when APS is selected. Without Vault, supply these keys through
 an existing deployment secret/environment mechanism; do not put them in ConfigMaps or values files.
 
