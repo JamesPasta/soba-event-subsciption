@@ -91,7 +91,10 @@ const quoteCell = (raw: string): string => {
 
 const csvCell = (row: ExportRow, field: string): string => {
   if (Object.hasOwn(SUBMISSION_FIELDS, field)) return quoteCell(SUBMISSION_FIELDS[field](row));
-  return quoteCell(valuesAt(row.answers, field.split('.')).map(cellText).join('; '));
+  const values = valuesAt(row.answers, field.split('.'));
+  const text = values.map(cellText).join('; ');
+  // A number cannot hold a formula, and the guard would turn a negative one into text.
+  return values.every((value) => typeof value === 'number') ? text : quoteCell(text);
 };
 
 /**

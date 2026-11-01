@@ -212,6 +212,16 @@ describe('SubmissionExport', () => {
     expect(startBody()).toEqual({ format: 'csv', layout: 'unFormattedCSVExport' });
   });
 
+  it('does not start an export on Enter in the field search', async () => {
+    await openExport();
+    const search = screen.getByRole('textbox', { name: 'Search fields' });
+
+    await userEvent.type(search, 'email{Enter}');
+
+    expect(search).toHaveValue('email');
+    expect(startSobaSubmissionExport).not.toHaveBeenCalled();
+  });
+
   it('sends only the ticked fields', async () => {
     await openExport();
 

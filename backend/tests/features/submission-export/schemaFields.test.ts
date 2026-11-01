@@ -51,11 +51,19 @@ const components: FormComponent[] = [
     input: true,
     components: [{ type: 'textfield', key: 'inner', input: true }],
   },
-  { type: 'simplefile', key: 'upload', input: true },
+  { type: 'bcgov-file', key: 'upload', input: true },
   { type: 'button', key: 'submit', input: true },
 ];
 
-describe('flattenComponents (CHEFS 1 port)', () => {
+const ADDRESS: FormComponent = {
+  type: 'address',
+  key: 'addr',
+  input: true,
+  tree: true,
+  components: [{ type: 'textfield', key: 'city', input: true }],
+};
+
+describe('flattenComponents', () => {
   it('lists answer columns in form order, skipping layout and buttons', () => {
     expect(flattenComponents(components)).toEqual([
       'name',
@@ -86,6 +94,20 @@ describe('flattenComponents (CHEFS 1 port)', () => {
         },
       ]),
     ).toEqual(['grid', 'grid.pick.a']);
+  });
+
+  it('lists a manual address, then its parts under the address key', () => {
+    expect(flattenComponents([{ ...ADDRESS, enableManualMode: true }])).toEqual([
+      'addr',
+      'addr.address.city',
+    ]);
+  });
+
+  it.each([
+    ['without manual mode', {}],
+    ['with multiple values', { enableManualMode: true, multiple: true }],
+  ])('lists only the whole address %s', (_name, settings) => {
+    expect(flattenComponents([{ ...ADDRESS, ...settings }])).toEqual(['addr']);
   });
 
   it('lists only the options that name an answer key, else the whole answer', () => {

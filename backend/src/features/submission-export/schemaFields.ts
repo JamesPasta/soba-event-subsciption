@@ -1,4 +1,4 @@
-/** Column names from a Form.io schema, ported from CHEFS 1. */
+/** Column names from a Form.io schema. */
 import { SUBMISSION_FIELDS } from './formats';
 
 /** The Form.io component fields the export reads. */
@@ -7,6 +7,8 @@ export interface FormComponent {
   type?: string;
   input?: boolean;
   tree?: boolean;
+  multiple?: boolean;
+  enableManualMode?: boolean;
   columns?: Array<{ components?: FormComponent[] }>;
   rows?: unknown[];
   components?: FormComponent[];
@@ -16,19 +18,11 @@ export interface FormComponent {
 }
 
 // Layout components with no children.
-const LAYOUT_TYPES = new Set(['htmlelement', 'content', 'simplecontent', 'button']);
+const LAYOUT_TYPES = new Set(['htmlelement', 'content', 'button']);
 // Answers keyed by option.
-const SUB_VALUE_TYPES = new Set(['simplecheckboxes', 'selectboxes', 'survey', 'tree']);
+const SUB_VALUE_TYPES = new Set(['selectboxes', 'survey']);
 // Containers whose key prefixes their children.
-const PREFIX_TYPES = new Set([
-  'datagrid',
-  'container',
-  'editgrid',
-  'address',
-  'dynamicWizard',
-  'datatable',
-  'tagpad',
-]);
+const PREFIX_TYPES = new Set(['datagrid', 'container', 'editgrid']);
 const NON_PREFIX_TYPES = new Set(['panel', 'table', 'well', 'columns', 'fieldset', 'tabs', 'form']);
 
 const join = (path: string, key: string) => (path ? `${path}.${key}` : key);
@@ -50,6 +44,8 @@ const ownPaths = (component: FormComponent, path: string): string[] => {
 const childPath = (component: FormComponent, path: string): string => {
   if (!component.key) return path;
   if (component.type === 'form') return `${join(path, component.key)}.data`;
+  // Form.io keeps an address's parts under `address`.
+  if (component.type === 'address') return `${join(path, component.key)}.address`;
   const type = component.type ?? '';
   if (!NON_PREFIX_TYPES.has(type) && (PREFIX_TYPES.has(type) || component.tree)) {
     return join(path, component.key);
@@ -58,6 +54,9 @@ const childPath = (component: FormComponent, path: string): string => {
 };
 
 const childComponents = (component: FormComponent): FormComponent[][] => {
+  // Only a manual address has parts; any other holds the provider's result.
+  const { type, enableManualMode, multiple } = component;
+  if (type === 'address' && (!enableManualMode || multiple)) return [];
   if (Array.isArray(component.columns)) return component.columns.map((c) => c.components ?? []);
   if (Array.isArray(component.rows)) {
     return component.rows.flatMap((row) =>

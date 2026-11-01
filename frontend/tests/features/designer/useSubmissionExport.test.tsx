@@ -53,6 +53,25 @@ function wrapper({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** A wrapper whose store and SWR cache outlast the hook, as the app's outlast a page. */
+function lastingWrapper() {
+  const store = makeStore();
+  store.dispatch(setToken('token'));
+  store.dispatch(setAuthenticated(true));
+  const cache = new Map();
+  return function LastingWrapper({ children }: { children: React.ReactNode }) {
+    return (
+      <Provider store={store}>
+        <SWRConfig
+          value={{ provider: () => cache, dedupingInterval: 0, shouldRetryOnError: false }}
+        >
+          {children}
+        </SWRConfig>
+      </Provider>
+    );
+  };
+}
+
 describe('useExportFields', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -64,6 +83,21 @@ describe('useExportFields', () => {
     await waitFor(() => expect(result.current.data?.fields).toEqual(['applicantName']));
     expect(getSobaExportFields).toHaveBeenCalledTimes(1);
     expect(getSobaExportFields).toHaveBeenCalledWith('token', 'f1', FILTERS);
+  });
+
+  it('reads again on a second visit, with no data until that read answers', async () => {
+    const visit = lastingWrapper();
+    getSobaExportFields.mockResolvedValueOnce({ fields: ['old'], count: 1 });
+    const first = renderHook(() => useExportFields('f1', FILTERS), { wrapper: visit });
+    await waitFor(() => expect(first.result.current.data?.count).toBe(1));
+    first.unmount();
+
+    getSobaExportFields.mockResolvedValueOnce({ fields: ['old', 'new'], count: 2 });
+    const second = renderHook(() => useExportFields('f1', FILTERS), { wrapper: visit });
+
+    expect(second.result.current.data).toBeNull();
+    await waitFor(() => expect(second.result.current.data?.count).toBe(2));
+    expect(getSobaExportFields).toHaveBeenCalledTimes(2);
   });
 
   describe('on returning to the same filters', () => {

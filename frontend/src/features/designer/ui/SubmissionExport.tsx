@@ -201,6 +201,11 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
           label={text.fieldSearch}
           value={search}
           onChange={setSearch}
+          onKeyDown={(event) => {
+            // Enter would otherwise start an export.
+            if (event.key === 'Enter') event.preventDefault();
+            else event.continuePropagation();
+          }}
           data-testid="export-field-search"
         />
         <div className="d-flex gap-2 align-items-center">
