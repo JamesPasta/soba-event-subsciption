@@ -34,6 +34,8 @@ import {
 } from '@/src/features/designer/data/useSubmissionExport';
 import {
   SUBMISSION_EXPORT_LAYOUTS,
+  SUBMISSION_EXPORT_MAX_FIELD_LENGTH,
+  SUBMISSION_EXPORT_MAX_FIELDS,
   type SubmissionExportFieldsBody,
   type SubmissionExportFormat,
   type SubmissionExportLayout,
@@ -43,6 +45,11 @@ import { SubmissionExportList } from './SubmissionExportList';
 const ALL_VERSIONS = 'all';
 
 type DateMode = 'all' | 'range';
+
+/** Whether the start route accepts these field names. */
+const startAcceptsNames = (fields: string[]) =>
+  fields.length <= SUBMISSION_EXPORT_MAX_FIELDS &&
+  fields.every((field) => field.length <= SUBMISSION_EXPORT_MAX_FIELD_LENGTH);
 
 /** Today as local YYYY-MM-DD. */
 const localToday = () => {
@@ -130,8 +137,11 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
       await starter.start(token, {
         ...filters,
         format,
-        // Absent means all; the start route limits how many fields can be named.
-        fields: picksFields && selected.length < allFields.length ? selected : undefined,
+        // Absent means all, for when the start route would refuse all of them by name.
+        fields:
+          picksFields && (selected.length < allFields.length || startAcceptsNames(selected))
+            ? selected
+            : undefined,
       });
       addNotification({ text: text.started, type: 'success' });
     } catch (cause: unknown) {

@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
-import { SWRConfig } from 'swr';
+import { SWRConfig, useSWRConfig, type Cache } from 'swr';
 
 const getSobaExportFields = vi.fn();
 const listSobaSubmissionExports = vi.fn();
@@ -89,8 +89,9 @@ describe('useExportFields', () => {
 
       rerender({ filters: FILTERS });
 
+      expect(result.current.data).toBeNull();
       await waitFor(() => expect(getSobaExportFields).toHaveBeenCalledTimes(2));
-      await waitFor(() => expect(result.current.data).toBeNull());
+      expect(result.current.data).toBeNull();
       await act(async () => answer({ fields: ['old', 'new'], count: 2 }));
       await waitFor(() =>
         expect(result.current.data).toEqual({ fields: ['old', 'new'], count: 2 }),
@@ -105,6 +106,70 @@ describe('useExportFields', () => {
 
       await waitFor(() => expect(result.current.error?.kind).toBe('failed'));
       expect(result.current.data).toBeNull();
+    });
+  });
+
+  describe('earlier answers', () => {
+    const OTHER: SubmissionExportFieldsBody = { layout: 'multiRowBackFilledCSVExport' };
+
+    const open = () =>
+      renderHook(
+        ({ filters }) => ({
+          cache: useSWRConfig().cache,
+          fields: useExportFields('f1', filters),
+        }),
+        { wrapper, initialProps: { filters: FILTERS } },
+      );
+
+    const answersIn = (cache: Cache) =>
+      [...cache.keys()].filter((key) => cache.get(key)?.data !== undefined);
+
+    it('keeps only the latest answer in the cache', async () => {
+      getSobaExportFields.mockResolvedValueOnce({ fields: ['a'], count: 1 });
+      const { result, rerender } = open();
+      await waitFor(() => expect(result.current.fields.data?.count).toBe(1));
+
+      getSobaExportFields.mockResolvedValueOnce({ fields: ['b'], count: 2 });
+      rerender({ filters: OTHER });
+      await waitFor(() => expect(result.current.fields.data?.count).toBe(2));
+
+      getSobaExportFields.mockResolvedValueOnce({ fields: ['c'], count: 3 });
+      rerender({ filters: FILTERS });
+      await waitFor(() => expect(result.current.fields.data?.count).toBe(3));
+
+      await waitFor(() => expect(answersIn(result.current.cache)).toHaveLength(1));
+    });
+
+    it('does not keep the answer of a read still running when the filters change', async () => {
+      let answer: (value: unknown) => void = () => {};
+      getSobaExportFields.mockReturnValueOnce(
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+      );
+      const { result, rerender } = open();
+      await waitFor(() => expect(getSobaExportFields).toHaveBeenCalledTimes(1));
+
+      getSobaExportFields.mockResolvedValueOnce({ fields: ['b'], count: 2 });
+      rerender({ filters: OTHER });
+      await waitFor(() => expect(result.current.fields.data?.count).toBe(2));
+
+      await act(async () => answer({ fields: ['a'], count: 1 }));
+
+      expect(result.current.fields.data?.count).toBe(2);
+      expect(answersIn(result.current.cache)).toHaveLength(1);
+    });
+
+    it('still answers under Strict Mode, which runs effects twice', async () => {
+      getSobaExportFields.mockResolvedValue({ fields: ['a'], count: 1 });
+
+      const { result } = renderHook(() => useExportFields('f1', FILTERS), {
+        wrapper: ({ children }: { children: React.ReactNode }) => (
+          <React.StrictMode>{wrapper({ children })}</React.StrictMode>
+        ),
+      });
+
+      await waitFor(() => expect(result.current.data?.count).toBe(1));
     });
   });
 

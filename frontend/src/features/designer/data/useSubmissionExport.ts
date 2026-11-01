@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSWRConfig, type SWRConfiguration } from 'swr';
 import {
   getSobaExportFields,
@@ -51,30 +51,44 @@ export function useExportForm(
   };
 }
 
-const exportFieldsReadConfig: SWRConfiguration = {
-  ...sessionReadConfig,
-  revalidateIfStale: true,
-  dedupingInterval: 0,
+const EXPORT_FIELDS_KEY = 'submission-export-fields';
+
+let exportFieldReads = 0;
+const nextExportFieldRead = () => {
+  exportFieldReads += 1;
+  return exportFieldReads;
 };
 
 /**
  * The fields an export with these filters can include; null filters wait. Publishing or a new
- * submission changes the answer, so it is read on each visit and filter change, with `data` null
- * while that read runs or after it fails. SWR starts the read on the next frame, so a cached answer
- * is returned for one render first.
+ * submission changes the answer, so each visit and filter change reads under its own key, and
+ * `data` is null until that read answers.
  */
 export function useExportFields(
   formId: string,
   filters: SubmissionExportFieldsBody | null,
 ): Resource<SubmissionExportFieldsResponse> {
-  const { data, isValidating, error, mutate } = useAuthedSWR(
-    filters ? ['submission-export-fields', formId, JSON.stringify(filters)] : null,
-    (token) => getSobaExportFields(token, formId, filters!),
-    exportFieldsReadConfig,
+  const filtersText = filters && JSON.stringify(filters);
+  const key = useMemo(
+    () => (filtersText ? [EXPORT_FIELDS_KEY, formId, filtersText, nextExportFieldRead()] : null),
+    [formId, filtersText],
   );
+  const { data, isLoading, error, mutate } = useAuthedSWR(
+    key,
+    (token) => getSobaExportFields(token, formId, filters!),
+    sessionReadConfig,
+  );
+  const { mutate: globalMutate } = useSWRConfig();
+  // Drops earlier answers and discards a read still running; those keys are not used again.
+  useEffect(() => {
+    if (!key) return;
+    const isEarlierRead = (other: unknown) =>
+      Array.isArray(other) && other[0] === EXPORT_FIELDS_KEY && other[3] !== key[3];
+    void globalMutate(isEarlierRead, undefined, { revalidate: false });
+  }, [globalMutate, key]);
   return {
-    data: isValidating || error ? null : (data ?? null),
-    isLoading: isValidating,
+    data: data ?? null,
+    isLoading,
     error: error ? classifyDataError(error) : null,
     refresh: async () => {
       await mutate();

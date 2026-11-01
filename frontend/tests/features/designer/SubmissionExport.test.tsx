@@ -39,7 +39,11 @@ import { setAuthenticated, setToken } from '@/lib/slices/keycloakSlice';
 import { ApiError } from '@/src/shared/api/sobaHelpers';
 import { PageLayout } from '@/src/components/PageLayout';
 import { SubmissionExport } from '@/src/features/designer/ui/SubmissionExport';
-import type { SubmissionExport as SubmissionExportRecord } from '@/src/types/submissionExport';
+import {
+  SUBMISSION_EXPORT_MAX_FIELD_LENGTH,
+  SUBMISSION_EXPORT_MAX_FIELDS,
+  type SubmissionExport as SubmissionExportRecord,
+} from '@/src/types/submissionExport';
 
 const FIELDS = ['form.confirmationId', 'applicantName', 'applicantEmail'];
 const FIRST_LAYOUT = 'multiRowEmptySpacesCSVExport';
@@ -250,13 +254,13 @@ describe('SubmissionExport', () => {
     expect(screen.queryByTestId('export-range')).toBeNull();
     await waitFor(() => expect(exportButton()).not.toBeDisabled());
     await click(exportButton());
-    expect(startBody()).toEqual({ format: 'csv', layout: FIRST_LAYOUT });
+    expect(startBody()).toEqual({ format: 'csv', layout: FIRST_LAYOUT, fields: FIELDS });
 
     await click(radio('Date range'));
     expect(segmentValues('export-from')).toEqual(entered);
     await waitFor(() => expect(exportButton()).not.toBeDisabled());
     await click(exportButton());
-    expect(startBody()).toEqual({ format: 'csv', layout: FIRST_LAYOUT, ...RANGE });
+    expect(startBody()).toEqual({ format: 'csv', layout: FIRST_LAYOUT, fields: FIELDS, ...RANGE });
   });
 
   it('offers published and archived versions, not a draft', async () => {
@@ -279,13 +283,48 @@ describe('SubmissionExport', () => {
     ]);
   });
 
-  it('sends no field names when every field is ticked', async () => {
+  it('names every field shown when all are ticked', async () => {
     await openExport();
     expect(screen.getByTestId('export-fields-count')).toHaveTextContent('3 of 3 fields selected');
 
     await click(exportButton());
 
-    expect(startBody()).toEqual({ format: 'csv', layout: FIRST_LAYOUT });
+    expect(startBody()).toEqual({ format: 'csv', layout: FIRST_LAYOUT, fields: FIELDS });
+  });
+
+  it.each([
+    [
+      'more fields than the start route accepts',
+      Array.from({ length: SUBMISSION_EXPORT_MAX_FIELDS + 1 }, (_, index) => `field${index}`),
+    ],
+    [
+      'a name longer than the start route accepts',
+      ['name', 'x'.repeat(SUBMISSION_EXPORT_MAX_FIELD_LENGTH + 1)],
+    ],
+  ])(
+    'sends no names when all are ticked, with %s',
+    async (_why, fields) => {
+      getSobaExportFields.mockResolvedValue({ fields, count: 1 });
+      await openExport();
+
+      await click(exportButton());
+
+      expect(startBody()).toEqual({ format: 'csv', layout: FIRST_LAYOUT });
+    },
+    // A thousand checkboxes take a while to render on a slow runner.
+    20_000,
+  );
+
+  it('cannot export on returning to earlier filters until the new read answers', async () => {
+    await openExport();
+    await click(radio('2 - Multiple rows per submission'));
+    await screen.findByTestId('export-fields');
+    getSobaExportFields.mockReturnValue(new Promise(() => {}));
+
+    await click(radio('1 - Multiple rows per submission with indentation spaces'));
+
+    expect(exportButton()).toBeDisabled();
+    expect(screen.queryByTestId('export-submission-count')).toBeNull();
   });
 
   it('reads the count and fields again on returning to the same filters', async () => {

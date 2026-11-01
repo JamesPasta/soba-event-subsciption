@@ -228,9 +228,26 @@ export const getLiveForm = async (
 };
 
 /**
- * The form's published and archived versions' engine schema refs, newest version first; only
- * `formVersionId`'s when given. Drafts, deleted versions and versions not in the engine are left out.
+ * The form's published and archived versions; only `formVersionId` when given. Drafts, deleted
+ * versions and versions not in the engine are left out.
  */
+export const exportSchemaRefsWhere = (
+  workspaceId: string,
+  formId: string,
+  formVersionId?: string,
+) =>
+  and(
+    eq(formVersions.workspaceId, workspaceId),
+    eq(formVersions.formId, formId),
+    formVersionId ? eq(formVersions.id, formVersionId) : undefined,
+    inArray(formVersions.state, [FormVersionState.published, FormVersionState.archived]),
+    isNull(formVersions.deletedAt),
+    isNotNull(formVersions.engineSchemaRef),
+  );
+
+export const newestVersionFirst = desc(formVersions.versionNo);
+
+/** The engine schema refs of the versions an export covers, newest version first. */
 export const exportSchemaRefs = async (
   workspaceId: string,
   formId: string,
@@ -239,17 +256,8 @@ export const exportSchemaRefs = async (
   const rows = await quietDb
     .select({ ref: sql<string>`${formVersions.engineSchemaRef}` })
     .from(formVersions)
-    .where(
-      and(
-        eq(formVersions.workspaceId, workspaceId),
-        eq(formVersions.formId, formId),
-        formVersionId ? eq(formVersions.id, formVersionId) : undefined,
-        inArray(formVersions.state, [FormVersionState.published, FormVersionState.archived]),
-        isNull(formVersions.deletedAt),
-        isNotNull(formVersions.engineSchemaRef),
-      ),
-    )
-    .orderBy(desc(formVersions.versionNo));
+    .where(exportSchemaRefsWhere(workspaceId, formId, formVersionId))
+    .orderBy(newestVersionFirst);
   return rows.map((row) => row.ref);
 };
 
