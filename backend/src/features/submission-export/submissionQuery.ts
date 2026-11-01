@@ -13,6 +13,8 @@ const toRecord = (row: ExportSubmissionRow): SubmissionRecord => ({
   versionId: row.versionId,
   submittedAt: row.submittedAt.toISOString(),
   submitter: row.submitter,
+  username: row.username,
+  email: row.email,
   engineSchemaRef: row.engineSchemaRef,
   engineSubmissionRef: row.engineSubmissionRef,
 });

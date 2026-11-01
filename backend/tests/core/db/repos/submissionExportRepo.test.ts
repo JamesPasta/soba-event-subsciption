@@ -5,7 +5,10 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import {
   activeExportsOf,
   afterExportSubmission,
+  exportSchemaRefsWhere,
+  exportSubmissionColumns,
   exportSubmissionsWhere,
+  newestVersionFirst,
   ownExports,
 } from '../../../../src/core/db/repos/submissionExportRepo';
 
@@ -29,6 +32,33 @@ describe('activeExportsOf', () => {
     expect(render(activeExportsOf('form-1'))).toMatchObject({
       sql: '("soba"."job"."type" = $1 and "soba"."job"."form_id" = $2 and "soba"."job"."status" in ($3, $4))',
       params: ['submission-export', 'form-1', 'queued', 'running'],
+    });
+  });
+});
+
+// The field list comes from these versions only; never a draft or a deleted version.
+describe('exportSchemaRefsWhere', () => {
+  const COVERED =
+    '"soba"."form_version"."deleted_at" is null and "soba"."form_version"."engine_schema_ref" is not null';
+
+  it('reads the published and archived versions in the engine', () => {
+    expect(render(exportSchemaRefsWhere('ws-1', 'form-1'))).toMatchObject({
+      sql: `("soba"."form_version"."workspace_id" = $1 and "soba"."form_version"."form_id" = $2 and "soba"."form_version"."state" in ($3, $4) and ${COVERED})`,
+      params: ['ws-1', 'form-1', 'published', 'archived'],
+    });
+  });
+
+  it('narrows to the chosen version, under the same conditions', () => {
+    expect(render(exportSchemaRefsWhere('ws-1', 'form-1', 'v-1'))).toMatchObject({
+      sql: `("soba"."form_version"."workspace_id" = $1 and "soba"."form_version"."form_id" = $2 and "soba"."form_version"."id" = $3 and "soba"."form_version"."state" in ($4, $5) and ${COVERED})`,
+      params: ['ws-1', 'form-1', 'v-1', 'published', 'archived'],
+    });
+  });
+
+  it('puts the newest version first', () => {
+    expect(render(newestVersionFirst)).toMatchObject({
+      sql: '"soba"."form_version"."version_no" desc',
+      params: [],
     });
   });
 });
@@ -58,6 +88,33 @@ describe('exportSubmissionsWhere', () => {
         params: ['ws-1', 'form-1', 'v-1', 'submitted', from.toISOString(), to.toISOString()],
       }),
     );
+  });
+});
+
+// Username and email are the signed-in submitter's; nobody signed in leaves both blank.
+describe('exportSubmissionColumns', () => {
+  const ANONYMOUS =
+    'case when "soba"."app_user"."id" is null or "soba"."user_identity"."id" is not null then';
+
+  it('reads the username, else the display label, and blank for an anonymous submitter', () => {
+    expect(render(exportSubmissionColumns.username)).toMatchObject({
+      sql: `${ANONYMOUS} '' else coalesce("soba"."app_user"."profile"->>'preferredUsername', "soba"."app_user"."display_label", '') end`,
+      params: [],
+    });
+  });
+
+  it('reads the email, and blank for an anonymous submitter', () => {
+    expect(render(exportSubmissionColumns.email)).toMatchObject({
+      sql: `${ANONYMOUS} '' else coalesce("soba"."app_user"."profile"->>'email', '') end`,
+      params: [],
+    });
+  });
+
+  it('still names an anonymous submitter public', () => {
+    expect(render(exportSubmissionColumns.submitter)).toMatchObject({
+      sql: `${ANONYMOUS} $1 else coalesce("soba"."app_user"."display_label", '') end`,
+      params: ['public'],
+    });
   });
 });
 

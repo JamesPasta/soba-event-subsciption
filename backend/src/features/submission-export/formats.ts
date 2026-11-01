@@ -23,12 +23,14 @@ export interface ExportFormatDefinition {
 }
 
 /** The submission's own facts, under the `form.` names CHEFS exports use. */
-const SUBMISSION_FIELDS: Record<string, (row: ExportRow) => string> = {
+export const SUBMISSION_FIELDS: Record<string, (row: ExportRow) => string> = {
   'form.confirmationId': (row) => row.confirmationCode,
   'form.submissionId': (row) => row.submissionId,
   'form.formVersionId': (row) => row.versionId,
   'form.submittedAt': (row) => row.submittedAt,
   'form.submitter': (row) => row.submitter,
+  'form.username': (row) => row.username,
+  'form.email': (row) => row.email,
 };
 
 const submissionFacts = (row: ExportRow): Record<string, string> =>
@@ -56,13 +58,18 @@ export const jsonFormat: ExportFormatDefinition = {
   },
 };
 
-/** The values at a dotted path; a list along the way gives one value per item. */
+/**
+ * The values at a dotted path; a list along the way gives one value per item. An option's value can
+ * hold dots, so the key is the longest run of the path's parts that matches one.
+ */
 const valuesAt = (value: unknown, path: string[]): unknown[] => {
   if (path.length === 0) return value === undefined ? [] : [value];
   if (Array.isArray(value)) return value.flatMap((item) => valuesAt(item, path));
   if (value === null || typeof value !== 'object') return [];
-  const [head, ...rest] = path;
-  return valuesAt((value as Record<string, unknown>)[head], rest);
+  const answers = value as Record<string, unknown>;
+  const keys = path.map((_, index) => path.slice(0, index + 1).join('.'));
+  const found = keys.findLastIndex((key) => Object.hasOwn(answers, key));
+  return found < 0 ? [] : valuesAt(answers[keys[found]], path.slice(found + 1));
 };
 
 /** An answer as cell text; answers are JSON, so anything not a scalar is written as JSON. */
@@ -83,9 +90,11 @@ const quoteCell = (raw: string): string => {
 };
 
 const csvCell = (row: ExportRow, field: string): string => {
-  const submissionField = SUBMISSION_FIELDS[field];
-  if (submissionField) return quoteCell(submissionField(row));
-  return quoteCell(valuesAt(row.answers, field.split('.')).map(cellText).join('; '));
+  if (Object.hasOwn(SUBMISSION_FIELDS, field)) return quoteCell(SUBMISSION_FIELDS[field](row));
+  const values = valuesAt(row.answers, field.split('.'));
+  const text = values.map(cellText).join('; ');
+  // A number cannot hold a formula, and the guard would turn a negative one into text.
+  return values.every((value) => typeof value === 'number') ? text : quoteCell(text);
 };
 
 /**

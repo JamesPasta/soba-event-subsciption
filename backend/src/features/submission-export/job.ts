@@ -12,9 +12,10 @@ import { getLiveForm, insertExportAudit } from '../../core/db/repos/submissionEx
 import { getTempStorageAdapter } from '../../core/integrations/plugins/PluginRegistry';
 import type { JobContext, JobTypeDefinition } from '../../core/jobs/registry';
 import { JobCancelledError, JobFailedError } from '../../core/jobs/settlement';
-import { engineExportSource, formAnswerReader } from './engineSource';
+import { engineExportSource, exportSchemas, formAnswerReader } from './engineSource';
 import { exportFormat } from './formats';
-import { sampleExportFields, type ExportBounds } from './source';
+import { exportFieldNames } from './schemaFields';
+import { exportBoundsOf } from './source';
 import { submissionExportQuery } from './submissionQuery';
 
 export const SUBMISSION_EXPORT_MAX_ATTEMPTS = 3;
@@ -114,13 +115,8 @@ const runExport = async ({
   await stillAllowed(job);
 
   const format = exportFormat(params.format);
-  const bounds: ExportBounds = {
-    workspaceId: job.workspaceId,
-    formId: job.formId,
-    formVersionId: params.formVersionId,
-    from: params.from ? new Date(params.from) : undefined,
-    to: new Date(params.to),
-  };
+  const bounds = exportBoundsOf(job.workspaceId, job.formId, params);
+  const schemas = await exportSchemas(job.workspaceId, job.formId, params.formVersionId);
   const source = engineExportSource(
     submissionExportQuery,
     await formAnswerReader(job.workspaceId, job.formId),
@@ -149,11 +145,9 @@ const runExport = async ({
       },
     );
     const text = format.serialize(rows, {
-      // Placeholder: with no fields chosen, the sample fields rather than the form's.
-      fields: params.fields ?? sampleExportFields(),
+      fields: params.fields ?? exportFieldNames(schemas),
       layout: params.layout,
-      // Placeholder: the form version schemas are not loaded.
-      schemas: [],
+      schemas,
     });
     await pipeline(Readable.from(text), sizeLimit(resultMaxBytes), createWriteStream(staged.path), {
       signal,

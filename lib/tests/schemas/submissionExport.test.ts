@@ -5,6 +5,7 @@ import {
   SUBMISSION_EXPORT_MAX_FIELDS,
   SUBMISSION_EXPORT_STATUSES,
   SubmissionExportFieldsBodySchema,
+  SubmissionExportFieldsResponseSchema,
   SubmissionExportSchema,
 } from '../../src/schemas/submissionExport';
 
@@ -53,6 +54,19 @@ describe('SubmissionExportFieldsBodySchema', () => {
 
   it('refuses a range ending before it starts', () => {
     expect(SubmissionExportFieldsBodySchema.safeParse({ from: TO, to: FROM }).success).toBe(false);
+  });
+});
+
+describe('SubmissionExportFieldsResponseSchema', () => {
+  it('needs the fields and a whole-number count', () => {
+    expect(
+      SubmissionExportFieldsResponseSchema.safeParse({ fields: ['form.submitter'], count: 0 })
+        .success,
+    ).toBe(true);
+    expect(SubmissionExportFieldsResponseSchema.safeParse({ fields: [] }).success).toBe(false);
+    expect(SubmissionExportFieldsResponseSchema.safeParse({ fields: [], count: 1.5 }).success).toBe(
+      false,
+    );
   });
 });
 

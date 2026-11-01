@@ -1,4 +1,7 @@
+import { ApiErrorCodes } from '@soba/lib';
 import { getFormEngineCodeForForm } from '../../core/db/repos/formRepo';
+import { exportSchemaRefs } from '../../core/db/repos/submissionExportRepo';
+import { InternalError } from '../../core/errors';
 import { mapInOrder } from '../../core/inOrder';
 import type {
   FormEngineAdapter,
@@ -7,6 +10,8 @@ import type {
 } from '../../core/integrations/form-engine/FormEngineAdapter';
 import { createFormEngineAdapter } from '../../core/integrations/form-engine/FormEngineRegistry';
 import { JobFailedError } from '../../core/jobs/settlement';
+import { log } from '../../core/logging';
+import { readEngineSchema } from '../../core/services/engineSchema';
 import type { ExportBounds, ExportRow, ExportRowsOptions, ExportSource } from './source';
 
 /** One submission as the submissions query returns it, before its answers are read. */
@@ -17,6 +22,9 @@ export interface SubmissionRecord {
   submittedAt: string;
   /** Who submitted it, or `public`. */
   submitter: string;
+  /** The submitter's username and email; blank for an anonymous submission. */
+  username: string;
+  email: string;
   /** The version's form in the engine; null when the version never reached it. */
   engineSchemaRef: string | null;
   /** The submission's document in the engine; null when it never reached it. */
@@ -67,12 +75,65 @@ export const formAnswerReader = async (
   return bulkAnswerReader(createFormEngineAdapter(engineCode), options);
 };
 
+const isMissingDocument = (err: unknown): boolean =>
+  err instanceof InternalError && err.code === ApiErrorCodes.engine_document_missing;
+
+/** A version's schema; null when the engine no longer has its document. */
+const readExportSchema = async (
+  engineCode: string,
+  formId: string,
+  engineRef: string,
+): Promise<Record<string, unknown> | null> => {
+  try {
+    return await readEngineSchema(engineCode, engineRef);
+  } catch (err) {
+    if (!isMissingDocument(err)) throw err;
+    log.warn({ formId, engineRef }, 'Form engine document missing; fields left out of export');
+    return null;
+  }
+};
+
+/**
+ * The schemas of the form's versions an export covers, newest version first, read one at a time.
+ * A form without an engine, or a version the engine has no schema for, adds none.
+ */
+export const exportSchemas = async (
+  workspaceId: string,
+  formId: string,
+  formVersionId?: string,
+): Promise<Record<string, unknown>[]> => {
+  const engineCode = await getFormEngineCodeForForm(workspaceId, formId);
+  if (!engineCode) return [];
+  const refs = await exportSchemaRefs(workspaceId, formId, formVersionId);
+  const schemas = await mapInOrder(refs, (ref) => readExportSchema(engineCode, formId, ref));
+  return schemas.filter((schema) => schema !== null);
+};
+
 /** The answers in an engine document, which keeps them under `data`. */
 const answersIn = (doc: Record<string, unknown>): Record<string, unknown> => {
   const { data } = doc;
   return data !== null && typeof data === 'object' && !Array.isArray(data)
     ? (data as Record<string, unknown>)
     : {};
+};
+
+/** One engine form's documents; every one is missing when the engine no longer has the form. */
+const readFormDocuments = async (
+  read: ReadAnswers,
+  engineRef: string,
+  refs: string[],
+  signal: AbortSignal,
+): Promise<ReadSubmissionsResult> => {
+  try {
+    return await read(engineRef, refs, signal);
+  } catch (err) {
+    if (!isMissingDocument(err)) throw err;
+    log.warn(
+      { engineRef, count: refs.length },
+      'Form engine document missing; submissions left out of export',
+    );
+    return { found: new Map(), missing: refs };
+  }
 };
 
 /** A page's documents by engine ref, read one engine form at a time. */
@@ -89,7 +150,7 @@ const readPage = async (
     refsByForm.set(engineSchemaRef, refs);
   });
   const results = await mapInOrder([...refsByForm], ([formRef, refs]) =>
-    read(formRef, refs, signal),
+    readFormDocuments(read, formRef, refs, signal),
   );
   return new Map(results.flatMap(({ found }) => [...found]));
 };
@@ -112,6 +173,8 @@ const pageRows = async (
         versionId: record.versionId,
         submittedAt: record.submittedAt,
         submitter: record.submitter,
+        username: record.username,
+        email: record.email,
         answers: answersIn(doc),
       },
     ];

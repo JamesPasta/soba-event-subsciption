@@ -34,6 +34,8 @@ import {
 } from '@/src/features/designer/data/useSubmissionExport';
 import {
   SUBMISSION_EXPORT_LAYOUTS,
+  SUBMISSION_EXPORT_MAX_FIELD_LENGTH,
+  SUBMISSION_EXPORT_MAX_FIELDS,
   type SubmissionExportFieldsBody,
   type SubmissionExportFormat,
   type SubmissionExportLayout,
@@ -43,6 +45,11 @@ import { SubmissionExportList } from './SubmissionExportList';
 const ALL_VERSIONS = 'all';
 
 type DateMode = 'all' | 'range';
+
+/** Whether the start route accepts these field names. */
+const startAcceptsNames = (fields: string[]) =>
+  fields.length <= SUBMISSION_EXPORT_MAX_FIELDS &&
+  fields.every((field) => field.length <= SUBMISSION_EXPORT_MAX_FIELD_LENGTH);
 
 /** Today as local YYYY-MM-DD. */
 const localToday = () => {
@@ -68,7 +75,7 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
   const form = useExportForm(formId);
   const starter = useSubmissionExportStarter(formId);
   usePageHeading({ heading: text.pageTitle, eyebrow: form.data?.name });
-  // Placeholder: says the field list is sample data.
+  // Placeholder: says the CSV formats are not applied yet.
   usePageNotices([{ id: 'submission-export-sample', variant: 'info', body: text.sampleNotice }]);
 
   const [format, setFormat] = useState<SubmissionExportFormat>('csv');
@@ -130,7 +137,11 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
       await starter.start(token, {
         ...filters,
         format,
-        fields: picksFields ? selected : undefined,
+        // Absent means all, for when the start route would refuse all of them by name.
+        fields:
+          picksFields && (selected.length < allFields.length || startAcceptsNames(selected))
+            ? selected
+            : undefined,
       });
       addNotification({ text: text.started, type: 'success' });
     } catch (cause: unknown) {
@@ -144,7 +155,7 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
     }
   };
 
-  // No fields until the read for the current filters answers, so a stale list cannot be sent.
+  // No fields while the read for the current filters runs, so an old list is not sent.
   const canStart =
     !!filters &&
     !!fields.data &&
@@ -156,6 +167,12 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
     if (!id) return text.allVersions;
     const versionNo = form.data?.versions.find((version) => version.id === id)?.versionNo;
     return fillTemplate(text.versionOption, { version: String(versionNo ?? id) });
+  };
+
+  const countText = (count: number) => {
+    if (count === 0) return text.submissionCountNone;
+    if (count === 1) return text.submissionCountOne;
+    return fillTemplate(text.submissionCount, { count: String(count) });
   };
 
   const renderFields = () => {
@@ -184,6 +201,11 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
           label={text.fieldSearch}
           value={search}
           onChange={setSearch}
+          onKeyDown={(event) => {
+            // Enter would otherwise start an export.
+            if (event.key === 'Enter') event.preventDefault();
+            else event.continuePropagation();
+          }}
           data-testid="export-field-search"
         />
         <div className="d-flex gap-2 align-items-center">
@@ -240,7 +262,9 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
     if (!form.data) return <CenteredProgress label={dict.general.loading} />;
     const versionItems = [
       { id: ALL_VERSIONS, label: text.allVersions },
-      ...[...form.data.versions]
+      // A draft has no submissions to export.
+      ...form.data.versions
+        .filter((version) => version.state !== 'draft')
         .sort((a, b) => b.versionNo - a.versionNo)
         .map((version) => ({ id: version.id, label: versionLabel(version.id) })),
     ];
@@ -332,6 +356,11 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
           </RadioGroup>
         ) : null}
         {renderFields()}
+        {fields.data ? (
+          <SecondaryText data-testid="export-submission-count">
+            {countText(fields.data.count)}
+          </SecondaryText>
+        ) : null}
         <div>
           <Button
             type="submit"

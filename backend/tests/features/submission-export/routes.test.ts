@@ -109,6 +109,18 @@ describe('submission export routes', () => {
     expect(Object.values(service).some((fn) => fn.mock.calls.length > 0)).toBe(false);
   });
 
+  it('answers the field list and the count for the caller on the form, with its filters', async () => {
+    const answer = { fields: ['form.confirmationId', 'name'], count: 3 };
+    service.fields.mockResolvedValue(answer);
+    const body = { formVersionId: EXPORT_ID, from: '2026-10-01T07:00:00.000Z' };
+
+    const response = await request(app).post(`${EXPORTS}/fields`).send(body);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(answer);
+    expect(service.fields).toHaveBeenCalledWith(CONTEXT, body);
+  });
+
   it('starts an export for the caller on the form, with the filters it was given', async () => {
     service.start.mockResolvedValue(QUEUED as never);
 

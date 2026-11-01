@@ -1,5 +1,6 @@
 import { csvFormat, jsonFormat } from '../../../src/features/submission-export/formats';
 import { exportFileName } from '../../../src/features/submission-export/job';
+import { flattenComponents } from '../../../src/features/submission-export/schemaFields';
 import type { ExportRow } from '../../../src/features/submission-export/source';
 
 const rows: ExportRow[] = [
@@ -9,6 +10,8 @@ const rows: ExportRow[] = [
     versionId: 'v1',
     submittedAt: '2026-10-01T16:05:00.000Z',
     submitter: 'Sam',
+    username: 'sam.sample',
+    email: 'sam.sample@example.com',
     answers: {
       applicantName: 'Morgan "Mo", Test',
       notes: 'line one\nline two',
@@ -25,6 +28,8 @@ const rows: ExportRow[] = [
     versionId: 'v1',
     submittedAt: '2026-10-02T16:05:00.000Z',
     submitter: 'public',
+    username: '',
+    email: '',
     answers: {},
   },
 ];
@@ -46,6 +51,8 @@ describe('csvFormat (placeholder)', () => {
         fields: [
           'form.confirmationId',
           'form.submitter',
+          'form.username',
+          'form.email',
           'applicantName',
           'notes',
           'dependants.name',
@@ -57,29 +64,93 @@ describe('csvFormat (placeholder)', () => {
     );
     expect(text).toBe(
       [
-        'form.confirmationId,form.submitter,applicantName,notes,dependants.name,address,missing',
-        'AB12CD34,Sam,"Morgan ""Mo"", Test","line one\nline two",Casey; Riley,"{""city"":""Victoria""}",',
-        'EF56GH78,public,,,,,',
+        'form.confirmationId,form.submitter,form.username,form.email,applicantName,notes,dependants.name,address,missing',
+        'AB12CD34,Sam,sam.sample,sam.sample@example.com,"Morgan ""Mo"", Test","line one\nline two",Casey; Riley,"{""city"":""Victoria""}",',
+        'EF56GH78,public,,,,,,,',
         '',
       ].join('\r\n'),
     );
   });
+
+  it('finds an answer whose option value holds dots', async () => {
+    const answers = { pick: { '1': true, '1.5': false } };
+    const text = await collect(
+      csvFormat.serialize(each([{ ...rows[1], answers }]), {
+        fields: ['pick.1', 'pick.1.5'],
+        schemas: [],
+      }),
+    );
+    expect(text.split('\r\n')[1]).toBe('true,false');
+  });
+
+  it('finds the parts of a manual address under its address key', async () => {
+    const answers = {
+      addr: { mode: 'manual', address: { address1: '1 Main St', city: 'Victoria' } },
+    };
+    const text = await collect(
+      csvFormat.serialize(each([{ ...rows[1], answers }]), {
+        fields: flattenComponents([
+          {
+            type: 'address',
+            key: 'addr',
+            input: true,
+            tree: true,
+            enableManualMode: true,
+            components: [
+              { type: 'textfield', key: 'address1', input: true },
+              { type: 'textfield', key: 'city', input: true },
+            ],
+          },
+        ]).slice(1),
+        schemas: [],
+      }),
+    );
+
+    expect(text.split('\r\n')[1]).toBe('1 Main St,Victoria');
+  });
+
+  it('reads a field named like an inherited property as an answer', async () => {
+    const answers = { constructor: 'built' };
+    const text = await collect(
+      csvFormat.serialize(each([{ ...rows[1], answers }]), {
+        fields: ['constructor', 'valueOf', '__proto__'],
+        schemas: [],
+      }),
+    );
+    expect(text.split('\r\n')[1]).toBe('built,,');
+  });
 });
 
 describe('csvFormat formula guard', () => {
+  const cellOf = async (answer: unknown, field = 'note'): Promise<string> => {
+    const text = await collect(
+      csvFormat.serialize(each([{ ...rows[1], answers: { note: answer } }]), {
+        fields: [field],
+        schemas: [],
+      }),
+    );
+    return text.split('\r\n')[1];
+  };
+
   it.each(['=HYPERLINK("http://x")', '+1', '-2', '@SUM(A1)', '\tx'])(
     'writes %j so a spreadsheet reads it as text',
     async (value) => {
-      const text = await collect(
-        csvFormat.serialize(each([{ ...rows[1], answers: { note: value } }]), {
-          fields: ['note'],
-          schemas: [],
-        }),
-      );
-      const cell = text.split('\r\n')[1];
+      const cell = await cellOf(value);
       expect(cell.replace(/^"|"$/g, '').startsWith(`'`)).toBe(true);
     },
   );
+
+  it('leaves a number answer as a number', async () => {
+    expect(await cellOf(-5)).toBe('-5');
+  });
+
+  it('leaves a grid of number answers as numbers', async () => {
+    expect(await cellOf([{ years: -1 }, { years: 2 }], 'note.years')).toBe('-1; 2');
+  });
+
+  it('guards a grid cell when any of its answers is text', async () => {
+    expect(await cellOf([{ years: -1 }, { years: '=2' }], 'note.years')).toBe(`'-1; =2`);
+  });
 });
 
 describe('jsonFormat', () => {
@@ -108,9 +179,12 @@ describe('jsonFormat', () => {
         formVersionId: 'v1',
         submittedAt: '2026-10-01T16:05:00.000Z',
         submitter: 'Sam',
+        username: 'sam.sample',
+        email: 'sam.sample@example.com',
       },
       ...rows[0].answers,
     });
+    expect(parsed[1].form).toMatchObject({ submitter: 'public', username: '', email: '' });
   });
 
   it('writes an empty array when there is nothing to export', async () => {

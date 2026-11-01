@@ -1,3 +1,5 @@
+import { ApiErrorCodes } from '@soba/lib';
+import { InternalError } from '../../../src/core/errors';
 import type {
   FormEngineAdapter,
   ReadSubmissionsResult,
@@ -24,6 +26,8 @@ const record = (
   versionId: `version-of-${engineSchemaRef}`,
   submittedAt: '2026-10-01T16:05:00.000Z',
   submitter: 'Sam',
+  username: 'sam.sample',
+  email: 'sam.sample@example.com',
   engineSchemaRef,
   engineSubmissionRef,
 });
@@ -89,6 +93,8 @@ describe('engineExportSource', () => {
         versionId: 'version-of-v1',
         submittedAt: '2026-10-01T16:05:00.000Z',
         submitter: 'Sam',
+        username: 'sam.sample',
+        email: 'sam.sample@example.com',
         answers: { ref: 'doc-a' },
       },
     ]);
@@ -109,6 +115,33 @@ describe('engineExportSource', () => {
       { formRef: 'v1', refs: ['doc-a', 'doc-b'] },
       { formRef: 'v1', refs: ['doc-e'] },
     ]);
+  });
+
+  it('counts the submissions of a form the engine no longer has, and keeps the rest', async () => {
+    const { read } = engine();
+    const readUnlessGone: ReadAnswers = (formRef, refs, signal) =>
+      formRef === 'gone'
+        ? Promise.reject(
+            new InternalError(
+              'Form engine document is missing',
+              ApiErrorCodes.engine_document_missing,
+            ),
+          )
+        : read(formRef, refs, signal);
+    const page = [record('a', 'v2'), record('b', 'gone'), record('c', 'gone')];
+
+    const { rows, unread } = await run(engineExportSource(queryOf([page]), readUnlessGone));
+
+    expect(rows.map((row) => row.submissionId)).toEqual(['a']);
+    expect(unread).toEqual([2]);
+  });
+
+  it('fails when the engine cannot be read', async () => {
+    const read: ReadAnswers = () => Promise.reject(new Error('engine down'));
+
+    const rows = run(engineExportSource(queryOf([[record('a', 'v1')]]), read));
+
+    await expect(rows).rejects.toThrow('engine down');
   });
 
   it('passes the signal to the engine and stops at the next page once aborted', async () => {
