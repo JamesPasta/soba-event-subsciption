@@ -1,4 +1,4 @@
-import { and, asc, count, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
   DEFAULT_SORT_LOCALE,
@@ -10,6 +10,7 @@ import { quietDb, type DbOrTx } from '../client';
 import { readListPage } from '../listRead';
 import { orderByForSort, type SortColumns } from '../listSort';
 import {
+  FormVersionState,
   JobStatus,
   JobType,
   PUBLIC_PROVIDER_CODE,
@@ -226,6 +227,32 @@ export const getLiveForm = async (
   return row ?? null;
 };
 
+/**
+ * The form's published and archived versions' engine schema refs, newest version first; only
+ * `formVersionId`'s when given. Drafts, deleted versions and versions not in the engine are left out.
+ */
+export const exportSchemaRefs = async (
+  workspaceId: string,
+  formId: string,
+  formVersionId?: string,
+): Promise<string[]> => {
+  const rows = await quietDb
+    .select({ ref: sql<string>`${formVersions.engineSchemaRef}` })
+    .from(formVersions)
+    .where(
+      and(
+        eq(formVersions.workspaceId, workspaceId),
+        eq(formVersions.formId, formId),
+        formVersionId ? eq(formVersions.id, formVersionId) : undefined,
+        inArray(formVersions.state, [FormVersionState.published, FormVersionState.archived]),
+        isNull(formVersions.deletedAt),
+        isNotNull(formVersions.engineSchemaRef),
+      ),
+    )
+    .orderBy(desc(formVersions.versionNo));
+  return rows.map((row) => row.ref);
+};
+
 /** Which of a form's submissions an export reads. */
 export interface ExportSubmissionRange {
   workspaceId: string;
@@ -277,11 +304,15 @@ export interface ExportSubmissionRow {
   submittedAtText: string;
   /** The submitter's display label, or `public` for an anonymous submission. */
   submitter: string;
+  /** The submitter's username, else display label; blank for an anonymous submission. */
+  username: string;
+  /** The submitter's email; blank for an anonymous submission. */
+  email: string;
   engineSchemaRef: string | null;
   engineSubmissionRef: string | null;
 }
 
-const exportSubmissionColumns = {
+export const exportSubmissionColumns = {
   submissionId: submissions.id,
   confirmationCode: submissions.confirmationCode,
   versionId: submissions.formVersionId,
@@ -289,6 +320,8 @@ const exportSubmissionColumns = {
   submittedAt: sql<Date>`${submissions.submittedAt}`.mapWith(submissions.submittedAt),
   submittedAtText: sql<string>`${submissions.submittedAt}::text`,
   submitter: sql<string>`case when ${appUsers.id} is null or ${userIdentities.id} is not null then ${PUBLIC_SUBMITTER} else coalesce(${appUsers.displayLabel}, '') end`,
+  username: sql<string>`case when ${appUsers.id} is null or ${userIdentities.id} is not null then '' else coalesce(${appUsers.profile}->>'preferredUsername', ${appUsers.displayLabel}, '') end`,
+  email: sql<string>`case when ${appUsers.id} is null or ${userIdentities.id} is not null then '' else coalesce(${appUsers.profile}->>'email', '') end`,
   engineSchemaRef: formVersions.engineSchemaRef,
   engineSubmissionRef: submissions.engineSubmissionRef,
 };

@@ -717,7 +717,7 @@
     "export": {
       "button": "Export submissions",
       "pageTitle": "Export submissions",
-      "sampleNotice": "The field list is sample data for now, and the CSV formats are not applied yet.",
+      "sampleNotice": "The CSV formats are not applied yet.",
       "back": "Back to submissions",
       "loadError": "Could not load the form.",
       "fieldsError": "Could not load the fields.",
@@ -739,6 +739,9 @@
       "selectNone": "Select none",
       "fieldsSelected": "{selected} of {total} fields selected",
       "noFields": "This form has no fields to export.",
+      "submissionCount": "{count} submissions match these filters.",
+      "submissionCountOne": "1 submission matches these filters.",
+      "submissionCountNone": "No submissions match these filters.",
       "layout": "CSV format",
       "layouts": {
         "multiRowEmptySpacesCSVExport": "1 - Multiple rows per submission with indentation spaces",

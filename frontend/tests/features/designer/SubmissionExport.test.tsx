@@ -143,12 +143,12 @@ describe('SubmissionExport', () => {
         { id: 'v2', versionNo: 2, state: 'published' },
       ],
     });
-    getSobaExportFields.mockResolvedValue({ fields: FIELDS });
+    getSobaExportFields.mockResolvedValue({ fields: FIELDS, count: 12 });
     listSobaSubmissionExports.mockResolvedValue(listPage([]));
     startSobaSubmissionExport.mockResolvedValue(QUEUED);
   });
 
-  it('starts as CSV, all versions and all dates, and says the page shows sample data', async () => {
+  it('starts as CSV, all versions and all dates, and says the CSV formats are not applied', async () => {
     await openExport();
 
     expect(radio('CSV').checked).toBe(true);
@@ -157,8 +157,31 @@ describe('SubmissionExport', () => {
     expect(screen.queryByTestId('export-range')).toBeNull();
     expect(lastFieldsFilters()).toEqual({ layout: FIRST_LAYOUT });
     expect(screen.getByTestId('page-notice-submission-export-sample')).toHaveTextContent(
-      'sample data',
+      'The CSV formats are not applied yet.',
     );
+  });
+
+  it.each([
+    [12, '12 submissions match these filters.'],
+    [1, '1 submission matches these filters.'],
+    [0, 'No submissions match these filters.'],
+  ])('says how many submissions the filters cover (%i)', async (count, said) => {
+    getSobaExportFields.mockResolvedValue({ fields: FIELDS, count });
+    await openExport();
+
+    expect(screen.getByTestId('export-submission-count')).toHaveTextContent(said);
+  });
+
+  it('shows the count for JSON too, and none while the field list reloads', async () => {
+    await openExport();
+    await click(radio('JSON'));
+    expect(await screen.findByTestId('export-submission-count')).toBeInTheDocument();
+    await click(radio('CSV'));
+    getSobaExportFields.mockReturnValue(new Promise(() => {}));
+
+    await click(radio('2 - Multiple rows per submission'));
+
+    expect(screen.queryByTestId('export-submission-count')).toBeNull();
   });
 
   it('hides the layout and field list for JSON, and sends neither', async () => {

@@ -1,4 +1,5 @@
 import { getFormEngineCodeForForm } from '../../core/db/repos/formRepo';
+import { exportSchemaRefs } from '../../core/db/repos/submissionExportRepo';
 import { mapInOrder } from '../../core/inOrder';
 import type {
   FormEngineAdapter,
@@ -7,6 +8,7 @@ import type {
 } from '../../core/integrations/form-engine/FormEngineAdapter';
 import { createFormEngineAdapter } from '../../core/integrations/form-engine/FormEngineRegistry';
 import { JobFailedError } from '../../core/jobs/settlement';
+import { readEngineSchema } from '../../core/services/engineSchema';
 import type { ExportBounds, ExportRow, ExportRowsOptions, ExportSource } from './source';
 
 /** One submission as the submissions query returns it, before its answers are read. */
@@ -17,6 +19,9 @@ export interface SubmissionRecord {
   submittedAt: string;
   /** Who submitted it, or `public`. */
   submitter: string;
+  /** The submitter's username and email; blank for an anonymous submission. */
+  username: string;
+  email: string;
   /** The version's form in the engine; null when the version never reached it. */
   engineSchemaRef: string | null;
   /** The submission's document in the engine; null when it never reached it. */
@@ -67,6 +72,22 @@ export const formAnswerReader = async (
   return bulkAnswerReader(createFormEngineAdapter(engineCode), options);
 };
 
+/**
+ * The schemas of the form's versions an export covers, newest version first, read one at a time.
+ * A form without an engine, or a version the engine has no schema for, adds none.
+ */
+export const exportSchemas = async (
+  workspaceId: string,
+  formId: string,
+  formVersionId?: string,
+): Promise<Record<string, unknown>[]> => {
+  const engineCode = await getFormEngineCodeForForm(workspaceId, formId);
+  if (!engineCode) return [];
+  const refs = await exportSchemaRefs(workspaceId, formId, formVersionId);
+  const schemas = await mapInOrder(refs, (ref) => readEngineSchema(engineCode, ref));
+  return schemas.filter((schema) => schema !== null);
+};
+
 /** The answers in an engine document, which keeps them under `data`. */
 const answersIn = (doc: Record<string, unknown>): Record<string, unknown> => {
   const { data } = doc;
@@ -112,6 +133,8 @@ const pageRows = async (
         versionId: record.versionId,
         submittedAt: record.submittedAt,
         submitter: record.submitter,
+        username: record.username,
+        email: record.email,
         answers: answersIn(doc),
       },
     ];

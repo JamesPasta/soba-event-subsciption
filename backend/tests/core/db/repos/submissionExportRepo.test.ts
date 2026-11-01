@@ -5,6 +5,7 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import {
   activeExportsOf,
   afterExportSubmission,
+  exportSubmissionColumns,
   exportSubmissionsWhere,
   ownExports,
 } from '../../../../src/core/db/repos/submissionExportRepo';
@@ -58,6 +59,33 @@ describe('exportSubmissionsWhere', () => {
         params: ['ws-1', 'form-1', 'v-1', 'submitted', from.toISOString(), to.toISOString()],
       }),
     );
+  });
+});
+
+// Username and email are the signed-in submitter's; nobody signed in leaves both blank.
+describe('exportSubmissionColumns', () => {
+  const ANONYMOUS =
+    'case when "soba"."app_user"."id" is null or "soba"."user_identity"."id" is not null then';
+
+  it('reads the username, else the display label, and blank for an anonymous submitter', () => {
+    expect(render(exportSubmissionColumns.username)).toMatchObject({
+      sql: `${ANONYMOUS} '' else coalesce("soba"."app_user"."profile"->>'preferredUsername', "soba"."app_user"."display_label", '') end`,
+      params: [],
+    });
+  });
+
+  it('reads the email, and blank for an anonymous submitter', () => {
+    expect(render(exportSubmissionColumns.email)).toMatchObject({
+      sql: `${ANONYMOUS} '' else coalesce("soba"."app_user"."profile"->>'email', '') end`,
+      params: [],
+    });
+  });
+
+  it('still names an anonymous submitter public', () => {
+    expect(render(exportSubmissionColumns.submitter)).toMatchObject({
+      sql: `${ANONYMOUS} $1 else coalesce("soba"."app_user"."display_label", '') end`,
+      params: ['public'],
+    });
   });
 });
 

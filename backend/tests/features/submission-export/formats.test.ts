@@ -9,6 +9,8 @@ const rows: ExportRow[] = [
     versionId: 'v1',
     submittedAt: '2026-10-01T16:05:00.000Z',
     submitter: 'Sam',
+    username: 'sam.sample',
+    email: 'sam.sample@example.com',
     answers: {
       applicantName: 'Morgan "Mo", Test',
       notes: 'line one\nline two',
@@ -25,6 +27,8 @@ const rows: ExportRow[] = [
     versionId: 'v1',
     submittedAt: '2026-10-02T16:05:00.000Z',
     submitter: 'public',
+    username: '',
+    email: '',
     answers: {},
   },
 ];
@@ -46,6 +50,8 @@ describe('csvFormat (placeholder)', () => {
         fields: [
           'form.confirmationId',
           'form.submitter',
+          'form.username',
+          'form.email',
           'applicantName',
           'notes',
           'dependants.name',
@@ -57,9 +63,9 @@ describe('csvFormat (placeholder)', () => {
     );
     expect(text).toBe(
       [
-        'form.confirmationId,form.submitter,applicantName,notes,dependants.name,address,missing',
-        'AB12CD34,Sam,"Morgan ""Mo"", Test","line one\nline two",Casey; Riley,"{""city"":""Victoria""}",',
-        'EF56GH78,public,,,,,',
+        'form.confirmationId,form.submitter,form.username,form.email,applicantName,notes,dependants.name,address,missing',
+        'AB12CD34,Sam,sam.sample,sam.sample@example.com,"Morgan ""Mo"", Test","line one\nline two",Casey; Riley,"{""city"":""Victoria""}",',
+        'EF56GH78,public,,,,,,,',
         '',
       ].join('\r\n'),
     );
@@ -108,9 +114,12 @@ describe('jsonFormat', () => {
         formVersionId: 'v1',
         submittedAt: '2026-10-01T16:05:00.000Z',
         submitter: 'Sam',
+        username: 'sam.sample',
+        email: 'sam.sample@example.com',
       },
       ...rows[0].answers,
     });
+    expect(parsed[1].form).toMatchObject({ submitter: 'public', username: '', email: '' });
   });
 
   it('writes an empty array when there is nothing to export', async () => {

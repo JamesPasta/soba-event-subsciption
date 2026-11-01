@@ -57,7 +57,7 @@ describe('useExportFields', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('reads the fields for the filters once', async () => {
-    getSobaExportFields.mockResolvedValue({ fields: ['applicantName'] });
+    getSobaExportFields.mockResolvedValue({ fields: ['applicantName'], count: 2 });
 
     const { result } = renderHook(() => useExportFields('f1', FILTERS), { wrapper });
 

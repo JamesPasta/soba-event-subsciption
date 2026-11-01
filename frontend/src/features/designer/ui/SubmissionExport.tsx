@@ -68,7 +68,7 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
   const form = useExportForm(formId);
   const starter = useSubmissionExportStarter(formId);
   usePageHeading({ heading: text.pageTitle, eyebrow: form.data?.name });
-  // Placeholder: says the field list is sample data.
+  // Placeholder: says the CSV formats are not applied yet.
   usePageNotices([{ id: 'submission-export-sample', variant: 'info', body: text.sampleNotice }]);
 
   const [format, setFormat] = useState<SubmissionExportFormat>('csv');
@@ -156,6 +156,12 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
     if (!id) return text.allVersions;
     const versionNo = form.data?.versions.find((version) => version.id === id)?.versionNo;
     return fillTemplate(text.versionOption, { version: String(versionNo ?? id) });
+  };
+
+  const countText = (count: number) => {
+    if (count === 0) return text.submissionCountNone;
+    if (count === 1) return text.submissionCountOne;
+    return fillTemplate(text.submissionCount, { count: String(count) });
   };
 
   const renderFields = () => {
@@ -332,6 +338,11 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
           </RadioGroup>
         ) : null}
         {renderFields()}
+        {fields.data ? (
+          <SecondaryText data-testid="export-submission-count">
+            {countText(fields.data.count)}
+          </SecondaryText>
+        ) : null}
         <div>
           <Button
             type="submit"

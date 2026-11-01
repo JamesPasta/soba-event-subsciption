@@ -718,7 +718,7 @@
     "export": {
       "button": "Exporter les soumissions",
       "pageTitle": "Exporter les soumissions",
-      "sampleNotice": "La liste des champs contient pour l’instant des données d’exemple, et les formats CSV ne sont pas encore appliqués.",
+      "sampleNotice": "Les formats CSV ne sont pas encore appliqués.",
       "back": "Retour aux soumissions",
       "loadError": "Impossible de charger le formulaire.",
       "fieldsError": "Impossible de charger les champs.",
@@ -740,6 +740,9 @@
       "selectNone": "Tout désélectionner",
       "fieldsSelected": "{selected} champs sélectionnés sur {total}",
       "noFields": "Ce formulaire n’a aucun champ à exporter.",
+      "submissionCount": "{count} soumissions correspondent à ces filtres.",
+      "submissionCountOne": "1 soumission correspond à ces filtres.",
+      "submissionCountNone": "Aucune soumission ne correspond à ces filtres.",
       "layout": "Format CSV",
       "layouts": {
         "multiRowEmptySpacesCSVExport": "1 - Plusieurs lignes par soumission avec espaces d'indentation",

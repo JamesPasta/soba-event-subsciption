@@ -23,12 +23,14 @@ export interface ExportFormatDefinition {
 }
 
 /** The submission's own facts, under the `form.` names CHEFS exports use. */
-const SUBMISSION_FIELDS: Record<string, (row: ExportRow) => string> = {
+export const SUBMISSION_FIELDS: Record<string, (row: ExportRow) => string> = {
   'form.confirmationId': (row) => row.confirmationCode,
   'form.submissionId': (row) => row.submissionId,
   'form.formVersionId': (row) => row.versionId,
   'form.submittedAt': (row) => row.submittedAt,
   'form.submitter': (row) => row.submitter,
+  'form.username': (row) => row.username,
+  'form.email': (row) => row.email,
 };
 
 const submissionFacts = (row: ExportRow): Record<string, string> =>

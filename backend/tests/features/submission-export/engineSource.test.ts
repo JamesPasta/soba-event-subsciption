@@ -24,6 +24,8 @@ const record = (
   versionId: `version-of-${engineSchemaRef}`,
   submittedAt: '2026-10-01T16:05:00.000Z',
   submitter: 'Sam',
+  username: 'sam.sample',
+  email: 'sam.sample@example.com',
   engineSchemaRef,
   engineSubmissionRef,
 });
@@ -89,6 +91,8 @@ describe('engineExportSource', () => {
         versionId: 'version-of-v1',
         submittedAt: '2026-10-01T16:05:00.000Z',
         submitter: 'Sam',
+        username: 'sam.sample',
+        email: 'sam.sample@example.com',
         answers: { ref: 'doc-a' },
       },
     ]);

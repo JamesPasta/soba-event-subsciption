@@ -1,9 +1,32 @@
-import type { ExportJobRow } from '../../../src/core/db/repos/submissionExportRepo';
+jest.mock('../../../src/core/db/repos/submissionExportRepo', () => ({
+  ...jest.requireActual('../../../src/core/db/repos/submissionExportRepo'),
+  countExportSubmissions: jest.fn(),
+  exportSchemaRefs: jest.fn(),
+}));
+
+jest.mock('../../../src/core/db/repos/formRepo', () => ({
+  ...jest.requireActual('../../../src/core/db/repos/formRepo'),
+  getFormEngineCodeForForm: jest.fn(),
+}));
+
+jest.mock('../../../src/core/services/engineSchema', () => ({
+  ...jest.requireActual('../../../src/core/services/engineSchema'),
+  readEngineSchema: jest.fn(),
+}));
+
+import { getFormEngineCodeForForm } from '../../../src/core/db/repos/formRepo';
+import {
+  countExportSubmissions,
+  exportSchemaRefs,
+  type ExportJobRow,
+} from '../../../src/core/db/repos/submissionExportRepo';
 import { ValidationError } from '../../../src/core/errors';
+import { readEngineSchema } from '../../../src/core/services/engineSchema';
 import { EXPORT_ACCESS_LOST } from '../../../src/features/submission-export/job';
 import {
   exportBounds,
   exportStatusOf,
+  submissionExportService,
   toSubmissionExport,
 } from '../../../src/features/submission-export/service';
 
@@ -130,24 +153,95 @@ describe('exportBounds', () => {
   const now = new Date('2026-10-29T20:00:00Z');
 
   it('ends at now when no end is given or the end is later', () => {
-    expect(exportBounds({ format: 'csv' }, now)).toEqual({ to: now.toISOString() });
-    expect(exportBounds({ format: 'csv', to: '2026-12-01T00:00:00Z' }, now)).toEqual({
+    expect(exportBounds({}, now)).toEqual({ to: now.toISOString() });
+    expect(exportBounds({ to: '2026-12-01T00:00:00Z' }, now)).toEqual({
       to: now.toISOString(),
     });
   });
 
   it('keeps an earlier end and the start as given', () => {
-    expect(
-      exportBounds(
-        { format: 'csv', from: '2026-10-01T07:00:00Z', to: '2026-10-02T07:00:00Z' },
-        now,
-      ),
-    ).toEqual({ from: '2026-10-01T07:00:00.000Z', to: '2026-10-02T07:00:00.000Z' });
+    expect(exportBounds({ from: '2026-10-01T07:00:00Z', to: '2026-10-02T07:00:00Z' }, now)).toEqual(
+      { from: '2026-10-01T07:00:00.000Z', to: '2026-10-02T07:00:00.000Z' },
+    );
   });
 
   it('refuses a start at or after now', () => {
-    expect(() => exportBounds({ format: 'csv', from: '2026-10-30T00:00:00Z' }, now)).toThrow(
-      ValidationError,
-    );
+    expect(() => exportBounds({ from: '2026-10-30T00:00:00Z' }, now)).toThrow(ValidationError);
+  });
+});
+
+describe('submissionExportService.fields', () => {
+  const ctx = { actorId: 'starter', workspaceId: 'ws1', formId: 'form-1' };
+  const SUBMISSION_FIELDS = [
+    'form.confirmationId',
+    'form.submissionId',
+    'form.formVersionId',
+    'form.submittedAt',
+    'form.submitter',
+    'form.username',
+    'form.email',
+  ];
+  const field = (key: string) => ({ type: 'textfield', key, input: true });
+  const SCHEMAS: Record<string, Record<string, unknown>> = {
+    'ref-v2': { components: [field('name'), field('email')] },
+    'ref-v1': { components: [field('phone'), field('name')] },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.mocked(getFormEngineCodeForForm).mockResolvedValue('formio-v5');
+    jest
+      .mocked(readEngineSchema)
+      .mockImplementation((_code, ref) => Promise.resolve(SCHEMAS[ref!] ?? null));
+    jest.mocked(countExportSubmissions).mockResolvedValue(0);
+  });
+
+  it("lists the newest version's fields first, then fields only older versions have", async () => {
+    jest.mocked(exportSchemaRefs).mockResolvedValue(['ref-v2', 'ref-v1']);
+
+    const { fields } = await submissionExportService.fields(ctx, {});
+
+    expect(fields).toEqual([...SUBMISSION_FIELDS, 'name', 'email', 'phone']);
+    expect(exportSchemaRefs).toHaveBeenCalledWith('ws1', 'form-1', undefined);
+    expect(jest.mocked(readEngineSchema).mock.calls).toEqual([
+      ['formio-v5', 'ref-v2'],
+      ['formio-v5', 'ref-v1'],
+    ]);
+  });
+
+  it("lists only the chosen version's fields", async () => {
+    jest.mocked(exportSchemaRefs).mockResolvedValue(['ref-v1']);
+
+    const { fields } = await submissionExportService.fields(ctx, { formVersionId: 'v1' });
+
+    expect(fields).toEqual([...SUBMISSION_FIELDS, 'phone', 'name']);
+    expect(exportSchemaRefs).toHaveBeenCalledWith('ws1', 'form-1', 'v1');
+  });
+
+  it("lists only the submission's fields when the form has no engine", async () => {
+    jest.mocked(getFormEngineCodeForForm).mockResolvedValue(null);
+
+    const { fields } = await submissionExportService.fields(ctx, {});
+
+    expect(fields).toEqual(SUBMISSION_FIELDS);
+    expect(readEngineSchema).not.toHaveBeenCalled();
+  });
+
+  it('counts the submissions the version and dates cover', async () => {
+    jest.mocked(exportSchemaRefs).mockResolvedValue([]);
+    jest.mocked(countExportSubmissions).mockResolvedValue(7);
+    const from = '2026-10-01T07:00:00.000Z';
+    const to = '2026-10-02T07:00:00.000Z';
+
+    const { count } = await submissionExportService.fields(ctx, { formVersionId: 'v1', from, to });
+
+    expect(count).toBe(7);
+    expect(countExportSubmissions).toHaveBeenCalledWith({
+      workspaceId: 'ws1',
+      formId: 'form-1',
+      formVersionId: 'v1',
+      from: new Date(from),
+      to: new Date(to),
+    });
   });
 });
