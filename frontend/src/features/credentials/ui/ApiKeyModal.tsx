@@ -118,9 +118,7 @@ function ApiKeyShown({ dict, apiKey }: Readonly<{ dict: Dictionary; apiKey: stri
         </Button>
       </div>
       {/* Kept in the page so a screen reader announces the text when it appears. */}
-      <p role="status" className="m-0" data-testid="api-key-copied">
-        {copyState === 'copied' ? t.copied : ''}
-      </p>
+      <output data-testid="api-key-copied">{copyState === 'copied' ? t.copied : ''}</output>
       {copyState === 'failed' && (
         <p role="alert" data-testid="api-key-copy-error">
           {t.copyError}

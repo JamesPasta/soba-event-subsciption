@@ -68,12 +68,12 @@ export function useCredentialWriter(owner: CredentialOwner) {
 
   /** Sends nothing when the fields still match `record`, the key as the form last saved it. */
   const update = useCallback(
-    async (
+    (
       token: string,
       record: CredentialMetadata,
       fields: CredentialFields,
     ): Promise<WriteOutcome<CredentialMetadata>> => {
-      if (sameFields(record, fields)) return { status: 'applied', value: record };
+      if (sameFields(record, fields)) return Promise.resolve({ status: 'applied', value: record });
       return afterWrite(() => updateCredential(token, { kind, id }, record.id, fields));
     },
     [afterWrite, kind, id],
