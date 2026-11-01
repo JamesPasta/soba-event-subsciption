@@ -130,7 +130,8 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
       await starter.start(token, {
         ...filters,
         format,
-        fields: picksFields ? selected : undefined,
+        // Absent means all; the start route limits how many fields can be named.
+        fields: picksFields && selected.length < allFields.length ? selected : undefined,
       });
       addNotification({ text: text.started, type: 'success' });
     } catch (cause: unknown) {
@@ -144,7 +145,7 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
     }
   };
 
-  // No fields until the read for the current filters answers, so a stale list cannot be sent.
+  // No fields while the read for the current filters runs, so an old list is not sent.
   const canStart =
     !!filters &&
     !!fields.data &&
@@ -246,7 +247,9 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
     if (!form.data) return <CenteredProgress label={dict.general.loading} />;
     const versionItems = [
       { id: ALL_VERSIONS, label: text.allVersions },
-      ...[...form.data.versions]
+      // A draft has no submissions to export.
+      ...form.data.versions
+        .filter((version) => version.state !== 'draft')
         .sort((a, b) => b.versionNo - a.versionNo)
         .map((version) => ({ id: version.id, label: versionLabel(version.id) })),
     ];

@@ -10,6 +10,7 @@ export interface FormComponent {
   columns?: Array<{ components?: FormComponent[] }>;
   rows?: unknown[];
   components?: FormComponent[];
+  dataSrc?: string;
   values?: Array<{ value: string }>;
   questions?: Array<{ value: string }>;
 }
@@ -34,11 +35,13 @@ const join = (path: string, key: string) => (path ? `${path}.${key}` : key);
 
 /** The component's own columns. */
 const ownPaths = (component: FormComponent, path: string): string[] => {
-  const { key } = component;
+  const { key, dataSrc } = component;
   if (!key) return [];
   const options = component.type === 'survey' ? component.questions : component.values;
-  if (SUB_VALUE_TYPES.has(component.type ?? '') && options) {
-    return options.map((option) => join(path, `${key}.${option.value}`));
+  // Options from elsewhere, or a blank default, do not name the answer's keys.
+  const named = !dataSrc || dataSrc === 'values' ? options?.filter((option) => option.value) : [];
+  if (SUB_VALUE_TYPES.has(component.type ?? '') && named?.length) {
+    return named.map((option) => join(path, `${key}.${option.value}`));
   }
   return [join(path, key)];
 };

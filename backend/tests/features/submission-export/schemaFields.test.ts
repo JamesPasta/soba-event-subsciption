@@ -88,6 +88,28 @@ describe('flattenComponents (CHEFS 1 port)', () => {
     ).toEqual(['grid', 'grid.pick.a']);
   });
 
+  it('lists only the options that name an answer key, else the whole answer', () => {
+    expect(
+      flattenComponents([
+        {
+          type: 'selectboxes',
+          key: 'fromUrl',
+          input: true,
+          dataSrc: 'url',
+          values: [{ value: '' }],
+        },
+        { type: 'selectboxes', key: 'unnamed', input: true, values: [{ value: '' }] },
+        {
+          type: 'selectboxes',
+          key: 'partly',
+          input: true,
+          dataSrc: 'values',
+          values: [{ value: 'a' }, { value: '' }],
+        },
+      ]),
+    ).toEqual(['fromUrl', 'unnamed', 'partly.a']);
+  });
+
   it('answers nothing for a missing schema', () => {
     expect(flattenComponents(undefined)).toEqual([]);
   });

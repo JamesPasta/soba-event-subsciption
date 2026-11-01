@@ -70,6 +70,28 @@ describe('csvFormat (placeholder)', () => {
       ].join('\r\n'),
     );
   });
+
+  it('finds an answer whose option value holds dots', async () => {
+    const answers = { pick: { '1': true, '1.5': false } };
+    const text = await collect(
+      csvFormat.serialize(each([{ ...rows[1], answers }]), {
+        fields: ['pick.1', 'pick.1.5'],
+        schemas: [],
+      }),
+    );
+    expect(text.split('\r\n')[1]).toBe('true,false');
+  });
+
+  it('reads a field named like an inherited property as an answer', async () => {
+    const answers = { constructor: 'built' };
+    const text = await collect(
+      csvFormat.serialize(each([{ ...rows[1], answers }]), {
+        fields: ['constructor', 'valueOf', '__proto__'],
+        schemas: [],
+      }),
+    );
+    expect(text.split('\r\n')[1]).toBe('built,,');
+  });
 });
 
 describe('csvFormat formula guard', () => {

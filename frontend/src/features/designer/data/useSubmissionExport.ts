@@ -51,22 +51,30 @@ export function useExportForm(
   };
 }
 
+const exportFieldsReadConfig: SWRConfiguration = {
+  ...sessionReadConfig,
+  revalidateIfStale: true,
+  dedupingInterval: 0,
+};
+
 /**
- * The fields an export with these filters can include; null filters wait. No previous data is kept
- * across a filter change, so `data` is null until the new list arrives.
+ * The fields an export with these filters can include; null filters wait. Publishing or a new
+ * submission changes the answer, so it is read on each visit and filter change, with `data` null
+ * while that read runs or after it fails. SWR starts the read on the next frame, so a cached answer
+ * is returned for one render first.
  */
 export function useExportFields(
   formId: string,
   filters: SubmissionExportFieldsBody | null,
 ): Resource<SubmissionExportFieldsResponse> {
-  const { data, isLoading, error, mutate } = useAuthedSWR(
+  const { data, isValidating, error, mutate } = useAuthedSWR(
     filters ? ['submission-export-fields', formId, JSON.stringify(filters)] : null,
     (token) => getSobaExportFields(token, formId, filters!),
-    sessionReadConfig,
+    exportFieldsReadConfig,
   );
   return {
-    data: data ?? null,
-    isLoading,
+    data: isValidating || error ? null : (data ?? null),
+    isLoading: isValidating,
     error: error ? classifyDataError(error) : null,
     refresh: async () => {
       await mutate();

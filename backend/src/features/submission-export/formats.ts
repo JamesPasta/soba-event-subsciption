@@ -58,13 +58,18 @@ export const jsonFormat: ExportFormatDefinition = {
   },
 };
 
-/** The values at a dotted path; a list along the way gives one value per item. */
+/**
+ * The values at a dotted path; a list along the way gives one value per item. An option's value can
+ * hold dots, so the key is the longest run of the path's parts that matches one.
+ */
 const valuesAt = (value: unknown, path: string[]): unknown[] => {
   if (path.length === 0) return value === undefined ? [] : [value];
   if (Array.isArray(value)) return value.flatMap((item) => valuesAt(item, path));
   if (value === null || typeof value !== 'object') return [];
-  const [head, ...rest] = path;
-  return valuesAt((value as Record<string, unknown>)[head], rest);
+  const answers = value as Record<string, unknown>;
+  const keys = path.map((_, index) => path.slice(0, index + 1).join('.'));
+  const found = keys.findLastIndex((key) => Object.hasOwn(answers, key));
+  return found < 0 ? [] : valuesAt(answers[keys[found]], path.slice(found + 1));
 };
 
 /** An answer as cell text; answers are JSON, so anything not a scalar is written as JSON. */
@@ -85,8 +90,7 @@ const quoteCell = (raw: string): string => {
 };
 
 const csvCell = (row: ExportRow, field: string): string => {
-  const submissionField = SUBMISSION_FIELDS[field];
-  if (submissionField) return quoteCell(submissionField(row));
+  if (Object.hasOwn(SUBMISSION_FIELDS, field)) return quoteCell(SUBMISSION_FIELDS[field](row));
   return quoteCell(valuesAt(row.answers, field.split('.')).map(cellText).join('; '));
 };
 

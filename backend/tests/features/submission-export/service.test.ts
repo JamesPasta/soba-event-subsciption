@@ -20,7 +20,8 @@ import {
   exportSchemaRefs,
   type ExportJobRow,
 } from '../../../src/core/db/repos/submissionExportRepo';
-import { ValidationError } from '../../../src/core/errors';
+import { ApiErrorCodes } from '@soba/lib';
+import { InternalError, ValidationError } from '../../../src/core/errors';
 import { readEngineSchema } from '../../../src/core/services/engineSchema';
 import { EXPORT_ACCESS_LOST } from '../../../src/features/submission-export/job';
 import {
@@ -225,6 +226,33 @@ describe('submissionExportService.fields', () => {
 
     expect(fields).toEqual(SUBMISSION_FIELDS);
     expect(readEngineSchema).not.toHaveBeenCalled();
+  });
+
+  it('leaves out a version the engine no longer has', async () => {
+    jest.mocked(exportSchemaRefs).mockResolvedValue(['ref-v2', 'ref-gone', 'ref-v1']);
+    jest
+      .mocked(readEngineSchema)
+      .mockImplementation((_code, ref) =>
+        ref === 'ref-gone'
+          ? Promise.reject(
+              new InternalError(
+                'Form engine document is missing',
+                ApiErrorCodes.engine_document_missing,
+              ),
+            )
+          : Promise.resolve(SCHEMAS[ref!]),
+      );
+
+    const { fields } = await submissionExportService.fields(ctx, {});
+
+    expect(fields).toEqual([...SUBMISSION_FIELDS, 'name', 'email', 'phone']);
+  });
+
+  it('fails when the engine cannot be read', async () => {
+    jest.mocked(exportSchemaRefs).mockResolvedValue(['ref-v2']);
+    jest.mocked(readEngineSchema).mockRejectedValue(new Error('engine down'));
+
+    await expect(submissionExportService.fields(ctx, {})).rejects.toThrow('engine down');
   });
 
   it('counts the submissions the version and dates cover', async () => {

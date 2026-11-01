@@ -66,6 +66,48 @@ describe('useExportFields', () => {
     expect(getSobaExportFields).toHaveBeenCalledWith('token', 'f1', FILTERS);
   });
 
+  describe('on returning to the same filters', () => {
+    const openAndLeave = async () => {
+      getSobaExportFields.mockResolvedValueOnce({ fields: ['old'], count: 1 });
+      const view = renderHook(({ filters }) => useExportFields('f1', filters), {
+        wrapper,
+        initialProps: { filters: FILTERS as SubmissionExportFieldsBody | null },
+      });
+      await waitFor(() => expect(view.result.current.data?.count).toBe(1));
+      view.rerender({ filters: null });
+      return view;
+    };
+
+    it('reads again, with no data until that read answers', async () => {
+      const { result, rerender } = await openAndLeave();
+      let answer: (value: unknown) => void = () => {};
+      getSobaExportFields.mockReturnValueOnce(
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+      );
+
+      rerender({ filters: FILTERS });
+
+      await waitFor(() => expect(getSobaExportFields).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(result.current.data).toBeNull());
+      await act(async () => answer({ fields: ['old', 'new'], count: 2 }));
+      await waitFor(() =>
+        expect(result.current.data).toEqual({ fields: ['old', 'new'], count: 2 }),
+      );
+    });
+
+    it('gives no data when that read fails', async () => {
+      const { result, rerender } = await openAndLeave();
+      getSobaExportFields.mockRejectedValueOnce(new ApiError('nope', 500));
+
+      rerender({ filters: FILTERS });
+
+      await waitFor(() => expect(result.current.error?.kind).toBe('failed'));
+      expect(result.current.data).toBeNull();
+    });
+  });
+
   it('waits while the filters are incomplete', async () => {
     const { result } = renderHook(() => useExportFields('f1', null), { wrapper });
 
