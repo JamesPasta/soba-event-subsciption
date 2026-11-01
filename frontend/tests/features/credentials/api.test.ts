@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { listCredentials, issueCredential } from '@/src/features/credentials/data/api';
+import {
+  deleteCredential,
+  getCredential,
+  issueCredential,
+  listCredentials,
+  regenerateCredential,
+  updateCredential,
+} from '@/src/features/credentials/data/api';
 import { ApiError } from '@/src/shared/api/sobaHelpers';
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn() }));
@@ -10,6 +17,7 @@ vi.mock('@/src/shared/api/sobaFetch', async (importOriginal) => ({
 
 const credential = {
   id: '01900000-0000-7000-8000-000000000001',
+  scope: 'form',
   label: 'Integration',
   notes: '',
   types: ['api'],
@@ -20,76 +28,89 @@ const credential = {
 };
 const query = { offset: 0, limit: 10, sort: 'createdAt:desc' };
 const page = { offset: 0, limit: 10, total: 0 };
-const input = { label: 'Integration', notes: '', types: ['api' as const] };
+const fields = { label: 'Integration', notes: '', types: ['api' as const] };
+const form = { kind: 'form' as const, id: 'form/id' };
+const workspace = { kind: 'workspace' as const, id: 'workspace' };
+const formKeys = '/design/forms/form%2Fid/settings/api-keys';
+const workspaceKey = `/workspaces/workspace/settings/api-keys/${credential.id}`;
 
 beforeEach(() => vi.resetAllMocks());
 
-describe('credential API response validation', () => {
-  it('uses the form path for form reads and creates', async () => {
-    const scope = { kind: 'form' as const, id: 'form/id' };
+describe('credential API', () => {
+  it("uses the settings group's paths at each level", async () => {
     mocks.fetch.mockResolvedValueOnce(
       Response.json({ available: true, items: [], page, filters: {}, sort: query.sort }),
     );
-    await listCredentials('token', scope, query);
-    expect(mocks.fetch).toHaveBeenLastCalledWith('/design/forms/form%2Fid/credentials', {
+    await listCredentials('token', form, query);
+    expect(mocks.fetch).toHaveBeenLastCalledWith(formKeys, {
       token: 'token',
       query,
       headers: {},
     });
+
     mocks.fetch.mockResolvedValueOnce(Response.json({ credential, apiKey: 'secret' }));
-    await issueCredential('token', scope, input);
-    expect(mocks.fetch).toHaveBeenLastCalledWith('/design/forms/form%2Fid/credentials', {
+    await issueCredential('token', form, fields);
+    expect(mocks.fetch).toHaveBeenLastCalledWith(formKeys, {
       token: 'token',
       method: 'POST',
-      json: input,
+      json: fields,
     });
-  });
 
-  it('returns valid credential metadata and one-time secrets', async () => {
-    const state = {
-      available: true,
-      items: [credential],
-      page: { ...page, total: 1 },
-      filters: {},
-      sort: query.sort,
-    };
-    mocks.fetch.mockResolvedValueOnce(Response.json(state));
-    expect(await listCredentials('token', { kind: 'workspace', id: 'workspace' }, query)).toEqual(
-      state,
-    );
-    const secret = { credential, apiKey: 'one-time-secret' };
-    mocks.fetch.mockResolvedValueOnce(Response.json(secret));
-    expect(await issueCredential('token', { kind: 'workspace', id: 'workspace' }, input)).toEqual(
-      secret,
-    );
+    mocks.fetch.mockResolvedValueOnce(Response.json(credential));
+    await getCredential('token', workspace, credential.id);
+    expect(mocks.fetch).toHaveBeenLastCalledWith(workspaceKey, { token: 'token' });
+
+    mocks.fetch.mockResolvedValueOnce(Response.json(credential));
+    await updateCredential('token', workspace, credential.id, fields);
+    expect(mocks.fetch).toHaveBeenLastCalledWith(workspaceKey, {
+      token: 'token',
+      method: 'PATCH',
+      json: fields,
+    });
+
+    mocks.fetch.mockResolvedValueOnce(Response.json({ credential, apiKey: 'secret' }));
+    await regenerateCredential('token', workspace, credential.id);
+    expect(mocks.fetch).toHaveBeenLastCalledWith(`${workspaceKey}/regenerate`, {
+      token: 'token',
+      method: 'POST',
+      json: {},
+    });
+
+    mocks.fetch.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await deleteCredential('token', workspace, credential.id);
+    expect(mocks.fetch).toHaveBeenLastCalledWith(workspaceKey, {
+      token: 'token',
+      method: 'DELETE',
+    });
   });
 
   it.each([
     { available: true, items: {} },
-    { available: true, items: [{ ...credential, types: undefined }] },
+    { available: true, items: [{ ...credential, scope: undefined }] },
     { available: true, items: [{ ...credential, types: ['unsupported'] }] },
-  ])('rejects malformed list responses before rendering: %j', async (body) => {
+    { available: true, items: [{ ...credential, status: 'revoked' }] },
+  ])('rejects a malformed list before it renders: %j', async (body) => {
     mocks.fetch.mockResolvedValueOnce(
       Response.json({ page, filters: {}, sort: query.sort, ...body }),
     );
-    await expect(
-      listCredentials('token', { kind: 'workspace', id: 'workspace' }, query),
-    ).rejects.toThrow();
+    await expect(listCredentials('token', workspace, query)).rejects.toThrow();
   });
 
-  it('rejects malformed issuance responses before caching metadata', async () => {
+  it('rejects a malformed generate response', async () => {
     mocks.fetch.mockResolvedValueOnce(
       Response.json({ credential: { ...credential, types: null }, apiKey: 'one-time-secret' }),
     );
-    await expect(
-      issueCredential('token', { kind: 'workspace', id: 'workspace' }, input),
-    ).rejects.toThrow();
+    await expect(issueCredential('token', workspace, fields)).rejects.toThrow();
   });
 
-  it('preserves HTTP errors for the existing error handling', async () => {
+  it('surfaces HTTP errors, a refused delete included', async () => {
     mocks.fetch.mockResolvedValueOnce(Response.json({ error: 'Forbidden' }, { status: 403 }));
-    await expect(
-      listCredentials('token', { kind: 'workspace', id: 'workspace' }, query),
-    ).rejects.toEqual(new ApiError('Forbidden', 403));
+    await expect(listCredentials('token', workspace, query)).rejects.toEqual(
+      new ApiError('Forbidden', 403),
+    );
+    mocks.fetch.mockResolvedValueOnce(Response.json({ error: 'Pending' }, { status: 409 }));
+    await expect(deleteCredential('token', workspace, credential.id)).rejects.toEqual(
+      new ApiError('Pending', 409),
+    );
   });
 });

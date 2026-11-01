@@ -20,6 +20,8 @@ export const FEATURE_CODES = {
   POST_SUBMISSION: 'post-submission',
   /** Exporting a form's submissions to a file. */
   SUBMISSION_EXPORT: 'submission-export',
+  /** Generating and managing gateway API keys for a workspace and its forms. */
+  API_KEYS: 'api-keys',
 } as const;
 
 export type FeatureCode = (typeof FEATURE_CODES)[keyof typeof FEATURE_CODES];

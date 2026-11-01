@@ -8,9 +8,8 @@ export const credentialIssuerPluginDefinition: CredentialIssuerPluginDefinition 
   code: 'credential-issuer-noop',
   metadata: { code: 'credential-issuer-noop', name: 'No-op credential issuer' },
   createAdapter: () => ({
+    available: false,
     issue: unavailable,
     regenerate: unavailable,
-    readinessCheck: () =>
-      Promise.resolve({ ok: false, message: 'Credential issuance is unavailable' }),
   }),
 };

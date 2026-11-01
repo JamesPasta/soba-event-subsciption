@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { FormSettingsSection } from '@/src/features/form-settings/types';
+import type {
+  FormSettingsSection,
+  WorkspaceSettingsSection,
+} from '@/src/features/form-settings/types';
 
 const { mockLoadFeaturesMeta, mockFetchFeatureAvailability } = vi.hoisted(() => ({
   mockLoadFeaturesMeta: vi.fn(),
@@ -14,7 +17,10 @@ vi.mock('@/src/shared/featureFlags/featureAvailability', () => ({
   fetchFeatureAvailability: mockFetchFeatureAvailability,
 }));
 
-import { resolveAvailableSectionIds } from '@/src/features/form-settings/data/sections';
+import {
+  resolveAvailableSectionIds,
+  resolveAvailableWorkspaceSectionIds,
+} from '@/src/features/form-settings/data/sections';
 import { formSettingsSections } from '@/src/features/form-settings/registry';
 
 const Drawer = () => null;
@@ -80,5 +86,16 @@ describe('form settings sections', () => {
     await expect(
       resolveAvailableSectionIds([section({ id: 'gated', featureCode: 'files' })], scope),
     ).resolves.toEqual([]);
+  });
+
+  it('keeps a workspace section whose fixed feature is on and drops one that is off', async () => {
+    mockLoadFeaturesMeta.mockResolvedValue(metaAllowing('api-keys'));
+    const sections: WorkspaceSettingsSection[] = [
+      { id: 'keys', weight: 30, featureCode: 'api-keys', Drawer },
+      { id: 'off', weight: 40, featureCode: 'files', Drawer },
+    ];
+    await expect(resolveAvailableWorkspaceSectionIds(sections)).resolves.toEqual(['keys']);
+    mockLoadFeaturesMeta.mockRejectedValue(new Error('offline'));
+    await expect(resolveAvailableWorkspaceSectionIds(sections)).resolves.toEqual([]);
   });
 });

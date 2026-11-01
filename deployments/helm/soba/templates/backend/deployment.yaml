@@ -73,6 +73,7 @@ spec:
           {{`{{- with secret "`}}{{ .Values.vault.secretPath }}{{`" }}`}}
           {{`export PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_ID="{{ .Data.data.PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_ID }}"`}}
           {{`export PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_SECRET="{{ .Data.data.PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_SECRET }}"`}}
+          {{`export PLUGIN_APS_CREDENTIAL_ISSUER_V3_ENVIRONMENT_APP_ID="{{ .Data.data.PLUGIN_APS_CREDENTIAL_ISSUER_V3_ENVIRONMENT_APP_ID }}"`}}
           {{`{{- end }}`}}
         {{- end }}
         {{- if include "soba.userSearchUsesCss" . }}

@@ -165,6 +165,14 @@ export const SUBMISSION_EXPORTS_LIST_QUERY: ListQuerySpec = {
   defaultSort: CREATED_DESC,
 };
 
+/** A workspace's or form's API keys. Scope it to the owner with `scopedListQuery`. */
+export const CREDENTIALS_LIST_QUERY: ListQuerySpec = {
+  resource: 'credentials',
+  filters: [],
+  sortOptions: sortTokensFor(CREDENTIAL_SORT_FIELDS),
+  defaultSort: CREATED_DESC,
+};
+
 export const scopedListQuery = (spec: ListQuerySpec, memoryScope: string): ListQuerySpec => ({
   ...spec,
   memoryScope,
@@ -245,10 +253,3 @@ export function recallListQuery(spec: ListQuerySpec): ListQueryParams | null {
 export function forgetListQueries(): void {
   removeSessionValues((key) => key.startsWith(KEY_PREFIX));
 }
-
-export const CREDENTIALS_LIST_QUERY: ListQuerySpec = {
-  resource: 'credentials',
-  filters: [],
-  sortOptions: sortTokensFor(CREDENTIAL_SORT_FIELDS),
-  defaultSort: CREATED_DESC,
-};

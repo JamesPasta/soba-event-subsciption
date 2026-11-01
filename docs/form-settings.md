@@ -56,15 +56,19 @@ A module's `router` is a factory, so importing the registry builds nothing.
 
 Dev-data purge clears every module's `tables` before deleting forms.
 
+The API keys group (`features/credentials`) keeps no row per form or workspace: its router serves a
+collection of keys, with the settings permissions from `scopeGates` in `routes.ts`, and dev-data
+purge clears its tables itself.
+
 ## Frontend: `frontend/src/features/form-settings/`
 
 | file                                                 | role                                                                                                                                                                                                           |
 | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `types.ts`                                           | `FormSettingsSection`: `id`, `weight`, optional `featureCode`, `scoped`, `Drawer`; `WorkspaceSettingsSection`: `id`, `weight`, `Drawer`                                                                        |
+| `types.ts`                                           | `FormSettingsSection`: `id`, `weight`, optional `featureCode`, `scoped`, `Drawer`; `WorkspaceSettingsSection`: `id`, `weight`, optional `featureCode` (fixed only), `Drawer`                                    |
 | `data/api.ts`, `data/useFormSettings.ts`             | generic read and save of a form's group by key                                                                                                                                                                 |
 | `data/useWorkspaceSettings.ts`                       | the same for a workspace's group; a save, or one refused with a 409, drops that group's cached form views. `useFreshWorkspaceSettings` reads the group anew for each caller that mounts, for the create dialog |
 | `data/useInheritingFormCount.ts`                     | how many forms use a group's workspace values, read anew for each confirmation before a workspace goes Public                                                                                                  |
-| `data/sections.ts`                                   | the tab's sections for a form, without those whose feature is off                                                                                                                                              |
+| `data/sections.ts`                                   | the tab's sections for a form, and a workspace's, without those whose feature is off                                                                                                                           |
 | `registry.ts`                                        | the sections of a form's Settings tab and of a workspace's Form Settings tab, lowest `weight` first                                                                                                            |
 | `ui/FormSettingsDrawers.tsx`                         | the accordion section with Save and Cancel; `canSave` holds Save off, which the group sections do until there is an edit                                                                                       |
 | `ui/WorkspaceFormSettings.tsx`                       | a workspace's Form Settings tab: an intro, then a drawer for each workspace section                                                                                                                            |
@@ -75,13 +79,11 @@ Form Settings (10) and Form Profile (20) save through the form update; Form Audi
 Submitter Settings (30) use their group endpoints. The audience's login providers come from
 `GET /meta/login-providers` through `useLoginProviders`.
 
-A workspace's Form Settings tab holds Form Audience (10), Submitter Settings (20), and API Keys
-(30). API Keys uses the section registry and accordion, with the credential feature owning its
-list, create form, API, service and persistence. It is a collection of independently generated
-keys, so it does not use the singleton settings GET/PUT or generic Save/Cancel footer. Owners and
-admins can create a key with a label, optional notes and one or both types (API, Web Component).
-The secret is shown once after generation; only metadata enters the list cache. There is no
-form-level drawer, inheritance, editing or rotation UI in this first version.
+A workspace's Form Settings tab holds Form Audience (10), Submitter Settings (20) and API Keys
+(30); a form's Settings tab holds API Keys at 50. API Keys is a collection of keys rather than one
+set of values, so its drawers use the credential feature's own table and add/edit form instead of
+the settings GET/PUT and the Save/Cancel footer. Both drawers show only while the `api-keys`
+feature is on. See [credential issuer](credential-issuer.md).
 
 A section's `weight` orders the Settings tab. A module's `weight` orders mounting. The two are
 unrelated, and one group's numbers need not match.
@@ -128,8 +130,3 @@ Each action reads and saves under the key `post-submission/<code>` through `useF
 
 A new flag in an existing group is a migration (`ADD COLUMN ... NOT NULL DEFAULT`), the schema and
 lib field, and the section control.
-
-The form Settings tab also includes API Keys (50). Workspace and form key drawers share the
-credential UI, with separate collections. A key has one workspace owner and optionally one form
-within that workspace, plus one or more types through a join table. These are collection/create
-drawers rather than inherited settings; see [credential issuer](credential-issuer.md).

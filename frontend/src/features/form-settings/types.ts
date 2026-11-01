@@ -32,5 +32,7 @@ export type WorkspaceSettingsSection = {
   id: string;
   /** Display order; lower first. */
   weight: number;
+  /** When set, the section shows only where this fixed feature is on. */
+  featureCode?: string;
   Drawer: ComponentType<WorkspaceSettingsSectionProps>;
 };

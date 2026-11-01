@@ -1,5 +1,5 @@
 import type {
-  CreateCredential,
+  CredentialFields,
   CredentialMetadata,
   CredentialSecret,
   CredentialState,
@@ -9,51 +9,69 @@ import {
   createCredentialIssuerAdapter,
   resolveDefaultCredentialIssuerCode,
 } from '../../core/integrations/credential-issuer/CredentialIssuerRegistry';
-import type {
-  CredentialIssuerAdapter,
-  IssuedApiKey,
+import {
+  CredentialRequestRejectedError,
+  type CredentialIssuerAdapter,
+  type IssuedApiKey,
 } from '../../core/integrations/credential-issuer/CredentialIssuerAdapter';
-import type { CredentialListQuery } from './schema';
 import * as repo from '../../core/db/repos/workspaceCredentialRepo';
+import { log } from '../../core/logging';
+import type { CredentialListQuery } from './schema';
 import { failCredentialOperation, type CredentialOperationStage } from './operationFailure';
 
 export const credentialMetadata = (record: repo.CredentialRecord): CredentialMetadata => ({
   id: record.id,
+  scope: record.formId === null ? 'workspace' : 'form',
   label: record.label,
-  types: record.types,
   notes: record.notes,
+  types: record.types,
   status: record.status,
   createdAt: record.createdAt.toISOString(),
   updatedAt: record.updatedAt.toISOString(),
   rotatedAt: record.rotatedAt?.toISOString() ?? null,
 });
 
-const configuredIssuer = (code: string): CredentialIssuerAdapter => {
-  if (code === 'credential-issuer-noop')
-    throw new ServiceUnavailableError('Credential issuance is unavailable');
+/** The issuer for `code`, or null when it is not configured or cannot generate keys. */
+const usableIssuer = (code: string): CredentialIssuerAdapter | null => {
   try {
-    return createCredentialIssuerAdapter(code);
+    const issuer = createCredentialIssuerAdapter(code);
+    return issuer.available ? issuer : null;
   } catch {
-    throw new ServiceUnavailableError('Credential issuer is not configured');
+    return null;
+  }
+};
+
+const requireIssuer = (code: string): CredentialIssuerAdapter => {
+  const issuer = usableIssuer(code);
+  if (!issuer) throw new ServiceUnavailableError('Credential issuance is unavailable');
+  return issuer;
+};
+
+const notFound = () => new NotFoundError('Credential not found');
+
+const CONSUMER_GONE = new Set([404, 410]);
+
+/** Rotates a key to a value nobody receives. Null when its consumer was already removed. */
+const rotateAway = async (
+  issuer: CredentialIssuerAdapter,
+  clientId: string,
+): Promise<IssuedApiKey | null> => {
+  try {
+    return await issuer.regenerate(clientId);
+  } catch (error) {
+    const gone =
+      error instanceof CredentialRequestRejectedError &&
+      CONSUMER_GONE.has(error.upstreamStatus ?? 0);
+    if (gone) return null;
+    throw error;
   }
 };
 
 export class CredentialService {
-  async list(
-    workspaceId: string,
-    query: CredentialListQuery,
-    formId: string | null = null,
-  ): Promise<CredentialState> {
-    const { items, total } = await repo.listWorkspaceCredentials(workspaceId, query, formId);
-    let available = false;
-    try {
-      configuredIssuer(resolveDefaultCredentialIssuerCode());
-      available = true;
-    } catch {
-      /* Unavailable issuer is reported without exposing configuration. */
-    }
+  async list(owner: repo.CredentialOwner, query: CredentialListQuery): Promise<CredentialState> {
+    const { items, total } = await repo.listWorkspaceCredentials(owner, query);
     return {
-      available,
+      available: usableIssuer(resolveDefaultCredentialIssuerCode()) !== null,
       items: items.map(credentialMetadata),
       page: { offset: query.offset, limit: query.limit, total },
       filters: { q: query.q },
@@ -61,81 +79,116 @@ export class CredentialService {
     };
   }
 
-  async issue(
-    workspaceId: string,
-    actorId: string,
-    input: CreateCredential,
-    formId: string | null = null,
-  ): Promise<CredentialSecret> {
-    const issuerCode = resolveDefaultCredentialIssuerCode();
-    const issuer = configuredIssuer(issuerCode);
-    const record = await repo.reserveWorkspaceCredential(
-      workspaceId,
-      issuerCode,
-      actorId,
-      {
-        label: input.label,
-        notes: input.notes,
-        types: input.types,
-      },
-      formId,
-    );
-    if (!record) throw new ConflictError('Credential could not be reserved');
-    return this.perform(record, actorId, () =>
-      issuer.issue({
-        applicationName: `soba-workspace-${workspaceId}-${record.id}`,
-        labels: {
-          'issued-by': 'soba',
-          'workspace-id': workspaceId,
-          'credential-id': record.id,
-          ...(formId ? { 'form-id': formId } : {}),
-        },
-      }),
-    );
-  }
-
-  async regenerate(
-    workspaceId: string,
-    id: string,
-    actorId: string,
-    formId: string | null = null,
-  ): Promise<CredentialSecret> {
-    const existing = await repo.getWorkspaceCredential(workspaceId, id, formId);
-    if (existing?.id !== id) throw new NotFoundError('Credential not found');
-    if (existing.status !== 'active' || !existing.clientId)
-      throw new ConflictError('Credential operation is pending or requires reconciliation');
-    const issuer = configuredIssuer(existing.issuerCode);
-    const record = await repo.reserveCredentialRotation(workspaceId, id, actorId, formId);
-    if (!record) throw new ConflictError('Another credential operation has started');
-    const clientId = existing.clientId;
-    return this.perform(record, actorId, () => issuer.regenerate(clientId));
-  }
-
-  async updateNotes(
-    workspaceId: string,
-    id: string,
-    actorId: string,
-    notes: string,
-    formId: string | null = null,
-  ): Promise<CredentialMetadata> {
-    const record = await repo.updateCredentialNotes(workspaceId, id, actorId, notes, formId);
-    if (!record) throw new NotFoundError('Credential not found');
+  async get(owner: repo.CredentialOwner, id: string): Promise<CredentialMetadata> {
+    const record = await repo.getWorkspaceCredential(owner, id);
+    if (!record) throw notFound();
     return credentialMetadata(record);
   }
 
-  private async perform(
+  async issue(
+    owner: repo.CredentialOwner,
+    actorId: string,
+    fields: CredentialFields,
+  ): Promise<CredentialSecret> {
+    const issuerCode = resolveDefaultCredentialIssuerCode();
+    const issuer = requireIssuer(issuerCode);
+    const record = await repo.reserveCredentialIssue(owner, issuerCode, actorId, fields);
+    const done = await this.perform(record, actorId, 'issue', () =>
+      issuer.issue({
+        applicationName: `soba-workspace-${owner.workspaceId}-${record.id}`,
+        labels: {
+          'issued-by': 'soba',
+          'workspace-id': owner.workspaceId,
+          'credential-id': record.id,
+          ...(owner.formId ? { 'form-id': owner.formId } : {}),
+        },
+      }),
+    );
+    return { credential: credentialMetadata(done.record), apiKey: done.issued.apiKey };
+  }
+
+  async update(
+    owner: repo.CredentialOwner,
+    id: string,
+    actorId: string,
+    fields: CredentialFields,
+  ): Promise<CredentialMetadata> {
+    const record = await repo.updateCredentialFields(owner, id, actorId, fields);
+    if (!record) throw notFound();
+    return credentialMetadata(record);
+  }
+
+  async regenerate(
+    owner: repo.CredentialOwner,
+    id: string,
+    actorId: string,
+  ): Promise<CredentialSecret> {
+    const existing = await repo.getWorkspaceCredential(owner, id);
+    if (!existing) throw notFound();
+    const { record, issuer, clientId } = await this.reserve(owner, existing, actorId, 'regenerate');
+    const done = await this.perform(record, actorId, 'regenerate', () =>
+      issuer.regenerate(clientId),
+    );
+    return { credential: credentialMetadata(done.record), apiKey: done.issued.apiKey };
+  }
+
+  /** The issuer cannot revoke a key, so delete rotates it to a value nobody receives. */
+  async remove(owner: repo.CredentialOwner, id: string, actorId: string): Promise<void> {
+    const existing = await repo.getWorkspaceCredential(owner, id);
+    if (!existing) throw notFound();
+    if (existing.status === 'failed') {
+      if (!(await repo.deleteFailedCredential(owner, id, actorId))) throw notFound();
+      return;
+    }
+    const { record, issuer, clientId } = await this.reserve(owner, existing, actorId, 'delete');
+    const { issued } = await this.perform(record, actorId, 'delete', () =>
+      rotateAway(issuer, clientId),
+    );
+    if (issued === null) {
+      // The consumer can also look gone after a gateway change, with the key still working there.
+      log.warn(
+        {
+          credentialId: record.id,
+          workspaceId: record.workspaceId,
+          issuerCode: record.issuerCode,
+          clientId,
+        },
+        'Credential deleted without a rotation; the gateway no longer has its consumer',
+      );
+    }
+  }
+
+  private async reserve(
+    owner: repo.CredentialOwner,
+    existing: repo.CredentialRecord,
+    actorId: string,
+    operation: 'regenerate' | 'delete',
+  ) {
+    const clientId = existing.clientId;
+    if (existing.status !== 'active' || !clientId)
+      throw new ConflictError('Credential operation is pending or requires reconciliation');
+    const issuer = requireIssuer(existing.issuerCode);
+    const record = await repo.reserveCredentialOperation(owner, existing.id, actorId, operation);
+    if (!record) throw new ConflictError('Another credential operation has started');
+    return { record, issuer, clientId };
+  }
+
+  private async perform<T extends IssuedApiKey | null>(
     record: repo.CredentialRecord,
     actorId: string,
-    operation: () => Promise<IssuedApiKey>,
-  ): Promise<CredentialSecret> {
+    operation: repo.CredentialOperation,
+    call: () => Promise<T>,
+  ): Promise<{ record: repo.CredentialRecord; issued: T }> {
     let stage: CredentialOperationStage = 'upstream';
+    let consumerId: string | undefined;
     try {
-      const issued = await operation();
+      const issued = await call();
       stage = 'persistence';
-      const saved = await repo.completeCredentialOperation(record, actorId, issued);
-      return { credential: credentialMetadata(saved), apiKey: issued.apiKey };
+      consumerId = issued?.clientId;
+      const saved = await repo.completeCredentialOperation(record, actorId, operation, issued);
+      return { record: saved, issued };
     } catch (error) {
-      return failCredentialOperation(record, actorId, stage, error);
+      return failCredentialOperation(record, actorId, operation, { stage, consumerId }, error);
     }
   }
 }

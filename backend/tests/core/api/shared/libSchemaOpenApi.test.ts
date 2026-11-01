@@ -7,7 +7,6 @@ import { registerMetaOpenApi } from '../../../../src/core/api/meta/schema';
 import { registerMeOpenApi } from '../../../../src/core/api/me/schema';
 import { registerSubmitOpenApi } from '../../../../src/core/api/submit/schema';
 import { registerFormSettingsOpenApi } from '../../../../src/features/form-settings';
-import { registerCredentialsOpenApi } from '../../../../src/features/credentials/schema';
 import { registerUserSearchOpenApi } from '../../../../src/features/user-search/schema';
 import { registerJobsOpenApi } from '../../../../src/features/jobs/schema';
 import { registerSubmissionExportOpenApi } from '../../../../src/features/submission-export/schema';
@@ -22,7 +21,6 @@ function componentSchemas(): unknown {
   registerMetaOpenApi(registry);
   registerMeOpenApi(registry);
   registerUserSearchOpenApi(registry);
-  registerCredentialsOpenApi(registry);
   registerJobsOpenApi(registry);
   registerSubmissionExportOpenApi(registry);
   registerSubmitOpenApi(registry);

@@ -11,8 +11,6 @@ import { getTableConfig } from 'drizzle-orm/pg-core';
 import { db, type DbOrTx } from '../../core/db/client';
 import {
   appUsers,
-  credentialAudit,
-  credentialTypeAssignments,
   documentGenerationAudits,
   documentTemplates,
   enterpriseGroupBindings,
@@ -37,7 +35,6 @@ import {
   submissionRevisions,
   submissions,
   userIdentities,
-  workspaceCredentials,
   workspaceDisclaimerAcceptances,
   workspaceGroupMemberships,
   workspaceGroupRoles,
@@ -268,7 +265,6 @@ export const WORKSPACE_SCOPED_TABLES: readonly string[] = [
   'job',
   'document_generation_audit',
   'notification_audit',
-  'workspace_credential',
   'submission_export_audit',
   'submission_revision',
   'submission_participant',
@@ -342,25 +338,6 @@ async function purgeWorkspaceScoped(
   await record(
     'notification_audit',
     tx.delete(notificationAudits).where(inArray(notificationAudits.workspaceId, ids)),
-  );
-  // Audit rows reach the workspace through their credential and must be removed first.
-  const credentialIds = tx
-    .select({ id: workspaceCredentials.id })
-    .from(workspaceCredentials)
-    .where(inArray(workspaceCredentials.workspaceId, ids));
-  await record(
-    'credential_audit',
-    tx.delete(credentialAudit).where(inArray(credentialAudit.credentialId, credentialIds)),
-  );
-  await record(
-    'credential_type_assignment',
-    tx
-      .delete(credentialTypeAssignments)
-      .where(inArray(credentialTypeAssignments.credentialId, credentialIds)),
-  );
-  await record(
-    'workspace_credential',
-    tx.delete(workspaceCredentials).where(inArray(workspaceCredentials.workspaceId, ids)),
   );
   await record(
     'submission_export_audit',

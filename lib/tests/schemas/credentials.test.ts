@@ -1,11 +1,11 @@
-import { CreateCredentialSchema } from '../../src/schemas/credentials';
+import { CredentialFieldsSchema } from '../../src/schemas/credentials';
 
 const input = { label: 'Integration', notes: '', types: ['api'] };
-describe('create credential', () => {
+describe('credential fields', () => {
   it('accepts either type or both and trims text', () => {
     for (const types of [['api'], ['web-component'], ['api', 'web-component']]) {
       expect(
-        CreateCredentialSchema.parse({ ...input, label: ' Integration ', notes: ' Vault ', types }),
+        CredentialFieldsSchema.parse({ ...input, label: ' Integration ', notes: ' Vault ', types }),
       ).toEqual({ label: 'Integration', notes: 'Vault', types });
     }
   });
@@ -18,6 +18,6 @@ describe('create credential', () => {
     { ...input, types: ['unknown'] },
     { ...input, clientId: 'untrusted' },
   ])('rejects invalid input %j', (body) => {
-    expect(CreateCredentialSchema.safeParse(body).success).toBe(false);
+    expect(CredentialFieldsSchema.safeParse(body).success).toBe(false);
   });
 });

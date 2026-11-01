@@ -1,8 +1,12 @@
 jest.mock('../../../src/core/db/repos/formAccessRepo', () => ({
   resolveFormPermissions: jest.fn(),
 }));
+jest.mock('../../../src/core/services/featureAvailabilityService', () => ({
+  isFeatureAvailable: jest.fn(),
+}));
 import { resolveFormPermissions } from '../../../src/core/db/repos/formAccessRepo';
-import { Permissions } from '../../../src/core/db/codes';
+import { isFeatureAvailable } from '../../../src/core/services/featureAvailabilityService';
+import { Features, Permissions } from '../../../src/core/db/codes';
 import type { Request, Response, NextFunction } from 'express';
 import { ForbiddenError } from '../../../src/core/errors';
 jest.mock('../../../src/core/middleware/workspaceContext', () => ({
@@ -26,31 +30,56 @@ jest.mock('../../../src/core/middleware/workspaceContext', () => ({
 jest.mock('../../../src/features/credentials/service', () => ({
   credentialService: {
     list: jest.fn(),
+    get: jest.fn(),
     issue: jest.fn(),
+    update: jest.fn(),
     regenerate: jest.fn(),
-    updateNotes: jest.fn(),
+    remove: jest.fn(),
   },
 }));
 import express from 'express';
 import request from 'supertest';
 import { buildOpenApiDocument } from '../../../src/core/api/shared/openapi';
-import { registerCredentialsOpenApi } from '../../../src/features/credentials/schema';
-import { credentialsRouter, formCredentialsRouter } from '../../../src/features/credentials/route';
+import { registerApiKeySettingsOpenApi } from '../../../src/features/credentials/schema';
 import { credentialService } from '../../../src/features/credentials/service';
+import {
+  formSettingsRouter,
+  workspaceSettingsRouter,
+} from '../../../src/features/form-settings/router';
 import { coreErrorHandler } from '../../../src/core/middleware/errorHandler';
-const query = { offset: 0, limit: 20, sort: 'createdAt:desc' as const, locale: 'en' as const };
+
 const service = jest.mocked(credentialService);
-const id = '01900000-0000-7000-8000-000000000001';
+const workspaceId = '01900000-0000-7000-8000-000000000001';
+const formId = '01900000-0000-7000-8000-000000000003';
 const credentialId = '01900000-0000-7000-8000-000000000002';
-const path = `/workspaces/${id}/credentials`;
+const workspacePath = `/workspaces/${workspaceId}/settings/api-keys`;
+const formPath = `/design/forms/${formId}/settings/api-keys`;
+const workspaceOwner = { workspaceId, formId: null };
+const formOwner = { workspaceId, formId };
+const fields = { label: 'Embedding', notes: '', types: ['api', 'web-component'] };
+const query = { offset: 0, limit: 20, sort: 'createdAt:desc', locale: 'en' };
+
 const app = express();
 app.use(express.json());
-app.use(credentialsRouter);
-app.use('/design', formCredentialsRouter);
+app.use('/design/forms/:id/settings', formSettingsRouter);
+app.use('/workspaces/:id/settings', workspaceSettingsRouter);
 app.use(coreErrorHandler);
+
+const grant = (...codes: string[]) =>
+  jest.mocked(resolveFormPermissions).mockResolvedValue(new Set(codes) as never);
+
+/** Each write the group serves, as a request builder. */
+const writes = (base: string) => [
+  () => request(app).post(base).send(fields),
+  () => request(app).patch(`${base}/${credentialId}`).send(fields),
+  () => request(app).post(`${base}/${credentialId}/regenerate`).send({}),
+  () => request(app).delete(`${base}/${credentialId}`),
+];
+
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.mocked(resolveFormPermissions).mockResolvedValue(new Set());
+  jest.mocked(isFeatureAvailable).mockResolvedValue(true);
+  grant();
   service.list.mockResolvedValue({
     available: true,
     items: [],
@@ -60,216 +89,171 @@ beforeEach(() => {
   });
 });
 
-describe('workspace credential routes', () => {
-  it.each(['limit=101', 'offset=-1', 'cursor=old', 'sort=unsupported:asc', 'q=%20'])(
-    'rejects invalid list queries: %s',
-    async (params) => {
-      expect((await request(app).get(`${path}?${params}`).set('x-test-role', 'admin')).status).toBe(
-        400,
-      );
-      expect(service.list).not.toHaveBeenCalled();
-    },
-  );
+describe('api keys settings group', () => {
+  it('answers 404 at both levels while the api-keys feature is off', async () => {
+    jest.mocked(isFeatureAvailable).mockResolvedValue(false);
+    grant(Permissions.form_update, Permissions.form_read);
+    for (const path of [workspacePath, formPath]) {
+      expect((await request(app).get(path).set('x-test-role', 'owner')).status).toBe(404);
+    }
+    expect(isFeatureAvailable).toHaveBeenCalledWith(Features.api_keys, expect.anything());
+    expect(service.list).not.toHaveBeenCalled();
+  });
 
-  it('passes paging, search, sort and the preferred language to the list service', async () => {
+  it("lets any workspace member read the workspace's keys", async () => {
     const response = await request(app)
-      .get(`${path}?offset=10&limit=5&q=Vault&sort=label:asc&locale=en`)
-      .set('x-test-role', 'admin')
+      .get(`${workspacePath}?offset=10&limit=5&q=Vault&sort=label:asc`)
+      .set('x-test-role', 'viewer')
       .set('Accept-Language', 'fr-CA');
     expect(response.status).toBe(200);
-    expect(service.list).toHaveBeenCalledWith(id, {
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(service.list).toHaveBeenCalledWith(workspaceOwner, {
       offset: 10,
       limit: 5,
       q: 'Vault',
       sort: 'label:asc',
       locale: 'fr',
     });
-    expect(response.headers.vary).toContain('Accept-Language');
   });
-  const formId = '01900000-0000-7000-8000-000000000003';
-  const formPath = `/design/forms/${formId}/credentials`;
-  it('requires form update permission even for a workspace member', async () => {
-    for (const operation of [request(app).get(formPath), request(app).post(formPath).send({})]) {
-      const response = await operation.set('x-test-role', 'member');
+
+  it("refuses a member every write to the workspace's keys, uncached", async () => {
+    for (const write of writes(workspacePath)) {
+      const response = await write().set('x-test-role', 'member');
       expect(response.status).toBe(403);
       expect(response.headers['cache-control']).toBe('no-store');
     }
-    expect(service.list).not.toHaveBeenCalled();
+    for (const call of [service.issue, service.update, service.regenerate, service.remove]) {
+      expect(call).not.toHaveBeenCalled();
+    }
+  });
+
+  it("lets an owner or admin change the workspace's keys", async () => {
+    service.issue.mockResolvedValue({ apiKey: 'secret' } as never);
+    const issued = await request(app).post(workspacePath).set('x-test-role', 'admin').send(fields);
+    expect(issued.status).toBe(201);
+    expect(issued.headers['cache-control']).toBe('no-store');
+    expect(service.issue).toHaveBeenCalledWith(workspaceOwner, 'actor', fields);
+
+    const patched = await request(app)
+      .patch(`${workspacePath}/${credentialId}`)
+      .set('x-test-role', 'owner')
+      .send(fields);
+    expect(patched.status).toBe(200);
+    expect(service.update).toHaveBeenCalledWith(workspaceOwner, credentialId, 'actor', fields);
+
+    const regenerated = await request(app)
+      .post(`${workspacePath}/${credentialId}/regenerate`)
+      .set('x-test-role', 'owner')
+      .send({});
+    expect(regenerated.status).toBe(200);
+    expect(regenerated.headers['cache-control']).toBe('no-store');
+    expect(service.regenerate).toHaveBeenCalledWith(workspaceOwner, credentialId, 'actor');
+
+    const deleted = await request(app)
+      .delete(`${workspacePath}/${credentialId}`)
+      .set('x-test-role', 'owner');
+    expect(deleted.status).toBe(204);
+    expect(service.remove).toHaveBeenCalledWith(workspaceOwner, credentialId, 'actor');
+  });
+
+  it("reads a form's keys with form_read and refuses its writes without form_update", async () => {
+    grant(Permissions.form_read);
+    expect((await request(app).get(formPath).set('x-test-role', 'member')).status).toBe(200);
+    expect(service.list).toHaveBeenCalledWith(formOwner, query);
+    expect(resolveFormPermissions).toHaveBeenCalledWith('actor', workspaceId, formId);
+    for (const write of writes(formPath)) {
+      expect((await write().set('x-test-role', 'owner')).status).toBe(403);
+    }
     expect(service.issue).not.toHaveBeenCalled();
   });
-  it('allows a form manager to read and create only for the resolved form and workspace', async () => {
-    jest.mocked(resolveFormPermissions).mockResolvedValue(new Set([Permissions.form_update]));
-    expect((await request(app).get(formPath).set('x-test-role', 'member')).status).toBe(200);
-    expect(service.list).toHaveBeenCalledWith(id, query, formId);
-    const body = { label: 'Embedding', notes: '', types: ['api', 'web-component'] };
-    const response = await request(app).post(formPath).set('x-test-role', 'member').send(body);
-    expect(response.status).toBe(201);
-    expect(response.headers['cache-control']).toBe('no-store');
-    expect(service.issue).toHaveBeenCalledWith(id, 'actor', body, formId);
-    expect(resolveFormPermissions).toHaveBeenCalledWith('actor', id, formId);
+
+  it("refuses a form's keys to a member without form_read", async () => {
+    const response = await request(app).get(formPath).set('x-test-role', 'member');
+    expect(response.status).toBe(403);
+    expect(service.list).not.toHaveBeenCalled();
   });
-  it('rejects caller-provided form ownership and invalid types', async () => {
-    jest.mocked(resolveFormPermissions).mockResolvedValue(new Set([Permissions.form_update]));
+
+  it("changes a form's keys with form_update, owned by the resolved form", async () => {
+    grant(Permissions.form_update);
+    service.issue.mockResolvedValue({ apiKey: 'secret' } as never);
+    expect(
+      (await request(app).post(formPath).set('x-test-role', 'member').send(fields)).status,
+    ).toBe(201);
+    expect(service.issue).toHaveBeenCalledWith(formOwner, 'actor', fields);
+    expect(
+      (
+        await request(app)
+          .patch(`${formPath}/${credentialId}`)
+          .set('x-test-role', 'member')
+          .send(fields)
+      ).status,
+    ).toBe(200);
+    expect(service.update).toHaveBeenCalledWith(formOwner, credentialId, 'actor', fields);
+    expect(
+      (
+        await request(app)
+          .post(`${formPath}/${credentialId}/regenerate`)
+          .set('x-test-role', 'member')
+          .send({})
+      ).status,
+    ).toBe(200);
+    expect(service.regenerate).toHaveBeenCalledWith(formOwner, credentialId, 'actor');
+    expect(
+      (await request(app).delete(`${formPath}/${credentialId}`).set('x-test-role', 'member'))
+        .status,
+    ).toBe(204);
+    expect(service.remove).toHaveBeenCalledWith(formOwner, credentialId, 'actor');
+  });
+
+  it.each(['limit=101', 'offset=-1', 'cursor=old', 'sort=unsupported:asc', 'q=%20'])(
+    'rejects the list query %s',
+    async (params) => {
+      const response = await request(app)
+        .get(`${workspacePath}?${params}`)
+        .set('x-test-role', 'admin');
+      expect(response.status).toBe(400);
+      expect(service.list).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects caller-supplied ownership, repeated types, a bad key id and a regenerate body', async () => {
     for (const body of [
-      { label: 'Key', notes: '', types: ['api'], workspaceId: id },
-      { label: 'Key', notes: '', types: ['api'], formId },
-      { label: 'Key', notes: '', types: ['api', 'api'] },
+      { ...fields, workspaceId },
+      { ...fields, formId },
+      { ...fields, types: ['api', 'api'] },
     ]) {
       expect(
-        (await request(app).post(formPath).set('x-test-role', 'member').send(body)).status,
+        (await request(app).post(workspacePath).set('x-test-role', 'admin').send(body)).status,
       ).toBe(400);
     }
+    expect(
+      (await request(app).get(`${workspacePath}/not-a-uuid`).set('x-test-role', 'admin')).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(app)
+          .post(`${workspacePath}/${credentialId}/regenerate`)
+          .set('x-test-role', 'admin')
+          .send({ clientId: 'other' })
+      ).status,
+    ).toBe(400);
     expect(service.issue).not.toHaveBeenCalled();
+    expect(service.get).not.toHaveBeenCalled();
+    expect(service.regenerate).not.toHaveBeenCalled();
   });
 
-  it('saves notes through a workspace-scoped, non-cacheable PATCH', async () => {
-    service.updateNotes.mockResolvedValue({
-      id: credentialId,
-      label: 'LABEL',
-      types: ['api'],
-      notes: 'Vault reference',
-      status: 'active',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      rotatedAt: null,
-    });
-    const response = await request(app)
-      .patch(`${path}/${credentialId}`)
-      .set('x-test-role', 'admin')
-      .send({ notes: 'Vault reference' });
-    expect(response.status).toBe(200);
-    expect(service.updateNotes).toHaveBeenCalledWith(id, credentialId, 'actor', 'Vault reference');
-    expect(response.headers['cache-control']).toBe('no-store');
-    expect(response.body).not.toHaveProperty('apiKey');
-  });
-  it('rejects oversized notes and unknown fields', async () => {
-    for (const body of [{ notes: 'x'.repeat(1001) }, { notes: 'note', clientId: 'untrusted' }]) {
-      const response = await request(app)
-        .patch(`${path}/${credentialId}`)
-        .set('x-test-role', 'owner')
-        .send(body);
-      expect(response.status).toBe(400);
-    }
-    expect(service.updateNotes).not.toHaveBeenCalled();
-  });
-
-  it('requires workspace membership before reaching the service', async () => {
-    expect((await request(app).get(path)).status).toBe(403);
-    expect(service.list).not.toHaveBeenCalled();
-  });
-  it('documents all operations with bearer authentication and separate metadata/secret responses', () => {
-    const document = buildOpenApiDocument([registerCredentialsOpenApi]);
-    const resource = document.paths['/workspaces/{id}/credentials']!;
-    expect(resource.get?.security).toEqual([{ bearerAuth: [] }]);
-    expect(resource.post?.security).toEqual([{ bearerAuth: [] }]);
-    expect(
-      document.paths['/workspaces/{id}/credentials/{credentialId}/regenerate']?.post?.security,
-    ).toEqual([{ bearerAuth: [] }]);
-    expect(resource.get?.responses['200']).toMatchObject({
-      content: {
-        'application/json': {
-          schema: { $ref: '#/components/schemas/Credentials_CredentialState' },
-        },
-      },
-    });
-    expect(resource.post?.responses['201']).toMatchObject({
-      content: {
-        'application/json': {
-          schema: { $ref: '#/components/schemas/Credentials_CredentialSecret' },
-        },
-      },
-    });
-    expect(document.components?.schemas?.Credentials_CredentialSecret).toMatchObject({
-      properties: { apiKey: { type: 'string' } },
-    });
-    expect(
-      JSON.stringify(document.components?.schemas?.Credentials_CredentialMetadata),
-    ).not.toContain('apiKey');
-  });
-
-  it.each(['member', 'viewer', 'submitter'])('denies %s on all operations', async (role) => {
-    for (const operation of [
-      request(app).get(path),
-      request(app).post(path).send({}),
-      request(app).post(`${path}/${credentialId}/regenerate`).send({}),
-      request(app).patch(`${path}/${credentialId}`).send({ notes: 'note' }),
+  it('documents both levels, each with the key routes', () => {
+    const document = buildOpenApiDocument([registerApiKeySettingsOpenApi]);
+    for (const base of [
+      '/workspaces/{id}/settings/api-keys',
+      '/design/forms/{id}/settings/api-keys',
     ]) {
-      const response = await operation.set('x-test-role', role);
-      expect(response.status).toBe(403);
-      expect(response.headers['cache-control']).toBe('no-store');
+      const collection = document.paths[base]!;
+      const key = document.paths[`${base}/{credentialId}`]!;
+      expect(collection.get?.security).toEqual([{ bearerAuth: [] }]);
+      expect(collection.post?.responses['201']).toBeDefined();
+      expect(key.get && key.patch && key.delete).toBeTruthy();
+      expect(document.paths[`${base}/{credentialId}/regenerate`]?.post).toBeDefined();
     }
-    expect(service.list).not.toHaveBeenCalled();
-    expect(service.issue).not.toHaveBeenCalled();
-    expect(service.regenerate).not.toHaveBeenCalled();
-  });
-  it.each(['owner', 'admin'])('allows %s to get metadata', async (role) => {
-    expect((await request(app).get(path).set('x-test-role', role)).status).toBe(200);
-    expect(service.list).toHaveBeenCalledWith(id, query);
-  });
-  it('rejects browser-provided upstream settings', async () => {
-    const response = await request(app)
-      .post(path)
-      .set('x-test-role', 'owner')
-      .send({ gatewayId: 'untrusted', aclGroups: ['admin'] });
-    expect(response.status).toBe(400);
-    expect(service.issue).not.toHaveBeenCalled();
-  });
-  it.each([
-    { label: '', notes: '', types: ['api'] },
-    { label: 'Key', notes: '', types: [] },
-    { label: 'Key', notes: '', types: ['other'] },
-    { label: 'Key', notes: '', types: ['api', 'api'] },
-    { label: 'Key', notes: 'x'.repeat(1001), types: ['api'] },
-  ])('rejects invalid create input %j', async (body) => {
-    expect((await request(app).post(path).set('x-test-role', 'owner').send(body)).status).toBe(400);
-    expect(service.issue).not.toHaveBeenCalled();
-  });
-  it('validates workspace and credential UUIDs', async () => {
-    expect(
-      (await request(app).get('/workspaces/bad/credentials').set('x-test-role', 'admin')).status,
-    ).toBe(400);
-    expect(
-      (await request(app).post(`${path}/bad/regenerate`).set('x-test-role', 'admin').send({}))
-        .status,
-    ).toBe(400);
-    expect(service.regenerate).not.toHaveBeenCalled();
-  });
-  it('returns a non-cacheable secret only on successful create/rotate responses', async () => {
-    const result = {
-      credential: {
-        id: credentialId,
-        label: 'Integration',
-        types: ['api' as const],
-        notes: '',
-        status: 'active' as const,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        rotatedAt: null,
-      },
-      apiKey: 'one-time-secret',
-    };
-    service.issue.mockResolvedValue(result);
-    service.regenerate.mockResolvedValue(result);
-    const created = await request(app)
-      .post(path)
-      .set('x-test-role', 'owner')
-      .send({ label: 'Integration', notes: '', types: ['api'] });
-    expect(service.issue).toHaveBeenCalledWith(id, 'actor', {
-      label: 'Integration',
-      notes: '',
-      types: ['api'],
-    });
-    expect(created.status).toBe(201);
-    expect(created.body.apiKey).toBe('one-time-secret');
-    expect(created.headers['cache-control']).toBe('no-store');
-    const rotated = await request(app)
-      .post(`${path}/${credentialId}/regenerate`)
-      .set('x-test-role', 'admin')
-      .send({});
-    expect(rotated.status).toBe(200);
-    expect(service.regenerate).toHaveBeenCalledWith(id, credentialId, 'actor');
-    expect((await request(app).get(path).set('x-test-role', 'owner')).body).not.toHaveProperty(
-      'apiKey',
-    );
   });
 });

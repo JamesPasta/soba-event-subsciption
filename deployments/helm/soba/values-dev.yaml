@@ -1,7 +1,9 @@
 # Dev environment — single replica, moderate resources
 backend:
-  # Development data generator: on in dev. Notifications send through notify-v1 below.
+  # Development data generator: on in dev. Notifications send through notify-v1 below. API keys
+  # issue through the APS issuer below.
   features:
+    api-keys: "enabled"
     dev-data: "enabled"
     notifications: "enabled"
     post-submission: "enabled"
@@ -29,8 +31,7 @@ backend:
     eventStreamDefaultCode: eventstream-redis
     documentGenerationDefaultCode: cdogs-v2
     tenantEngineDefaultCode: cstar-v1
-    # Switch to aps-credential-issuer-v3 after adding Vault credentials.
-    credentialIssuerDefaultCode: credential-issuer-noop
+    credentialIssuerDefaultCode: aps-credential-issuer-v3
     workflowEngineDefaultCode: cs-workflow-v1
     notificationDefaultCode: notify-v1
     userSearchPlugins: css-v1,user-search-soba
@@ -39,9 +40,7 @@ backend:
   credentialIssuer:
     apsCredentialIssuerV3:
       apiBaseUrl: https://api.gov.bc.ca/ds/api/v3
-      # Dev gateway and its target product environment; these are separate IDs.
       gatewayId: "gw-93f93"
-      environmentAppId: "5343268B"
       tokenUrl: https://authz.apps.gov.bc.ca/auth/realms/aps/protocol/openid-connect/token
   documentGeneration:
     cdogsV2:

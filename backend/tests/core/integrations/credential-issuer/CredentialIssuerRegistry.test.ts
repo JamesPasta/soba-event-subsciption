@@ -26,6 +26,7 @@ describe('CredentialIssuerRegistry', () => {
     delete process.env.CREDENTIAL_ISSUER_DEFAULT_CODE;
     expect(resolveDefaultCredentialIssuerCode()).toBe('credential-issuer-noop');
     const issuer = createDefaultCredentialIssuerAdapter();
+    expect(issuer.available).toBe(false);
     await expect(issuer.issue({ applicationName: 'test' })).rejects.toThrow(
       'Credential issuance is unavailable',
     );
@@ -41,7 +42,7 @@ describe('CredentialIssuerRegistry', () => {
     ).toBe('aps-credential-issuer-v3');
   });
 
-  it('reports absent configuration and no-op unavailability without throwing', async () => {
+  it('reports absent configuration without throwing, and the no-op as ready', async () => {
     delete process.env.PLUGIN_APS_CREDENTIAL_ISSUER_V3_API_BASE_URL;
     expect(() => createCredentialIssuerAdapter('aps-credential-issuer-v3')).toThrow(
       'PLUGIN_APS_CREDENTIAL_ISSUER_V3_API_BASE_URL is required',
@@ -51,6 +52,6 @@ describe('CredentialIssuerRegistry', () => {
       ok: false,
       message: 'PLUGIN_APS_CREDENTIAL_ISSUER_V3_API_BASE_URL is required',
     });
-    expect(readiness['credential-issuer-noop'].ok).toBe(false);
+    expect(readiness['credential-issuer-noop'].ok).toBe(true);
   });
 });

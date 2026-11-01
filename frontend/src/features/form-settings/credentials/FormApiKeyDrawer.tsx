@@ -1,7 +1,7 @@
 'use client';
 
 import { Accordion } from '@bcgov/design-system-react-components';
-import ApiKeys from '@/src/features/credentials/ui/ApiKeys';
+import ApiKeysTab from '@/src/features/credentials/ui/ApiKeysTab';
 import type { FormSettingsSectionProps } from '../types';
 
 export default function FormApiKeyDrawer({ dict, drawerName, formId }: FormSettingsSectionProps) {
@@ -9,7 +9,7 @@ export default function FormApiKeyDrawer({ dict, drawerName, formId }: FormSetti
     <Accordion id={drawerName} data-testid={`accordion-${drawerName}`} label={dict.apiKeys.heading}>
       <div className="d-block w-100">
         <p>{dict.apiKeys.formScope}</p>
-        <ApiKeys scope={{ kind: 'form', id: formId }} />
+        <ApiKeysTab key={formId} dict={dict} owner={{ kind: 'form', id: formId }} />
       </div>
     </Accordion>
   );

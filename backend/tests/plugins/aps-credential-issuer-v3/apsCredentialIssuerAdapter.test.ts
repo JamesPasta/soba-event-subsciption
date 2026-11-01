@@ -4,6 +4,7 @@ import { ApsCredentialIssuerAdapter } from '../../../src/plugins/aps-credential-
 import { createPluginConfigReaderFrom } from '../../../src/core/config/pluginConfig';
 import { createEnvReader } from '../../../src/core/config/env';
 import { clearOAuth2TokenCache } from '../../../src/core/auth/oauth2TokenProvider';
+import { CredentialRequestRejectedError } from '../../../src/core/integrations/credential-issuer/CredentialIssuerAdapter';
 
 interface RecordedRequest {
   path: string;
@@ -117,11 +118,11 @@ describe('APS credential issuer', () => {
     });
   });
 
-  it('rejects invalid inputs before any network call', async () => {
-    await expect(adapter().issue({ applicationName: '' })).rejects.toThrow(
-      'Invalid credential issuance request',
+  it('refuses invalid inputs before any network call', async () => {
+    await expect(adapter().issue({ applicationName: '' })).rejects.toBeInstanceOf(
+      CredentialRequestRejectedError,
     );
-    await expect(adapter().regenerate(' ')).rejects.toThrow('Consumer clientId is required');
+    await expect(adapter().regenerate(' ')).rejects.toBeInstanceOf(CredentialRequestRejectedError);
     expect(requests).toHaveLength(0);
   });
 
@@ -134,14 +135,14 @@ describe('APS credential issuer', () => {
     expect(requests[0].path).toBe('/token');
   });
 
-  it('reports token failure safely', async () => {
+  it('reports token failure safely, as a refusal that reached no gateway', async () => {
     tokenStatus = 401;
     expect(await adapter().readinessCheck()).toEqual({
       ok: false,
       message: 'APS issuer authentication failed',
     });
-    await expect(adapter().issue({ applicationName: 'Workspace' })).rejects.toThrow(
-      'outcome may be unknown',
+    await expect(adapter().issue({ applicationName: 'Workspace' })).rejects.toBeInstanceOf(
+      CredentialRequestRejectedError,
     );
     expect(requests.every((request) => request.path === '/token')).toBe(true);
   });
@@ -153,6 +154,18 @@ describe('APS credential issuer', () => {
     expect(requests.filter((request) => request.path !== '/token')).toHaveLength(2);
   });
 
+  it('reports a token failure after a 401 as a refusal, without retrying', async () => {
+    const issuer = adapter();
+    await issuer.readinessCheck();
+    rejectOnce = true;
+    tokenStatus = 401;
+    const error = await issuer.regenerate(receipt.clientId).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(CredentialRequestRejectedError);
+    expect((error as CredentialRequestRejectedError).upstreamStatus).toBeUndefined();
+    expect(requests.filter((request) => request.path === '/token')).toHaveLength(2);
+    expect(requests.filter((request) => request.path !== '/token')).toHaveLength(1);
+  });
+
   it.each([400, 401, 403, 404, 409, 422, 500])(
     'sanitizes HTTP %s and does not retry other rejections',
     async (upstreamStatus) => {
@@ -161,7 +174,12 @@ describe('APS credential issuer', () => {
       const error = await adapter()
         .issue({ applicationName: 'Workspace' })
         .catch((err: unknown) => err);
-      expect(error).toMatchObject({ statusCode: upstreamStatus === 409 ? 409 : 503 });
+      if (upstreamStatus < 500) {
+        expect(error).toBeInstanceOf(CredentialRequestRejectedError);
+        expect(error).toMatchObject({ upstreamStatus });
+      } else {
+        expect(error).toMatchObject({ statusCode: 503, upstreamStatus });
+      }
       expect(String(error)).not.toContain('secret-value');
       expect(String(error)).not.toContain('issuer-secret');
       expect(requests.filter((request) => request.path !== '/token')).toHaveLength(
@@ -240,6 +258,16 @@ describe('APS credential issuer', () => {
     await expect(adapter(150).regenerate(receipt.clientId)).rejects.toThrow(
       'outcome may be unknown',
     );
+    expect(requests.filter((request) => request.path !== '/token')).toHaveLength(1);
+  });
+
+  it('reports a refused regeneration with its status, without retrying', async () => {
+    status = 404;
+    const error = await adapter()
+      .regenerate(receipt.clientId)
+      .catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(CredentialRequestRejectedError);
+    expect(error).toMatchObject({ upstreamStatus: 404 });
     expect(requests.filter((request) => request.path !== '/token')).toHaveLength(1);
   });
 });

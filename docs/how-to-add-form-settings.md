@@ -7,10 +7,10 @@ are the reference copy.
 
 For what the pieces are and how they fit, see [Form settings](form-settings.md).
 
-A collection drawer such as API Keys reuses the frontend section registry, but owns its list/create
-API and persistence in its feature. The singleton settings GET/PUT, one-row-per-workspace lifecycle,
-and generic Save/Cancel footer do not apply to independently generated keys. See
-[the credential feature](credential-issuer.md) for that pattern.
+A group that holds a collection, such as API Keys, is still a module, but its router serves the
+collection and it keeps no row per form or workspace. Its drawers have their own table and form
+instead of the settings GET/PUT and the Save/Cancel footer. See
+[the credential feature](credential-issuer.md).
 
 ## Before you start
 

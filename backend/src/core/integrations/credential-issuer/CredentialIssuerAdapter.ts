@@ -16,12 +16,22 @@ export interface IssuedApiKey {
   flow: 'kong-api-key-only' | 'kong-api-key-acl';
 }
 
+/** The issuer refused the request, so nothing changed upstream. Any other failure may have. */
+export class CredentialRequestRejectedError extends Error {
+  constructor(readonly upstreamStatus?: number) {
+    super('The credential issuer refused the request');
+    this.name = 'CredentialRequestRejectedError';
+  }
+}
+
 export interface CredentialIssuerReadinessResult {
   ok: boolean;
   message?: string;
 }
 
 export interface CredentialIssuerAdapter {
+  /** False for an issuer that cannot generate keys, such as the no-op. */
+  readonly available: boolean;
   readinessCheck?(): Promise<CredentialIssuerReadinessResult>;
   issue(request: IssueCredentialRequest): Promise<IssuedApiKey>;
   regenerate(clientId: string): Promise<IssuedApiKey>;

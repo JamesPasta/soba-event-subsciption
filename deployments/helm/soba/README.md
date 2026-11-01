@@ -587,28 +587,30 @@ removed from Secrets and PVCs. This allows `helm uninstall` to delete them norma
 | `backend.config.credentialIssuerDefaultCode` | `credential-issuer-noop` (default) or `aps-credential-issuer-v3` |
 | `backend.credentialIssuer.apsCredentialIssuerV3.apiBaseUrl` | Directory API URL including `/ds/api/v3` |
 | `backend.credentialIssuer.apsCredentialIssuerV3.gatewayId` | Gateway ID |
-| `backend.credentialIssuer.apsCredentialIssuerV3.environmentAppId` | Target product environment appId |
 | `backend.credentialIssuer.apsCredentialIssuerV3.tokenUrl` | Service-account token endpoint |
 | `backend.credentialIssuer.apsCredentialIssuerV3.timeoutMs` | Shared operation deadline in milliseconds |
 
-When APS is selected with Vault enabled, the backend sources `PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_ID` and
-`PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_SECRET` from Vault. See [credential issuer](../../../docs/credential-issuer.md)
+When APS is selected with Vault enabled, the backend sources `PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_ID`,
+`PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_SECRET` and `PLUGIN_APS_CREDENTIAL_ISSUER_V3_ENVIRONMENT_APP_ID` (the target
+product environment's appId) from Vault. A missing key keeps the backend pod from starting. See
+[credential issuer](../../../docs/credential-issuer.md)
 for permissions, readiness limitations, and lifecycle behavior.
-
 
 The dev, PR, test and prod values files each declare their own issuer configuration. They use
 `https://api.gov.bc.ca/ds/api/v3` for the Directory API and
 `https://authz.apps.gov.bc.ca/auth/realms/aps/protocol/openid-connect/token` for service-account tokens.
 The gateway service's public route is the URL consumers call; it is not the Directory API URL.
 
-Every environment has its own gateway ID and runs `credential-issuer-noop`. Dev and PR have
-their product environment appIds; test and prod need their `environmentAppId` values filled in. Follow
+Dev, PR and test run `aps-credential-issuer-v3` with `backend.features.api-keys` on; the others run
+`credential-issuer-noop` with the feature off. PRs read dev's Vault secret, so they share dev's gateway ID
+and product environment appId, and a key made on a PR stays in dev's gateway after the PR closes. Follow
 [Obtain the product environment appId](../../../docs/credential-issuer.md#obtain-the-product-environment-appid)
 to log in to the Portal, query products for the deployment's gateway in the API console, and copy
-the appropriate service's `environments[].appId` into its values file.
+the appropriate service's `environments[].appId` into its Vault secret.
 
 Before selecting `aps-credential-issuer-v3` for an environment, add
-`PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_ID` and `PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_SECRET`
-to that deployment's Vault secret. The service account needs `CredentialIssuer.Generate` on
-that environment's gateway. Set `backend.config.credentialIssuerDefaultCode` to
-`aps-credential-issuer-v3` after the IDs and credentials are in place. The base chart retains the no-op default.
+`PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_ID`, `PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_SECRET` and
+`PLUGIN_APS_CREDENTIAL_ISSUER_V3_ENVIRONMENT_APP_ID` to that deployment's Vault secret. The service
+account needs `CredentialIssuer.Generate` on that environment's gateway. Set
+`backend.config.credentialIssuerDefaultCode` to `aps-credential-issuer-v3` after the keys are in place.
+The base chart retains the no-op default.

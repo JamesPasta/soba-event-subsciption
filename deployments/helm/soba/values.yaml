@@ -100,6 +100,7 @@ backend:
   # feature_status code (enabled, disabled, experimental, deprecated), quoted. Anything else fails
   # the render. dev-data must stay off in production.
   features:
+    api-keys: ""
     dev-data: ""
     notifications: ""
     post-submission: ""
@@ -297,12 +298,12 @@ backend:
       # -- outbound deadline in ms; empty uses the backend default (30000)
       timeoutMs: ""
 
-  # -- Credential issuer; URLs/IDs are configured per deployment, secrets come from Vault.
+  # -- Credential issuer; URLs and the gateway ID are configured per deployment. Credentials and the
+  # product environment appId come from Vault.
   credentialIssuer:
     apsCredentialIssuerV3:
       apiBaseUrl: ""
       gatewayId: ""
-      environmentAppId: ""
       tokenUrl: ""
       timeoutMs: "5000"
 
@@ -404,7 +405,7 @@ frontend:
   apps:
     designer:
       enabled: true
-      featuresAllowed: "design-mode,files,meta,marketing,templates,user-search,submission-export"
+      featuresAllowed: "design-mode,files,meta,marketing,templates,user-search,submission-export,api-keys"
       routePath: /designer
     forms:
       enabled: true

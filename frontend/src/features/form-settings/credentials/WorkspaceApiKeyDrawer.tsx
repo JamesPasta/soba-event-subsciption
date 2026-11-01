@@ -1,10 +1,9 @@
 'use client';
 
 import { Accordion } from '@bcgov/design-system-react-components';
-import ApiKeys from '@/src/features/credentials/ui/ApiKeys';
+import ApiKeysTab from '@/src/features/credentials/ui/ApiKeysTab';
 import type { WorkspaceSettingsSectionProps } from '../types';
 
-/** A key collection uses its own create form and one-time secret dialog. */
 export default function WorkspaceApiKeyDrawer({
   dict,
   drawerName,
@@ -14,7 +13,7 @@ export default function WorkspaceApiKeyDrawer({
     <Accordion id={drawerName} data-testid={`accordion-${drawerName}`} label={dict.apiKeys.heading}>
       <div className="d-block w-100">
         <p>{dict.apiKeys.workspaceScope}</p>
-        <ApiKeys scope={{ kind: 'workspace', id: workspaceId }} />
+        <ApiKeysTab key={workspaceId} dict={dict} owner={{ kind: 'workspace', id: workspaceId }} />
       </div>
     </Accordion>
   );

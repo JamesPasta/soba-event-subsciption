@@ -1,12 +1,6 @@
 import React from 'react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import en from '@/dictionaries/en.json';
-
-vi.mock('@/src/features/credentials/ui/ApiKeys', () => ({
-  default: ({ scope }: { scope: { id: string } }) => (
-    <div data-testid="workspace-api-key">{scope.id}</div>
-  ),
-}));
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
@@ -22,7 +16,9 @@ const {
   mockGetInheriting,
   mockGetProviders,
   mockAddNotification,
+  mockLoadFeaturesMeta,
 } = vi.hoisted(() => ({
+  mockLoadFeaturesMeta: vi.fn(),
   mockGetForm: vi.fn(),
   mockGetInheriting: vi.fn(),
   mockGetSettings: vi.fn(),
@@ -40,6 +36,18 @@ vi.mock('@/src/features/form-settings/data/api', () => ({
 
 vi.mock('@/src/shared/api/sobaApi', () => ({
   fetchLoginProviders: mockGetProviders,
+}));
+
+vi.mock('@/src/shared/config/featuresMeta', () => ({
+  loadFeaturesMeta: mockLoadFeaturesMeta,
+}));
+
+vi.mock('@/src/features/credentials/ui/ApiKeysTab', () => ({
+  default: ({ owner }: { owner: { kind: string; id: string } }) => (
+    <div data-testid="workspace-api-key">
+      {owner.kind}:{owner.id}
+    </div>
+  ),
 }));
 
 // The confirmation dialog reads the dictionary from context.
@@ -171,6 +179,10 @@ function deferred<T>() {
 }
 
 describe('WorkspaceFormSettings', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     store = makeStore();
@@ -178,6 +190,10 @@ describe('WorkspaceFormSettings', () => {
     store.dispatch(setAuthenticated(true));
     audience = IDIR;
     submitter = { allowSubmitterDrafts: false };
+    vi.stubEnv('NEXT_PUBLIC_SOBA_FEATURES_ALLOWED', '*');
+    mockLoadFeaturesMeta.mockResolvedValue({
+      features: [{ code: 'api-keys', platformAllowed: true, availability: 'fixed' }],
+    });
     mockGetProviders.mockResolvedValue({ items: PROVIDERS });
     mockGetInheriting.mockResolvedValue({ count: 3 });
     mockGetSettings.mockImplementation((_token: string, _ws: string, key: string) =>
@@ -188,14 +204,11 @@ describe('WorkspaceFormSettings', () => {
     );
   });
 
-  it('registers API keys as a workspace form settings drawer', async () => {
+  it('shows the API keys drawer for the workspace while the api-keys feature is on', async () => {
     const user = userEvent.setup();
     renderTab();
-    await user.click(screen.getByRole('button', { name: en.apiKeys.heading }));
-    expect(screen.getAllByTestId('workspace-api-key')).toHaveLength(1);
-    for (const section of screen.getAllByTestId('workspace-api-key')) {
-      expect(section).toHaveTextContent('ws1');
-    }
+    await user.click(await screen.findByRole('button', { name: en.apiKeys.heading }));
+    expect(screen.getByTestId('workspace-api-key')).toHaveTextContent('workspace:ws1');
   });
 
   it("shows the intro and the workspace's audience and drafts setting", async () => {

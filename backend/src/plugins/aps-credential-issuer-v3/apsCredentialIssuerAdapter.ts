@@ -2,8 +2,9 @@ import { z } from 'zod';
 import type { PluginConfigReader } from '../../core/config/pluginConfig';
 import { OAuth2TokenProvider } from '../../core/auth/oauth2TokenProvider';
 import { HttpClient, HttpClientError, resolveTimeoutMs } from '../../core/http/httpClient';
-import { ConflictError, ServiceUnavailableError, ValidationError } from '../../core/errors';
+import { ServiceUnavailableError } from '../../core/errors';
 import {
+  CredentialRequestRejectedError,
   IssueCredentialRequestSchema,
   type IssueCredentialRequest,
   type IssuedApiKey,
@@ -19,6 +20,7 @@ const CredentialSchema = z.object({
 
 /** APS-specific transport. Workspace ownership and issuance uniqueness belong to the consumer. */
 export class ApsCredentialIssuerAdapter implements CredentialIssuerAdapter {
+  readonly available = true;
   private readonly client: HttpClient;
   private readonly tokenProvider: OAuth2TokenProvider;
   private readonly consumersPath: string;
@@ -62,7 +64,7 @@ export class ApsCredentialIssuerAdapter implements CredentialIssuerAdapter {
 
   async issue(request: IssueCredentialRequest): Promise<IssuedApiKey> {
     const parsed = IssueCredentialRequestSchema.safeParse(request);
-    if (!parsed.success) throw new ValidationError('Invalid credential issuance request');
+    if (!parsed.success) throw new CredentialRequestRejectedError();
     const input = parsed.data;
     return this.send('issue', this.consumersPath, {
       environmentAppId: this.environmentAppId,
@@ -73,7 +75,7 @@ export class ApsCredentialIssuerAdapter implements CredentialIssuerAdapter {
   }
 
   async regenerate(clientId: string): Promise<IssuedApiKey> {
-    if (!clientId.trim()) throw new ValidationError('Consumer clientId is required');
+    if (!clientId.trim()) throw new CredentialRequestRejectedError();
     const credential = await this.send(
       'regenerate',
       `${this.consumersPath}/${encodeURIComponent(clientId)}?action=regenerate`,
@@ -92,12 +94,14 @@ export class ApsCredentialIssuerAdapter implements CredentialIssuerAdapter {
     body?: unknown,
   ): Promise<IssuedApiKey> {
     const deadline = this.client.deadline();
+    await this.requireToken(deadline);
     try {
       return await this.request(action, path, body, deadline);
     } catch (err) {
       // Retry only a confirmed authentication rejection, never an ambiguous transport failure.
       if (err instanceof HttpClientError && err.status === 401) {
         this.tokenProvider.clearCache();
+        await this.requireToken(deadline);
         try {
           return await this.request(action, path, body, deadline);
         } catch (retryError) {
@@ -106,6 +110,13 @@ export class ApsCredentialIssuerAdapter implements CredentialIssuerAdapter {
       }
       throw this.failure(err);
     }
+  }
+
+  /** Nothing reaches the gateway without a token, so failing to get one is a refusal. */
+  private async requireToken(deadline: number): Promise<void> {
+    await this.tokenProvider.getToken(deadline - Date.now()).catch(() => {
+      throw new CredentialRequestRejectedError();
+    });
   }
 
   private async request(
@@ -130,10 +141,9 @@ export class ApsCredentialIssuerAdapter implements CredentialIssuerAdapter {
   private failure(err: unknown): Error {
     if (err instanceof ServiceUnavailableError) return err;
     if (err instanceof HttpClientError) {
-      if (err.status === 409)
-        return new ConflictError(
-          'A gateway credential already exists for this application and environment',
-        );
+      // A 4xx is a refusal: the consumer was not created or rotated.
+      if (err.status >= 400 && err.status < 500)
+        return new CredentialRequestRejectedError(err.status);
       return Object.assign(
         new ServiceUnavailableError(`APS credential request failed (upstream HTTP ${err.status})`),
         { upstreamStatus: err.status },

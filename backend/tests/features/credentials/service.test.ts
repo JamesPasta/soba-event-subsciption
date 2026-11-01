@@ -3,11 +3,13 @@ import { log } from '../../../src/core/logging';
 jest.mock('../../../src/core/db/repos/workspaceCredentialRepo', () => ({
   getWorkspaceCredential: jest.fn(),
   listWorkspaceCredentials: jest.fn(),
-  reserveWorkspaceCredential: jest.fn(),
-  reserveCredentialRotation: jest.fn(),
+  reserveCredentialIssue: jest.fn(),
+  reserveCredentialOperation: jest.fn(),
   completeCredentialOperation: jest.fn(),
+  rejectCredentialOperation: jest.fn(),
   markCredentialUnknown: jest.fn(),
-  updateCredentialNotes: jest.fn(),
+  updateCredentialFields: jest.fn(),
+  deleteFailedCredential: jest.fn(),
 }));
 jest.mock('../../../src/core/integrations/credential-issuer/CredentialIssuerRegistry', () => ({
   createCredentialIssuerAdapter: jest.fn(),
@@ -16,11 +18,16 @@ jest.mock('../../../src/core/integrations/credential-issuer/CredentialIssuerRegi
 import { CredentialService } from '../../../src/features/credentials/service';
 import * as repo from '../../../src/core/db/repos/workspaceCredentialRepo';
 import * as registry from '../../../src/core/integrations/credential-issuer/CredentialIssuerRegistry';
+import { CredentialRequestRejectedError } from '../../../src/core/integrations/credential-issuer/CredentialIssuerAdapter';
+import { ConflictError, NotFoundError, ServiceUnavailableError } from '../../../src/core/errors';
 
 const mockedRepo = jest.mocked(repo);
 const mockedRegistry = jest.mocked(registry);
-const query = { offset: 0, limit: 20, sort: 'createdAt:desc' as const, locale: 'en' as const };
 const service = new CredentialService();
+const query = { offset: 0, limit: 20, sort: 'createdAt:desc' as const, locale: 'en' as const };
+const workspaceOwner = { workspaceId: 'workspace', formId: null };
+const formOwner = { workspaceId: 'workspace', formId: 'form' };
+const fields = { label: 'Integration', notes: '', types: ['api', 'web-component'] as const };
 const issued = {
   clientId: 'consumer',
   apiKey: 'never-store-this',
@@ -39,256 +46,277 @@ const record: repo.CredentialRecord = {
   status: 'issuing',
   createdBy: 'actor',
   updatedBy: 'actor',
-  createdAt: new Date(),
-  updatedAt: new Date(),
+  createdAt: new Date('2026-10-31T00:00:00Z'),
+  updatedAt: new Date('2026-10-31T00:00:00Z'),
   rotatedAt: null,
+  deletedAt: null,
+  deletedBy: null,
 };
-const input = {
-  label: 'Integration',
-  notes: '',
-  types: ['api', 'web-component'] as ('api' | 'web-component')[],
-};
-const adapter = { issue: jest.fn(), regenerate: jest.fn() };
+const active: repo.CredentialRecord = { ...record, status: 'active', clientId: issued.clientId };
+const adapter = { available: true, issue: jest.fn(), regenerate: jest.fn() };
+
 beforeEach(() => {
   jest.resetAllMocks();
+  adapter.available = true;
   mockedRegistry.resolveDefaultCredentialIssuerCode.mockReturnValue('new-default');
   mockedRegistry.createCredentialIssuerAdapter.mockReturnValue(adapter);
-  mockedRepo.reserveWorkspaceCredential.mockResolvedValue(record);
-  mockedRepo.markCredentialUnknown.mockResolvedValue();
-  mockedRepo.completeCredentialOperation.mockResolvedValue({
-    ...record,
-    clientId: issued.clientId,
-    flow: issued.flow,
-    status: 'active',
-  });
+  mockedRepo.reserveCredentialIssue.mockResolvedValue(record);
+  mockedRepo.completeCredentialOperation.mockResolvedValue(active);
+  mockedRepo.getWorkspaceCredential.mockResolvedValue(active);
+  mockedRepo.reserveCredentialOperation.mockResolvedValue({ ...active, status: 'rotating' });
   adapter.issue.mockResolvedValue(issued);
   adapter.regenerate.mockResolvedValue(issued);
 });
 
-describe('workspace credential service', () => {
-  it('creates multiple form keys with multiple types and trusted form identity', async () => {
-    mockedRepo.reserveWorkspaceCredential.mockResolvedValue({ ...record, formId: 'form' });
-    await service.issue('workspace', 'actor', input, 'form');
-    await service.issue('workspace', 'actor', input, 'form');
-    expect(mockedRepo.reserveWorkspaceCredential).toHaveBeenCalledTimes(2);
-    expect(mockedRepo.reserveWorkspaceCredential).toHaveBeenCalledWith(
-      'workspace',
+describe('credential service', () => {
+  it('reserves before issuing, sends trusted labels, and returns the key once', async () => {
+    const result = await service.issue(formOwner, 'actor', { ...fields, types: [...fields.types] });
+    expect(mockedRepo.reserveCredentialIssue).toHaveBeenCalledWith(
+      formOwner,
       'new-default',
       'actor',
-      input,
-      'form',
-    );
-    expect(adapter.issue).toHaveBeenCalledWith(
-      expect.objectContaining({
-        labels: expect.objectContaining({ 'workspace-id': 'workspace', 'form-id': 'form' }),
-      }),
-    );
-  });
-  it('reads only the requested form collection', async () => {
-    mockedRepo.listWorkspaceCredentials.mockResolvedValue({
-      items: [{ ...record, formId: 'form' }],
-      total: 1,
-    });
-    expect((await service.list('workspace', query, 'form')).items).toHaveLength(1);
-    expect(mockedRepo.listWorkspaceCredentials).toHaveBeenCalledWith('workspace', query, 'form');
-  });
-
-  it('reports a failed reconciliation write without exposing either error or retrying issuance', async () => {
-    adapter.issue.mockRejectedValue(new Error('upstream secret'));
-    mockedRepo.markCredentialUnknown.mockRejectedValue(new Error('database secret'));
-    await expect(service.issue('workspace', 'actor', input)).rejects.toMatchObject({
-      statusCode: 503,
-      message: expect.stringContaining('administrator must reconcile'),
-    });
-    expect(log.error).toHaveBeenCalledWith(
-      {
-        credentialId: record.id,
-        workspaceId: record.workspaceId,
-        issuerCode: record.issuerCode,
-        operation: 'issue',
-        stage: 'reconciliation',
-      },
-      expect.any(String),
-    );
-    expect(adapter.issue).toHaveBeenCalledTimes(1);
-    expect(mockedRepo.completeCredentialOperation).not.toHaveBeenCalled();
-    const diagnostics = JSON.stringify([
-      ...jest.mocked(log.warn).mock.calls,
-      ...jest.mocked(log.error).mock.calls,
-    ]);
-    expect(diagnostics).not.toContain('upstream secret');
-    expect(diagnostics).not.toContain('database secret');
-  });
-
-  it('updates notes within the workspace without calling the issuer', async () => {
-    mockedRepo.updateCredentialNotes.mockResolvedValue({ ...record, notes: 'Vault reference' });
-    const result = await service.updateNotes('workspace', 'credential', 'actor', 'Vault reference');
-    expect(mockedRepo.updateCredentialNotes).toHaveBeenCalledWith(
-      'workspace',
-      'credential',
-      'actor',
-      'Vault reference',
-      null,
-    );
-    expect(result.notes).toBe('Vault reference');
-    expect(adapter.issue).not.toHaveBeenCalled();
-    expect(adapter.regenerate).not.toHaveBeenCalled();
-  });
-  it('does not save notes to a credential outside the workspace', async () => {
-    mockedRepo.updateCredentialNotes.mockResolvedValue(null);
-    await expect(
-      service.updateNotes('other-workspace', 'credential', 'actor', 'notes'),
-    ).rejects.toMatchObject({ statusCode: 404 });
-  });
-
-  it('reserves a record before issuing, constructs trusted metadata, and returns the key once', async () => {
-    const result = await service.issue('workspace', 'actor', input);
-    expect(mockedRepo.reserveWorkspaceCredential).toHaveBeenCalledWith(
-      'workspace',
-      'new-default',
-      'actor',
-      input,
-      null,
-    );
-    expect(mockedRepo.reserveWorkspaceCredential.mock.invocationCallOrder[0]).toBeLessThan(
-      adapter.issue.mock.invocationCallOrder[0],
+      { ...fields, types: [...fields.types] },
     );
     expect(adapter.issue).toHaveBeenCalledWith({
       applicationName: 'soba-workspace-workspace-credential',
-      labels: { 'issued-by': 'soba', 'workspace-id': 'workspace', 'credential-id': 'credential' },
+      labels: {
+        'issued-by': 'soba',
+        'workspace-id': 'workspace',
+        'credential-id': 'credential',
+        'form-id': 'form',
+      },
     });
-    expect(result.apiKey).toBe(issued.apiKey);
-    expect(result.credential).not.toHaveProperty('clientId');
-    expect(result.credential).not.toHaveProperty('apiKey');
+    expect(mockedRepo.completeCredentialOperation).toHaveBeenCalledWith(
+      record,
+      'actor',
+      'issue',
+      issued,
+    );
+    expect(result.apiKey).toBe('never-store-this');
+    expect(JSON.stringify(result.credential)).not.toContain('consumer');
   });
-  it('uses independent upstream identities for keys in the same workspace', async () => {
-    mockedRepo.reserveWorkspaceCredential
-      .mockResolvedValueOnce(record)
-      .mockResolvedValueOnce({ ...record, id: 'second' });
-    await service.issue('workspace', 'actor', input);
-    await service.issue('workspace', 'actor', input);
-    expect(adapter.issue.mock.calls.map(([request]) => request.applicationName)).toEqual([
-      'soba-workspace-workspace-credential',
-      'soba-workspace-workspace-second',
-    ]);
-  });
-  it('does not call the issuer when reservation fails', async () => {
-    mockedRepo.reserveWorkspaceCredential.mockResolvedValue(null);
-    await expect(service.issue('workspace', 'actor', input)).rejects.toMatchObject({
-      statusCode: 409,
-    });
-    expect(adapter.issue).not.toHaveBeenCalled();
-  });
-  it('does not reserve a record when the no-op is selected', async () => {
-    mockedRegistry.resolveDefaultCredentialIssuerCode.mockReturnValue('credential-issuer-noop');
-    await expect(service.issue('workspace', 'actor', input)).rejects.toMatchObject({
-      statusCode: 503,
-    });
-    expect(mockedRepo.reserveWorkspaceCredential).not.toHaveBeenCalled();
-  });
-  it('returns metadata without upstream identifiers or secrets', async () => {
-    mockedRepo.listWorkspaceCredentials.mockResolvedValue({
-      items: [
-        { ...record, clientId: 'consumer' },
-        { ...record, id: 'second' },
-      ],
-      total: 2,
-    });
-    const result = await service.list('workspace', query);
-    expect(result.available).toBe(true);
-    expect(JSON.stringify(result)).not.toContain('consumer');
-    expect(result.items).toHaveLength(2);
-    expect(result.items[0]).toMatchObject(input);
-    expect(result.items[0]).not.toHaveProperty('issuerCode');
-  });
-  it('reports unavailable configuration without exposing details', async () => {
-    mockedRepo.listWorkspaceCredentials.mockResolvedValue({ items: [], total: 0 });
-    mockedRegistry.createCredentialIssuerAdapter.mockImplementation(() => {
-      throw new Error('private config details');
-    });
-    expect(await service.list('workspace', query)).toEqual({
-      available: false,
-      items: [],
-      page: { offset: 0, limit: 20, total: 0 },
-      filters: {},
-      sort: 'createdAt:desc',
-    });
-  });
-  it('does not rotate a credential owned by another workspace', async () => {
-    mockedRepo.getWorkspaceCredential.mockResolvedValue(null);
+
+  it('reserves nothing when the issuer cannot generate keys', async () => {
+    adapter.available = false;
     await expect(
-      service.regenerate('other-workspace', 'credential', 'actor'),
-    ).rejects.toMatchObject({ statusCode: 404 });
-    expect(adapter.regenerate).not.toHaveBeenCalled();
+      service.issue(workspaceOwner, 'actor', { ...fields, types: ['api'] }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableError);
+    expect(mockedRepo.reserveCredentialIssue).not.toHaveBeenCalled();
   });
-  it('uses the recorded issuer and client id, rather than the current default', async () => {
-    const active = { ...record, status: 'active' as const, clientId: 'stored-consumer' };
-    mockedRepo.getWorkspaceCredential.mockResolvedValue(active);
-    mockedRepo.reserveCredentialRotation.mockResolvedValue({ ...active, status: 'rotating' });
-    await service.regenerate('workspace', 'credential', 'actor');
+
+  it('records a refused issue as failed, not unknown', async () => {
+    adapter.issue.mockRejectedValue(new CredentialRequestRejectedError(403));
+    await expect(
+      service.issue(workspaceOwner, 'actor', { ...fields, types: ['api'] }),
+    ).rejects.toThrow(/refused the request; nothing was changed/);
+    expect(mockedRepo.rejectCredentialOperation).toHaveBeenCalledWith(record, 'actor', 'issue');
+    expect(mockedRepo.markCredentialUnknown).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ rejected: true, upstreamStatus: 403, stage: 'upstream' }),
+      expect.any(String),
+    );
+  });
+
+  it.each([
+    ['an upstream timeout', 'upstream'],
+    ['a lost completion write', 'persistence'],
+  ])('leaves the outcome unknown after %s', async (_name, stage) => {
+    const secretError = new Error(`secret-bearing ${issued.apiKey}`);
+    if (stage === 'upstream') adapter.issue.mockRejectedValue(secretError);
+    else mockedRepo.completeCredentialOperation.mockRejectedValue(secretError);
+    await expect(
+      service.issue(workspaceOwner, 'actor', { ...fields, types: ['api'] }),
+    ).rejects.toThrow(/outcome may be unknown/);
+    expect(mockedRepo.markCredentialUnknown).toHaveBeenCalledWith(record, 'actor', 'issue');
+    expect(mockedRepo.rejectCredentialOperation).not.toHaveBeenCalled();
+    expect(JSON.stringify(jest.mocked(log.warn).mock.calls)).not.toContain(issued.apiKey);
+  });
+
+  it('treats a refusal reported while saving the result as unknown', async () => {
+    mockedRepo.completeCredentialOperation.mockRejectedValue(new CredentialRequestRejectedError());
+    await expect(
+      service.issue(workspaceOwner, 'actor', { ...fields, types: ['api'] }),
+    ).rejects.toThrow(/outcome may be unknown/);
+    expect(mockedRepo.markCredentialUnknown).toHaveBeenCalled();
+  });
+
+  it("regenerates with the key's own issuer and consumer, not the current default", async () => {
+    const result = await service.regenerate(workspaceOwner, 'credential', 'actor');
     expect(mockedRegistry.createCredentialIssuerAdapter).toHaveBeenCalledWith('original-issuer');
-    expect(mockedRepo.getWorkspaceCredential).toHaveBeenCalledWith('workspace', 'credential', null);
-    expect(adapter.regenerate).toHaveBeenCalledWith('stored-consumer');
+    expect(mockedRepo.reserveCredentialOperation).toHaveBeenCalledWith(
+      workspaceOwner,
+      'credential',
+      'actor',
+      'regenerate',
+    );
+    expect(adapter.regenerate).toHaveBeenCalledWith('consumer');
+    expect(result.apiKey).toBe('never-store-this');
   });
-  it('refuses a concurrent rotation', async () => {
-    mockedRepo.getWorkspaceCredential.mockResolvedValue({
-      ...record,
-      status: 'active',
-      clientId: 'consumer',
-    });
-    mockedRepo.reserveCredentialRotation.mockResolvedValue(null);
-    await expect(service.regenerate('workspace', 'credential', 'actor')).rejects.toMatchObject({
-      statusCode: 409,
-    });
-    expect(adapter.regenerate).not.toHaveBeenCalled();
+
+  it('puts a refused regeneration back to active', async () => {
+    adapter.regenerate.mockRejectedValue(new CredentialRequestRejectedError(400));
+    await expect(service.regenerate(workspaceOwner, 'credential', 'actor')).rejects.toThrow(
+      ServiceUnavailableError,
+    );
+    expect(mockedRepo.rejectCredentialOperation).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'rotating' }),
+      'actor',
+      'regenerate',
+    );
   });
-  it.each(['issuing', 'rotating', 'unknown'] as const)(
-    'blocks regeneration of a %s record',
+
+  it.each(['issuing', 'rotating', 'unknown', 'failed'] as const)(
+    'refuses to regenerate a %s key',
     async (status) => {
-      mockedRepo.getWorkspaceCredential.mockResolvedValue({
-        ...record,
-        status,
-        clientId: 'consumer',
-      });
-      await expect(service.regenerate('workspace', 'credential', 'actor')).rejects.toMatchObject({
-        statusCode: 409,
-      });
-      expect(mockedRepo.reserveCredentialRotation).not.toHaveBeenCalled();
+      mockedRepo.getWorkspaceCredential.mockResolvedValue({ ...active, status });
+      await expect(service.regenerate(workspaceOwner, 'credential', 'actor')).rejects.toThrow(
+        ConflictError,
+      );
+      expect(mockedRepo.reserveCredentialOperation).not.toHaveBeenCalled();
     },
   );
-  it.each(['upstream', 'persistence'])(
-    'retains the reservation after an uncertain %s failure and never retries',
-    async (failure) => {
-      if (failure === 'upstream')
-        adapter.issue.mockRejectedValue(
-          Object.assign(new Error('secret upstream body'), { upstreamStatus: 502 }),
-        );
-      else
-        mockedRepo.completeCredentialOperation.mockRejectedValue(new Error('database unavailable'));
-      await expect(service.issue('workspace', 'actor', input)).rejects.toMatchObject({
-        statusCode: 503,
-        message: expect.not.stringContaining('secret upstream body'),
-      });
-      expect(mockedRepo.markCredentialUnknown).toHaveBeenCalledWith(record, 'actor');
-      expect(adapter.issue).toHaveBeenCalledTimes(1);
+
+  it('refuses a concurrent operation, and 404s a key the owner does not hold', async () => {
+    mockedRepo.reserveCredentialOperation.mockResolvedValue(null);
+    await expect(service.regenerate(workspaceOwner, 'credential', 'actor')).rejects.toThrow(
+      ConflictError,
+    );
+    mockedRepo.getWorkspaceCredential.mockResolvedValue(null);
+    await expect(service.remove(formOwner, 'credential', 'actor')).rejects.toThrow(NotFoundError);
+    expect(adapter.regenerate).not.toHaveBeenCalled();
+  });
+
+  it('deletes an active key by rotating it to a value nobody receives', async () => {
+    await expect(service.remove(workspaceOwner, 'credential', 'actor')).resolves.toBeUndefined();
+    expect(mockedRepo.reserveCredentialOperation).toHaveBeenCalledWith(
+      workspaceOwner,
+      'credential',
+      'actor',
+      'delete',
+    );
+    expect(adapter.regenerate).toHaveBeenCalledWith('consumer');
+    expect(mockedRepo.completeCredentialOperation).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'rotating' }),
+      'actor',
+      'delete',
+      issued,
+    );
+  });
+
+  it.each([404, 410])(
+    'deletes a key whose consumer the gateway no longer has (%s)',
+    async (upstreamStatus) => {
+      adapter.regenerate.mockRejectedValue(new CredentialRequestRejectedError(upstreamStatus));
+      await service.remove(workspaceOwner, 'credential', 'actor');
+      expect(mockedRepo.completeCredentialOperation).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'rotating' }),
+        'actor',
+        'delete',
+        null,
+      );
+      expect(mockedRepo.rejectCredentialOperation).not.toHaveBeenCalled();
       expect(log.warn).toHaveBeenCalledWith(
-        {
-          credentialId: record.id,
-          workspaceId: record.workspaceId,
-          issuerCode: record.issuerCode,
-          operation: 'issue',
-          stage: failure,
-          upstreamStatus: failure === 'upstream' ? 502 : undefined,
-        },
+        expect.objectContaining({ credentialId: 'credential', clientId: 'consumer' }),
         expect.any(String),
       );
-      expect(JSON.stringify(jest.mocked(log.warn).mock.calls)).not.toContain(
-        'secret upstream body',
-      );
-      expect(JSON.stringify(jest.mocked(log.warn).mock.calls)).not.toContain(
-        'database unavailable',
-      );
-      expect(JSON.stringify(jest.mocked(log.warn).mock.calls)).not.toContain(issued.apiKey);
     },
   );
+
+  it.each([
+    ['a refusal', 403],
+    ['a token failure, which has no status', undefined],
+  ])('keeps a key whose delete met %s, still working', async (_name, upstreamStatus) => {
+    adapter.regenerate.mockRejectedValue(new CredentialRequestRejectedError(upstreamStatus));
+    await expect(service.remove(workspaceOwner, 'credential', 'actor')).rejects.toThrow(
+      ServiceUnavailableError,
+    );
+    expect(mockedRepo.rejectCredentialOperation).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'rotating' }),
+      'actor',
+      'delete',
+    );
+    expect(mockedRepo.completeCredentialOperation).not.toHaveBeenCalled();
+  });
+
+  it('404s a failed-key delete that another request settled first', async () => {
+    mockedRepo.getWorkspaceCredential.mockResolvedValue({ ...record, status: 'failed' });
+    mockedRepo.deleteFailedCredential.mockResolvedValue(false);
+    await expect(service.remove(formOwner, 'credential', 'actor')).rejects.toThrow(NotFoundError);
+  });
+
+  it('reserves nothing to regenerate while the issuer is unusable', async () => {
+    adapter.available = false;
+    await expect(service.regenerate(workspaceOwner, 'credential', 'actor')).rejects.toThrow(
+      ServiceUnavailableError,
+    );
+    expect(mockedRepo.reserveCredentialOperation).not.toHaveBeenCalled();
+  });
+
+  it('logs the consumer id, never the key, when saving the result fails', async () => {
+    mockedRepo.completeCredentialOperation.mockRejectedValue(new Error('lost connection'));
+    await expect(
+      service.issue(workspaceOwner, 'actor', { ...fields, types: ['api'] }),
+    ).rejects.toThrow(/outcome may be unknown/);
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: 'persistence', clientId: 'consumer' }),
+      expect.any(String),
+    );
+    expect(JSON.stringify(jest.mocked(log.warn).mock.calls)).not.toContain(issued.apiKey);
+  });
+
+  it('deletes a failed key without calling the issuer', async () => {
+    mockedRepo.getWorkspaceCredential.mockResolvedValue({ ...record, status: 'failed' });
+    mockedRepo.deleteFailedCredential.mockResolvedValue(true);
+    await service.remove(formOwner, 'credential', 'actor');
+    expect(mockedRepo.deleteFailedCredential).toHaveBeenCalledWith(
+      formOwner,
+      'credential',
+      'actor',
+    );
+    expect(mockedRegistry.createCredentialIssuerAdapter).not.toHaveBeenCalled();
+  });
+
+  it('refuses to delete a key whose outcome is unknown', async () => {
+    mockedRepo.getWorkspaceCredential.mockResolvedValue({ ...record, status: 'unknown' });
+    await expect(service.remove(workspaceOwner, 'credential', 'actor')).rejects.toThrow(
+      ConflictError,
+    );
+    expect(mockedRepo.deleteFailedCredential).not.toHaveBeenCalled();
+  });
+
+  it('saves fields without calling the issuer, and 404s a key the owner does not hold', async () => {
+    mockedRepo.updateCredentialFields.mockResolvedValue({ ...active, label: 'Renamed' });
+    const saved = await service.update(formOwner, 'credential', 'actor', {
+      label: 'Renamed',
+      notes: 'Vault',
+      types: ['api'],
+    });
+    expect(saved.label).toBe('Renamed');
+    expect(adapter.issue).not.toHaveBeenCalled();
+    mockedRepo.updateCredentialFields.mockResolvedValue(null);
+    await expect(
+      service.update(formOwner, 'other', 'actor', { label: 'x', notes: '', types: ['api'] }),
+    ).rejects.toThrow(NotFoundError);
+  });
+
+  it("lists metadata with each key's scope, and reports an unusable issuer as unavailable", async () => {
+    mockedRepo.listWorkspaceCredentials.mockResolvedValue({
+      items: [active, { ...active, id: 'form-key', formId: 'form' }],
+      total: 2,
+    });
+    const listed = await service.list(formOwner, query);
+    expect(listed.available).toBe(true);
+    expect(listed.items.map((item) => [item.id, item.scope])).toEqual([
+      ['credential', 'workspace'],
+      ['form-key', 'form'],
+    ]);
+    expect(JSON.stringify(listed)).not.toContain('consumer');
+
+    adapter.available = false;
+    expect((await service.list(formOwner, query)).available).toBe(false);
+    mockedRegistry.createCredentialIssuerAdapter.mockImplementation(() => {
+      throw new Error('PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_SECRET is required');
+    });
+    expect((await service.list(formOwner, query)).available).toBe(false);
+  });
 });

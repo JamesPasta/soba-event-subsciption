@@ -1,8 +1,14 @@
+import type { CredentialScope } from '@soba/lib';
+
 export type {
-  CreateCredential,
+  CredentialFields,
   CredentialMetadata,
+  CredentialScope,
   CredentialSecret,
   CredentialState,
+  CredentialStatus,
+  CredentialType,
 } from '@soba/lib';
 
-export type CredentialScope = { kind: 'workspace' | 'form'; id: string };
+/** The workspace or form whose API keys a drawer shows. */
+export type CredentialOwner = { kind: CredentialScope; id: string };

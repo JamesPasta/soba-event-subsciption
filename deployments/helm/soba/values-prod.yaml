@@ -31,7 +31,7 @@ backend:
     logLevel: warn
     documentGenerationDefaultCode: cdogs-v2
     tenantEngineDefaultCode: cstar-v1
-    # Switch to aps-credential-issuer-v3 after filling the environment appId below and adding Vault credentials.
+    # Switch to aps-credential-issuer-v3 after adding the Vault keys.
     credentialIssuerDefaultCode: credential-issuer-noop
     # Email jobs end cancelled while notifications are disabled. Sending needs the notifications
     # feature enabled, notificationDefaultCode notify-v1, notification.notifyV1.endpoint, and
@@ -44,9 +44,7 @@ backend:
   credentialIssuer:
     apsCredentialIssuerV3:
       apiBaseUrl: https://api.gov.bc.ca/ds/api/v3
-      # Prod gateway and its target product environment; these are separate IDs.
       gatewayId: "gw-6cd63"
-      environmentAppId: ""
       tokenUrl: https://authz.apps.gov.bc.ca/auth/realms/aps/protocol/openid-connect/token
   documentGeneration:
     cdogsV2:

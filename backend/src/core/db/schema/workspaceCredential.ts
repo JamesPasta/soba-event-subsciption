@@ -8,16 +8,13 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
-import type { CredentialType } from '@soba/lib';
+import type { CredentialStatus, CredentialType } from '@soba/lib';
 import { sql } from 'drizzle-orm';
 import { idColumn } from './audit';
 import { sobaSchema, workspaces } from './core';
 import { forms } from './forms';
 
-export const credentialStatuses = ['issuing', 'active', 'rotating', 'unknown'] as const;
-export type CredentialStatus = (typeof credentialStatuses)[number];
-
-// API keys never enter this table. Each row tracks one independent issuance operation.
+// API keys never enter this table. A null form_id is a workspace key.
 export const workspaceCredentials = sobaSchema.table(
   'workspace_credential',
   {
@@ -37,6 +34,8 @@ export const workspaceCredentials = sobaSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     rotatedAt: timestamp('rotated_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by'),
   },
   (table) => ({
     workspaceIndex: index('workspace_credential_workspace_idx').on(table.workspaceId),
@@ -52,13 +51,16 @@ export const workspaceCredentials = sobaSchema.table(
     }),
     statusCheck: check(
       'workspace_credential_status_check',
-      sql`${table.status} in ('issuing', 'active', 'rotating', 'unknown')`,
+      sql`${table.status} in ('issuing', 'active', 'rotating', 'failed', 'unknown')`,
     ),
   }),
 );
 
 export const credentialAudit = sobaSchema.table('credential_audit', {
   id: idColumn(),
+  workspaceId: uuid('workspace_id')
+    .notNull()
+    .references(() => workspaces.id),
   credentialId: uuid('credential_id')
     .notNull()
     .references(() => workspaceCredentials.id),
@@ -82,6 +84,9 @@ export const credentialTypes = sobaSchema.table(
 export const credentialTypeAssignments = sobaSchema.table(
   'credential_type_assignment',
   {
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id),
     credentialId: uuid('credential_id')
       .notNull()
       .references(() => workspaceCredentials.id),
