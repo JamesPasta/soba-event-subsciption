@@ -26,8 +26,8 @@ vi.mock('@/app/[lang]/Providers', () => ({
       admins: { heading: 'Platform administrators' },
       featureScopes: { heading: 'Feature access' },
       audits: { heading: 'Document generation' },
-      jobs: { heading: 'Jobs' },
     },
+    jobs: { heading: 'Jobs' },
   }),
 }));
 

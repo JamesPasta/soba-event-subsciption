@@ -70,6 +70,7 @@ vi.mock('@/app/[lang]/Providers', () => ({
       disclaimerLabel: 'I agree to the disclaimer and statement of responsibility',
     },
     postSubmission: { tab: 'After Submission' },
+    jobs: { heading: 'Jobs' },
   }),
 }));
 
@@ -82,6 +83,10 @@ vi.mock('@/src/shared/featureFlags/featureAvailability', () => ({
 
 vi.mock('@/src/features/post-submission/ui/WorkspacePostSubmissionTab', () => ({
   default: () => <div data-testid="workspace-post-submission-content" />,
+}));
+
+vi.mock('@/src/features/jobs/ui/ScopedJobsTabs', () => ({
+  WorkspaceJobsTab: () => <div data-testid="workspace-jobs-content" />,
 }));
 
 vi.mock('@bcgov/design-system-react-components', async (importOriginal) => {
@@ -263,8 +268,45 @@ describe('WorkspaceForm', () => {
       'Form Settings',
       'After Submission',
       'Groups',
+      'Jobs',
     ]);
     expect(availability.check).toHaveBeenCalledWith('post-submission', { workspaceId: 'ws2' });
+  });
+
+  it('manage mode shows the Jobs tab to the owner, and opens it when a link names it', async () => {
+    mockSearchParams.value = 'tab=jobs';
+    await act(async () => {
+      renderForm('ws2');
+    });
+
+    expect(await screen.findByTestId('workspace-jobs-tab')).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByTestId('workspace-jobs-content')).toBeInTheDocument();
+  });
+
+  it('manage mode hides the Jobs tab from a workspace admin', async () => {
+    mockSearchParams.value = 'tab=jobs';
+    mockSelectWorkspace.mockResolvedValue({
+      id: 'ws2',
+      name: 'Team Workspace',
+      kind: 'team',
+      role: 'admin',
+      status: 'active',
+      disclaimerAccepted: false,
+      useCase: 'testUseCase',
+      org: 'testOrg',
+    });
+    await act(async () => {
+      renderForm('ws2');
+    });
+
+    expect(await screen.findByRole('tab', { name: 'Settings' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.queryByTestId('workspace-jobs-tab')).not.toBeInTheDocument();
   });
 
   it('manage mode hides the After Submission tab while the check runs and once it answers no', async () => {

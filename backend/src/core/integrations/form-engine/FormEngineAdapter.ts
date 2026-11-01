@@ -39,6 +39,20 @@ export interface CreateSubmissionInput {
   validate: boolean;
 }
 
+/** Answers of many submissions keyed by engine ref, and the refs the engine did not return. */
+export interface ReadSubmissionsResult {
+  found: Map<string, Record<string, unknown>>;
+  missing: string[];
+}
+
+export interface ReadSubmissionsOptions {
+  /**
+   * Whole answers, signature images and base64 file data included. Off by default: the engine may
+   * shorten or leave out such answers, which keeps large reads small.
+   */
+  full?: boolean;
+}
+
 export interface FormEngineAdapter {
   /** Optional: report whether the engine is reachable (readiness). No config in result. */
   readinessCheck?(): Promise<FormEngineReadinessResult>;
@@ -62,6 +76,16 @@ export interface FormEngineAdapter {
     engineFormRef: string,
     engineRef: string,
   ): Promise<Record<string, unknown> | null>;
+  /**
+   * Read many submission documents of one form, stripped like readSubmission. Refs the engine has
+   * no document for are listed in `missing`; `signal` abandons the read.
+   */
+  readSubmissions?(
+    engineFormRef: string,
+    engineRefs: string[],
+    signal?: AbortSignal,
+    options?: ReadSubmissionsOptions,
+  ): Promise<ReadSubmissionsResult>;
   /** Delete a submission document by form ref + submission ref (compensation / cleanup). */
   deleteSubmission?(engineFormRef: string, engineRef: string): Promise<void>;
   /**

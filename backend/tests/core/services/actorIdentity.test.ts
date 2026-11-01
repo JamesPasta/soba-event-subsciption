@@ -2,6 +2,7 @@ jest.mock('../../../src/core/db/repos/identityLookup', () => ({
   findSignInState: jest.fn(),
 }));
 jest.mock('../../../src/core/db/repos/membershipRepo', () => ({
+  completeFirstSignIn: jest.fn(),
   findOrCreateUserByIdentity: jest.fn(),
   updateIdentityAttributes: jest.fn(),
 }));
@@ -16,6 +17,7 @@ jest.mock('../../../src/core/db/repos/sobaAdminRepo', () => ({
 import type { IdpMapPayloadResult } from '../../../src/core/auth/IdpPlugin';
 import { findSignInState, type SignInState } from '../../../src/core/db/repos/identityLookup';
 import {
+  completeFirstSignIn,
   findOrCreateUserByIdentity,
   updateIdentityAttributes,
 } from '../../../src/core/db/repos/membershipRepo';
@@ -49,6 +51,7 @@ describe('sobaAdminChange', () => {
 const mockState = jest.mocked(findSignInState);
 const mockCreate = jest.mocked(findOrCreateUserByIdentity);
 const mockAttributes = jest.mocked(updateIdentityAttributes);
+const mockFirstSignIn = jest.mocked(completeFirstSignIn);
 const mockGrant = jest.mocked(grantSobaAdminFromIdp);
 const mockRepoint = jest.mocked(repointSobaAdminFromIdp);
 const mockRevoke = jest.mocked(revokeSobaAdminFromIdp);
@@ -68,6 +71,7 @@ const state = (changes: Partial<SignInState> = {}): SignInState => ({
   identityId: 'identity-1',
   userId: 'user-1',
   attributesCurrent: true,
+  firstSignInPending: false,
   admin: idpGrant('bcgov-sso'),
   ...changes,
 });
@@ -75,6 +79,7 @@ const state = (changes: Partial<SignInState> = {}): SignInState => ({
 const followUps = () => [
   mockCreate,
   mockAttributes,
+  mockFirstSignIn,
   mockGrant,
   mockRepoint,
   mockRevoke,
@@ -101,6 +106,23 @@ describe('resolveSignedInActor', () => {
     await resolveSignedInActor('bcgov-sso', mapped(), 'JO');
 
     expect(mockAttributes).toHaveBeenCalledWith('identity-1', { idir_username: 'JO' });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('completes the first sign-in of an identity made from directory details', async () => {
+    mockState.mockResolvedValue(state({ attributesCurrent: false, firstSignInPending: true }));
+
+    await expect(resolveSignedInActor('bcgov-sso', mapped(), 'JO')).resolves.toMatchObject({
+      actorId: 'user-1',
+    });
+    expect(mockFirstSignIn).toHaveBeenCalledWith({
+      identityId: 'identity-1',
+      userId: 'user-1',
+      subject: 'sub-1',
+      profile: { displayName: 'Jo' },
+      idpAttributes: { idir_username: 'JO' },
+    });
+    expect(mockAttributes).not.toHaveBeenCalled();
     expect(mockCreate).not.toHaveBeenCalled();
   });
 

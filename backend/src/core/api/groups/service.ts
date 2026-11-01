@@ -1,12 +1,9 @@
 import { ApiErrorCodes, type SortLocale } from '@soba/lib';
 import { ConflictError, NotFoundError, ValidationError } from '../../errors';
-import { GroupMemberKind, SystemGroup } from '../../db/codes';
 import { GROUP_NAME_TAKEN } from '../../messages';
 import { listRoles } from '../../db/repos/roleRepo';
 import {
-  activeGroupMemberKind,
   addGroupMember,
-  countActiveUserMembers,
   createWorkspaceGroup,
   getWorkspaceGroup,
   getWorkspaceGroupMeta,
@@ -161,16 +158,8 @@ export class GroupsApiService {
   }
 
   async removeMember(ctx: GroupsContextInput, groupId: string, memberId: string) {
-    const systemCode = await requireGroup(ctx.workspaceId, groupId);
-    // Guard the last admin only when the target is actually an active user member of that group,
-    // so a bogus member id still gets a 404 rather than a misleading 409.
-    if (systemCode === SystemGroup.form_admins) {
-      const kind = await activeGroupMemberKind(groupId, memberId);
-      if (kind === GroupMemberKind.user && (await countActiveUserMembers(groupId)) <= 1) {
-        throw new ConflictError('Form administrators must keep at least one member');
-      }
-    }
-    const removed = await removeGroupMember({ groupId, memberId });
+    await requireGroup(ctx.workspaceId, groupId);
+    const removed = await removeGroupMember({ workspaceId: ctx.workspaceId, groupId, memberId });
     if (!removed) {
       throw new NotFoundError('Group member not found');
     }

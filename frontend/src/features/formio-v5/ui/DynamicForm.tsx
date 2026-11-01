@@ -1,12 +1,10 @@
 'use client';
 
-import { useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import type { FormProps } from '@formio/react';
 import { useFormioV5FormChrome } from '@/lib/hooks/useFormioV5FormChrome';
 import { CenteredProgress } from '@/app/ui/base/CenteredProgress';
 import { ensureBcgovFormioRegistered } from '@/src/features/formio-v5/registerBcgovFormio';
-import { NO_INLINE_IMAGE_EDITORS } from '@/src/features/formio-v5/editorOptions';
 
 function FormioV5FormChrome({ children }: { children: React.ReactNode }) {
   useFormioV5FormChrome('render');
@@ -30,13 +28,10 @@ const FormioForm = dynamic<FormProps>(
   },
 );
 
-export function DynamicForm({ options, ...props }: Readonly<FormProps>) {
-  // Every rendered form drops inline images. Keyed on the caller's options: Form.io rebuilds the
-  // webform whenever the options object changes.
-  const formOptions = useMemo(() => ({ editors: NO_INLINE_IMAGE_EDITORS, ...options }), [options]);
+export function DynamicForm(props: Readonly<FormProps>) {
   return (
     <FormioV5FormChrome>
-      <FormioForm {...props} options={formOptions} />
+      <FormioForm {...props} />
     </FormioV5FormChrome>
   );
 }

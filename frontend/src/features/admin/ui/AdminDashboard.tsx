@@ -87,7 +87,7 @@ export function AdminDashboard({
           {activeTab === 'audits' ? <DocumentGenerationAuditsPanel /> : null}
         </Tab>
       ) : null}
-      <Tab eventKey="jobs" title={dictAdmin.jobs.heading}>
+      <Tab eventKey="jobs" title={dict.jobs.heading}>
         {activeTab === 'jobs' ? <JobsPanel /> : null}
       </Tab>
     </Tabs>

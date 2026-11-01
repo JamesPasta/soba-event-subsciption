@@ -1,5 +1,5 @@
 # Crunchy Postgres values for SOBA PR pipelines.
-# Consumed by bcgov/action-crunchy; must be compatible with their chart (charts/crunchy).
+# Consumed by bcgov/actions-openshift/crunchy; must be compatible with its bundled chart.
 # PR-specific user/database (app-<PR_NUMBER>) is added by the action at runtime.
 global:
   config:

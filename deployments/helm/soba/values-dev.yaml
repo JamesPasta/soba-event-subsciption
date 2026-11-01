@@ -6,6 +6,7 @@ backend:
     notifications: "enabled"
     post-submission: "enabled"
     post-submission-email: "enabled"
+    submission-export: "enabled"
     user-search: "enabled"
   replicas: 1
   resources:
@@ -37,8 +38,6 @@ backend:
     cdogsV2:
       endpoint: https://cdogs-dev.api.gov.bc.ca/api
       tokenUrl: https://dev.loginproxy.gov.bc.ca/auth/realms/comsvcauth/protocol/openid-connect/token
-    cdogsV3:
-      endpoint: http://common-document-generation-service-master.a12c97-prod:3000
   tenantEngine:
     cstarV1:
       apiBaseUrl: https://test.connect.digital.gov.bc.ca/api/v1
@@ -53,7 +52,8 @@ backend:
   userSearch:
     cssV1:
       apiBaseUrl: https://api.loginproxy.gov.bc.ca/api/v1
-      environment: test
+      # Matches the SSO dev realm sign-in uses; BCeID accounts differ between CSS environments.
+      environment: dev
       tokenUrl: https://loginproxy.gov.bc.ca/auth/realms/standard/protocol/openid-connect/token
 
 frontend:
@@ -69,14 +69,15 @@ frontend:
 formio:
   internal:
     enabled: true
-  replicas: 1
+  replicas: 2
+  nodeOptions: "--max-old-space-size=2048"
   resources:
     requests:
-      cpu: 50m
-      memory: 192Mi
-    limits:
       cpu: 250m
-      memory: 512Mi
+      memory: 1Gi
+    limits:
+      cpu: 1
+      memory: 3Gi
 
 mongodb:
   # MongoDB runs as its own release from deployments/helm/action-mongodb. The deploy

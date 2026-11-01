@@ -7,4 +7,5 @@ metadata:
     {{- include "soba.labels" (dict "root" . "component" "formio") | nindent 4 }}
 data:
   FORMIO_PORT: {{ .Values.formio.service.port | quote }}
+  NODE_OPTIONS: {{ .Values.formio.nodeOptions | quote }}
 {{- end }}

@@ -9,3 +9,8 @@ export const WORKSPACE_CREATE_FORBIDDEN =
 export const WORKSPACE_MANAGE_FORBIDDEN =
   'Only workspace owners or admins can manage this workspace';
 export const GROUP_NAME_TAKEN = 'A group with this name already exists';
+export const MEMBER_EXISTS = 'This person already has access to the workspace';
+export const MEMBER_NOT_FOUND = 'Member not found';
+export const USER_NOT_ADDABLE = 'User not found, not active, or without a sign-in identity';
+export const MEMBER_PROTECTED = 'The workspace owner and your own access cannot be removed';
+export const LAST_FORM_ADMIN = 'Form administrators must keep at least one member';

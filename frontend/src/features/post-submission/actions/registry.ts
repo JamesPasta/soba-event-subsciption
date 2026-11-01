@@ -11,3 +11,6 @@ const actions = new Map<string, PostSubmissionActionUi>([
 /** How the tab shows an action; undefined for one this build has no fields for. */
 export const postSubmissionActionUi = (code: string): PostSubmissionActionUi | undefined =>
   actions.get(code);
+
+/** The plugin codes this build has fields for. */
+export const postSubmissionActionCodes = (): string[] => [...actions.keys()];

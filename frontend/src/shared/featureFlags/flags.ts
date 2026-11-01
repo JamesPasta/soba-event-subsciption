@@ -18,6 +18,8 @@ export const FEATURE_CODES = {
   USER_SEARCH: 'user-search',
   /** What happens after a submission is received, set on the After Submission tab. */
   POST_SUBMISSION: 'post-submission',
+  /** Exporting a form's submissions to a file. */
+  SUBMISSION_EXPORT: 'submission-export',
 } as const;
 
 export type FeatureCode = (typeof FEATURE_CODES)[keyof typeof FEATURE_CODES];

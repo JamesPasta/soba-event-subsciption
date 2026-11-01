@@ -8,10 +8,7 @@ type PageProps = {
 };
 
 export async function generateMetadata({ params }: PageProps) {
-  return pageMetadata(
-    params,
-    (dict) => `${dict.admin.jobs.detail.heading} | ${dict.general.title}`,
-  );
+  return pageMetadata(params, (dict) => `${dict.jobs.detail.heading} | ${dict.general.title}`);
 }
 
 export default async function Page({ params }: Readonly<PageProps>) {
@@ -19,7 +16,7 @@ export default async function Page({ params }: Readonly<PageProps>) {
   const dict = await getDictionary(resolveLocale(lang));
 
   return (
-    <PageLayout headingId="job-heading" heading={dict.admin.jobs.detail.heading}>
+    <PageLayout headingId="job-heading" heading={dict.jobs.detail.heading}>
       <JobDetailPanel jobId={jobId} />
     </PageLayout>
   );

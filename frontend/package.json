@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=8192}\" NEXT_DEBUG=1 next dev",
     "dev:watch": "nodemon --watch . --ext js,jsx,ts,tsx,json --exec \"npm run dev -- --hostname 0.0.0.0\"",
-    "dev:combined": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=8192}\" BASE_PATH=/chefs NEXT_PUBLIC_SOBA_FEATURES_ALLOWED=design-mode,submit-mode,files,meta,marketing,templates,user-search next dev --hostname 0.0.0.0 -p 3000",
-    "dev:designer": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=8192}\" NEXT_DIST_DIR=.next-designer BASE_PATH=/designer NEXT_PUBLIC_SOBA_FEATURES_ALLOWED=design-mode,files,meta,marketing,templates,user-search next dev --hostname 0.0.0.0 -p 3101",
+    "dev:combined": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=8192}\" BASE_PATH=/chefs NEXT_PUBLIC_SOBA_FEATURES_ALLOWED=design-mode,submit-mode,files,meta,marketing,templates,user-search,submission-export next dev --hostname 0.0.0.0 -p 3000",
+    "dev:designer": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=8192}\" NEXT_DIST_DIR=.next-designer BASE_PATH=/designer NEXT_PUBLIC_SOBA_FEATURES_ALLOWED=design-mode,files,meta,marketing,templates,user-search,submission-export next dev --hostname 0.0.0.0 -p 3101",
     "dev:forms": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=8192}\" NEXT_DIST_DIR=.next-forms BASE_PATH=/forms NEXT_PUBLIC_SOBA_FEATURES_ALLOWED=submit-mode,files,meta,templates next dev --hostname 0.0.0.0 -p 3100",
     "dev:clean": "rm -rf .next .next-designer .next-forms",
     "dev:pack": "next dev --webpack",

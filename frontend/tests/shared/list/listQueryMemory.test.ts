@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   FORMS_LIST_QUERY,
+  FORM_JOBS_LIST_QUERY,
   listLink,
+  scopedListQuery,
   FORM_SUBMISSIONS_LIST_QUERY,
   FORM_VERSIONS_LIST_QUERY,
   forgetListQueries,
@@ -91,5 +93,18 @@ describe('listQueryMemory', () => {
   it('survives a corrupt stored value', () => {
     sessionStorage.setItem('soba.listQuery.forms', 'not json');
     expect(recallListQuery(FORMS_LIST_QUERY)).toBeNull();
+  });
+
+  // One form's Jobs tab must not restore another form's filters.
+  it('remembers a scoped list per record, under the same URL names', () => {
+    const formA = scopedListQuery(FORM_JOBS_LIST_QUERY, 'form-a');
+    const formB = scopedListQuery(FORM_JOBS_LIST_QUERY, 'form-b');
+    rememberListQuery(formA, { status: 'dead' });
+
+    expect(recallListQuery(formA)).toEqual({ status: 'dead' });
+    expect(recallListQuery(formB)).toBeNull();
+    expect(listLink('/en/build/form-b', formB, { status: 'dead' })).toBe(
+      '/en/build/form-b?formJobs.status=dead',
+    );
   });
 });

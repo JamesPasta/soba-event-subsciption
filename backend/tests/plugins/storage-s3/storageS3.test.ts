@@ -52,4 +52,12 @@ describe('storage-s3 adapter', () => {
     storagePluginDefinition.createAdapter(makeConfig({ ...base, ...endpoint }));
     expect(Minio.Client).toHaveBeenCalledWith(expect.objectContaining({ endPoint, port, useSSL }));
   });
+
+  it('uploads in 16 MiB parts, so a stream is never held whole in memory', () => {
+    jest.mocked(Minio.Client).mockClear();
+    storagePluginDefinition.createAdapter(makeConfig(base));
+    expect(Minio.Client).toHaveBeenCalledWith(
+      expect.objectContaining({ partSize: 16 * 1024 * 1024 }),
+    );
+  });
 });

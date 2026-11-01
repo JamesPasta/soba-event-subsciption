@@ -1,4 +1,4 @@
-import { resolveJobSettings, resolveShutdownSettings } from '../../../src/core/config/env';
+import { env, resolveJobSettings, resolveShutdownSettings } from '../../../src/core/config/env';
 
 describe('resolveJobSettings', () => {
   it('uses the defaults when nothing is set', () => {
@@ -17,6 +17,12 @@ describe('resolveJobSettings', () => {
       deadRetentionDays: 90,
       drainMs: 15_000,
       abortGraceMs: 2_000,
+      progressIntervalMs: 5_000,
+      resultMaxBytes: 209_715_200,
+      resultRetentionDays: 7,
+      resultSweepBatch: 100,
+      resultsStorageProfile: 'default',
+      resultsStoragePrefix: 'job-results',
     });
   });
 
@@ -39,6 +45,12 @@ describe('resolveJobSettings', () => {
       JOB_DEAD_RETENTION_DAYS: '14',
       JOB_DRAIN_MS: '10000',
       JOB_ABORT_GRACE_MS: '500',
+      JOB_PROGRESS_INTERVAL_MS: '2000',
+      JOB_RESULT_MAX_BYTES: '52428800',
+      JOB_RESULT_RETENTION_DAYS: '1',
+      JOB_RESULT_SWEEP_BATCH: '20',
+      JOB_RESULTS_STORAGE_PROFILE: 'exports',
+      JOB_RESULTS_STORAGE_PREFIX: 'soba/job-results',
     });
     expect(settings).toMatchObject({
       pollMs: { light: 500, heavy: 5000 },
@@ -54,7 +66,31 @@ describe('resolveJobSettings', () => {
       deadRetentionDays: 14,
       drainMs: 10_000,
       abortGraceMs: 500,
+      progressIntervalMs: 2_000,
+      resultMaxBytes: 52_428_800,
+      resultRetentionDays: 1,
+      resultSweepBatch: 20,
+      resultsStorageProfile: 'exports',
+      resultsStoragePrefix: 'soba/job-results',
     });
+  });
+
+  it('writes progress at most every second', () => {
+    expect(() => resolveJobSettings({ JOB_PROGRESS_INTERVAL_MS: '999' })).toThrow(
+      "JOB_PROGRESS_INTERVAL_MS must be a whole number from 1000 to 2147483647, got '999'",
+    );
+  });
+
+  it('caps a result at the largest file size a file row holds', () => {
+    expect(() => resolveJobSettings({ JOB_RESULT_MAX_BYTES: '2147483648' })).toThrow(
+      "JOB_RESULT_MAX_BYTES must be a whole number from 1 to 2147483647, got '2147483648'",
+    );
+  });
+
+  it('stops on a results prefix storage would refuse', () => {
+    expect(() => resolveJobSettings({ JOB_RESULTS_STORAGE_PREFIX: 'Job Results' })).toThrow(
+      "JOB_RESULTS_STORAGE_PREFIX is not a valid storage prefix, got 'Job Results'",
+    );
   });
 
   it.each(['0', '-1', '1.5', 'abc', '2147483648'])('stops on %s, naming the variable', (raw) => {
@@ -93,6 +129,28 @@ describe('resolveJobSettings', () => {
   it('stops on an unknown pool', () => {
     expect(() => resolveJobSettings({ JOB_POOLS: 'light,bulk' })).toThrow(
       'JOB_POOLS has unknown pools: bulk',
+    );
+  });
+});
+
+describe('env.getSubmissionExportActiveLimit', () => {
+  const saved = process.env.SUBMISSION_EXPORT_ACTIVE_LIMIT;
+  afterEach(() => {
+    if (saved === undefined) delete process.env.SUBMISSION_EXPORT_ACTIVE_LIMIT;
+    else process.env.SUBMISSION_EXPORT_ACTIVE_LIMIT = saved;
+  });
+
+  it('is 2 per form unless set', () => {
+    delete process.env.SUBMISSION_EXPORT_ACTIVE_LIMIT;
+    expect(env.getSubmissionExportActiveLimit()).toBe(2);
+    process.env.SUBMISSION_EXPORT_ACTIVE_LIMIT = '5';
+    expect(env.getSubmissionExportActiveLimit()).toBe(5);
+  });
+
+  it('refuses 0 rather than read it as the default', () => {
+    process.env.SUBMISSION_EXPORT_ACTIVE_LIMIT = '0';
+    expect(() => env.getSubmissionExportActiveLimit()).toThrow(
+      "SUBMISSION_EXPORT_ACTIVE_LIMIT must be a whole number from 1 to 2147483647, got '0'",
     );
   });
 });

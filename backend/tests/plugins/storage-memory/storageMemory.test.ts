@@ -26,6 +26,27 @@ async function readStream(stream: NodeJS.ReadableStream): Promise<string> {
 }
 
 describe('storage-memory adapter', () => {
+  it('rejects a stream destroyed before its end, with or without an error', async () => {
+    const adapter = storagePluginDefinition.createAdapter(makeConfig());
+    const failing = new Readable({
+      read() {
+        this.destroy(new Error('source failed'));
+      },
+    });
+    await expect(
+      (adapter as any).uploadFile({ workspaceId: 'w1', filename: 'a.csv', stream: failing }),
+    ).rejects.toThrow('source failed');
+    const closed = new Readable({
+      read() {
+        this.push(Buffer.from('partial'));
+        this.destroy();
+      },
+    });
+    await expect(
+      (adapter as any).uploadFile({ workspaceId: 'w1', filename: 'b.csv', stream: closed }),
+    ).rejects.toThrow('Premature close');
+  });
+
   it('has the expected plugin code', () => {
     expect(storagePluginDefinition.code).toBe('storage-memory');
   });

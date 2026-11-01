@@ -232,11 +232,17 @@ export class FormioCommunityEditionAPIv5Client {
     await this.request(`/form/${idSegment(formId)}`, 'DELETE', undefined, signal);
   }
 
-  async loadSubmissions(formId: string, query?: FormioQuery): Promise<FormioSubmission[]> {
+  async loadSubmissions(
+    formId: string,
+    query?: FormioQuery,
+    signal?: AbortSignal,
+  ): Promise<FormioSubmission[]> {
     const qs = buildQueryString(query);
     const result = await this.request<FormioSubmission[] | FormioSubmission>(
       `/form/${idSegment(formId)}/submission${qs}`,
       'GET',
+      undefined,
+      signal,
     );
     return Array.isArray(result) ? result : [];
   }

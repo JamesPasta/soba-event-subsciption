@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import type { JobDetail, JobListItem, JobTypeItem } from '@/src/types/admin';
+import type { StaffJobDetail, StaffJobListItem } from '@/src/types/jobs';
 
 export const JOB_ID = '01a184ab-c640-72d5-84d5-d2f5551ef5b1';
 export const PARENT_ID = '01a184ab-c63a-7118-8dcd-79d2729bc6e3';
@@ -36,7 +37,49 @@ export const jobDetail = (overrides: Partial<JobDetail> = {}): JobDetail => ({
   createdBy: { id: '01a1806a-b238-71d9-9134-7443c22a547c', displayLabel: 'J2SHERMA' },
   lastRequeuedAt: null,
   lastRequeuedBy: null,
+  cancelRequestedBy: null,
   optionNames: ['to'],
+  recordedActions: [],
+  parentJobId: PARENT_ID,
+  childrenQueuedAt: null,
+  parent: {
+    id: PARENT_ID,
+    type: 'submission.submitted',
+    status: 'succeeded',
+    createdAt: AT,
+    finishedAt: AT,
+  },
+  children: [],
+  emailCounts: { addresses: 3, sent: 1, refused: 1, pending: 1 },
+  ...overrides,
+});
+
+/** A job as a form's or a workspace's list returns it: names and the confirmation ID, no ids. */
+export const staffJobListItem = (overrides: Partial<StaffJobListItem> = {}): StaffJobListItem => ({
+  id: JOB_ID,
+  type: 'post-submission-email-addresses',
+  status: 'cancelled',
+  attempts: 1,
+  maxAttempts: 8,
+  formName: 'Permit application',
+  confirmationCode: 'AH2N6XHC',
+  submissionId: SUBMISSION_ID,
+  createdAt: AT,
+  runAfter: AT,
+  finishedAt: AT,
+  cancelRequestedAt: null,
+  requeueCount: 0,
+  lastError: 'Notifications are off',
+  ...overrides,
+});
+
+export const staffJobDetail = (overrides: Partial<StaffJobDetail> = {}): StaffJobDetail => ({
+  ...staffJobListItem(),
+  startedAt: AT,
+  createdBy: { displayLabel: 'Submitter' },
+  lastRequeuedAt: null,
+  lastRequeuedBy: null,
+  cancelRequestedBy: null,
   recordedActions: [],
   parentJobId: PARENT_ID,
   childrenQueuedAt: null,

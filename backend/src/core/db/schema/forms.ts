@@ -151,8 +151,6 @@ export const submissions = sobaSchema.table(
     ),
     workspaceIdx: index('submission_workspace_idx').on(table.workspaceId),
     formVersionIdx: index('submission_form_version_idx').on(table.formVersionId),
-    // A form's submissions list, filtered and sorted by its review.
-    formIdx: index('submission_form_idx').on(table.formId),
     // Workspace slice ordered by server updatedAt (id as tiebreak), excluding soft-deleted rows.
     // Matches the submission list default sort. A multi-workspace scope or a deep offset does not
     // use it.
@@ -161,6 +159,10 @@ export const submissions = sobaSchema.table(
       .where(sql`${table.deletedAt} is null`),
     headRevisionIdx: index('submission_head_revision_idx').on(table.headRevisionId),
     statusIdx: index('submission_status_id_idx').on(table.statusId),
+    // A form's live submissions in submission order, the order an export reads them in.
+    formSubmittedIdx: index('submission_form_submitted_idx')
+      .on(table.formId, table.submittedAt, table.id)
+      .where(sql`${table.deletedAt} is null`),
   }),
 );
 

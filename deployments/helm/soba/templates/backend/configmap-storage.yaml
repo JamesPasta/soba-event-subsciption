@@ -22,6 +22,12 @@ data:
   {{- with .Values.backend.storage.templatesStoragePrefix }}
   TEMPLATES_STORAGE_PREFIX: {{ . | quote }}
   {{- end }}
+  {{- with .Values.backend.storage.jobResultsStorageProfile }}
+  JOB_RESULTS_STORAGE_PROFILE: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.backend.storage.jobResultsStoragePrefix }}
+  JOB_RESULTS_STORAGE_PREFIX: {{ . | quote }}
+  {{- end }}
   {{- if include "soba.storageUsesLocal" . }}
   # storage-local only: where the file store PVC is mounted and the default profile writes.
   STORAGE_PROFILE_DEFAULT_BASE_PATH: {{ required "backend.storage.defaultBasePath is required for storage-local" .Values.backend.storage.defaultBasePath | quote }}

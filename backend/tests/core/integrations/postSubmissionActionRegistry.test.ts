@@ -70,7 +70,7 @@ describe('post-submission action plugins', () => {
       'post-submission-test-echo',
       'submission.submitted',
     ]);
-    expect(registry.typesIn('heavy')).toEqual(['post-submission-test-off']);
+    expect(registry.typesIn('heavy')).toEqual(['submission-export', 'post-submission-test-off']);
     expect(warn).toHaveBeenCalledWith(
       { codes: ['post-submission-not-installed'] },
       'POST_SUBMISSION_ACTION_PLUGINS names plugins not installed',

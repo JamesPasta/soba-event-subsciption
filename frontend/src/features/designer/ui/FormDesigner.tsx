@@ -4,7 +4,6 @@ import React, { useMemo, useRef, useCallback, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom';
 import dynamic from 'next/dynamic';
 import { ensureBcgovFormioRegistered } from '@/src/features/formio-v5/registerBcgovFormio';
-import { NO_INLINE_IMAGE_EDITORS } from '@/src/features/formio-v5/editorOptions';
 
 import { useFormioV5FormChrome } from '@/lib/hooks/useFormioV5FormChrome';
 
@@ -88,7 +87,6 @@ const FormDesigner: React.FC<DesignerProps> = ({
       display: 'form' as const,
       // The builder's default Submit is drawn but never saved; show only buttons the schema holds.
       noDefaultSubmitButton: true,
-      editors: NO_INLINE_IMAGE_EDITORS,
       builder: {
         basic: {
           title: 'Basic',

@@ -44,9 +44,9 @@ For each pull request deployment, SOBA adds:
 
 - `soba-pr-<N>-backend`
 - `soba-pr-<N>-frontend`
-- `soba-pr-<N>-formio`
-- `soba-pr-<N>-mongodb`
 - `soba-pr-<N>-temporal-worker`
+
+PR deployments use the dev release's Form.io (`soba-dev-formio`) and its MongoDB.
 
 Each PR also gets a dedicated Temporal namespace inside the shared server:
 
@@ -207,7 +207,7 @@ The current PR flow is:
    - `temporal.namespace = soba-pr-<N>`
    - `temporalWorkersImage.repository = ghcr.io/<repo>/temporal-worker`
    - `temporalWorkersImage.tag = sha-<short_sha>`
-8. Wait for `backend`, `frontend`, `formio`, `mongodb`, and `temporal-worker`
+8. Wait for `backend`, `frontend`, and `temporal-worker`
 9. Run Playwright tests
 
 This is the most complete and correct Temporal deployment path in the repository today.

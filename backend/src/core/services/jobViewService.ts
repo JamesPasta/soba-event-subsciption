@@ -1,15 +1,26 @@
-import type { JobDetail, JobEmailCounts, JobListItem, JobSummary, JobTypeItem } from '@soba/lib';
+import type {
+  JobDetail,
+  JobEmailCounts,
+  JobListItem,
+  JobSummary,
+  JobTypeItem,
+  StaffJobActor,
+  StaffJobDetail,
+  StaffJobListItem,
+} from '@soba/lib';
 import { JobPool } from '../config/env';
 import { JobStatus, JobType } from '../db/codes';
 import {
-  getJobForAdmin,
+  getJob,
   getJobSummary,
   listChildJobs,
   requeueJob,
-  type AdminJobListRow,
-  type AdminJobRow,
-  type AdminJobSummaryRow,
-} from '../db/repos/jobAdminRepo';
+  type JobActorRow,
+  type JobListRow,
+  type JobRow,
+  type JobScope,
+  type JobSummaryRow,
+} from '../db/repos/jobViewRepo';
 import { cancelJob, LEASE_EXPIRED } from '../db/repos/jobRepo';
 import {
   listJobNotificationSends,
@@ -20,6 +31,7 @@ import { isHandledSend, isRefusedSend } from '../integrations/notification/sendO
 import { getPostSubmissionActionPluginDefinitions } from '../integrations/plugins/PluginRegistry';
 import { nudgeJobs } from '../jobs';
 import { getJobRegistry } from '../jobs/catalog';
+import { listJobOutputs, toJobResult, type JobOutput } from '../jobs/outputs';
 import { getJobSettings } from '../jobs/settings';
 import { log } from '../logging';
 
@@ -56,6 +68,10 @@ export interface RerunFacts {
  * handled nobody yet, so their emails would go to every address again.
  */
 export const rerunRefusal = (facts: RerunFacts): string | null => {
+  // An export is the person's own request, under their limit; they start a new one.
+  if (facts.type === JobType.submission_export) {
+    return "Start a new export from the form's Exports page";
+  }
   if (facts.status !== JobStatus.dead && facts.status !== JobStatus.cancelled) {
     return 'Only a dead or cancelled job can be run again';
   }
@@ -129,17 +145,13 @@ const iso = (date: Date | null): string | null => date?.toISOString() ?? null;
 
 const statusOf = (status: string): JobListItem['status'] => status as JobListItem['status'];
 
-export const toJobListItem = (row: AdminJobListRow): JobListItem => ({
+/** The fields every list item shares, admin or staff. */
+const listFacts = (row: JobListRow) => ({
   id: row.id,
   type: row.type,
   status: statusOf(row.status),
   attempts: row.attempts,
   maxAttempts: row.maxAttempts,
-  workspaceId: row.workspaceId,
-  workspaceName: row.workspaceName,
-  formId: row.formId,
-  formName: row.formName,
-  submissionId: row.submissionId,
   createdAt: row.createdAt.toISOString(),
   runAfter: row.runAfter.toISOString(),
   finishedAt: iso(row.finishedAt),
@@ -148,7 +160,24 @@ export const toJobListItem = (row: AdminJobListRow): JobListItem => ({
   lastError: redactAddresses(row.lastError),
 });
 
-const toJobSummary = (row: AdminJobSummaryRow): JobSummary => ({
+export const toJobListItem = (row: JobListRow): JobListItem => ({
+  ...listFacts(row),
+  workspaceId: row.workspaceId,
+  workspaceName: row.workspaceName,
+  formId: row.formId,
+  formName: row.formName,
+  submissionId: row.submissionId,
+});
+
+/** A list item for a form's or a workspace's staff: names and the confirmation ID, no ids. */
+export const toStaffJobListItem = (row: JobListRow): StaffJobListItem => ({
+  ...listFacts(row),
+  formName: row.formName,
+  confirmationCode: row.confirmationCode,
+  submissionId: row.submissionLive ? row.submissionId : null,
+});
+
+const toJobSummary = (row: JobSummaryRow): JobSummary => ({
   id: row.id,
   type: row.type,
   status: statusOf(row.status),
@@ -156,41 +185,105 @@ const toJobSummary = (row: AdminJobSummaryRow): JobSummary => ({
   finishedAt: iso(row.finishedAt),
 });
 
-const emailCountsOf = async (row: AdminJobRow): Promise<JobEmailCounts | null> => {
-  const addresses = addressesOf(row.params);
-  return addresses ? countEmails(addresses, await listJobNotificationSends(row.id)) : null;
+const standingOf = (actor: JobActorRow): StaffJobActor['standing'] => {
+  if (actor.member) return 'member';
+  return actor.viaAdmin ? 'platformAdministrator' : 'formerMember';
 };
 
-/** One job for its detail page, built from named fields only: its options are never returned. */
-export const getJobDetail = async (id: string): Promise<JobDetail> => {
-  const row = await getJobForAdmin(id);
+/** Someone outside the job's workspace is not named to its staff, only said to be. */
+export const toStaffJobActor = (actor: JobActorRow | null): StaffJobActor | null => {
+  if (!actor) return null;
+  const standing = standingOf(actor);
+  return { standing, displayLabel: standing === 'member' ? actor.displayLabel : null };
+};
+
+const adminActorOf = (actor: JobActorRow | null) =>
+  actor ? { id: actor.id, displayLabel: actor.displayLabel } : null;
+
+/** A job with what its page shows, as read. */
+export interface LoadedJob {
+  row: JobRow;
+  parent: JobSummaryRow | null;
+  children: JobSummaryRow[];
+  emailCounts: JobEmailCounts | null;
+  output: JobOutput | null;
+}
+
+const loadJob = async (scope: JobScope, id: string): Promise<LoadedJob> => {
+  const row = await getJob(scope, id);
   if (!row) throw new NotFoundError(NOT_FOUND);
-  const [parent, children, emailCounts] = await Promise.all([
-    row.parentJobId ? getJobSummary(row.parentJobId) : Promise.resolve(null),
-    listChildJobs(row.id),
-    emailCountsOf(row),
+  const addresses = addressesOf(row.params);
+  const [parent, children, sends, outputs] = await Promise.all([
+    row.parentJobId ? getJobSummary(scope, row.parentJobId) : Promise.resolve(null),
+    listChildJobs(scope, row.id),
+    addresses ? listJobNotificationSends(row.id) : Promise.resolve(null),
+    listJobOutputs([row.id]),
   ]);
   return {
-    ...toJobListItem(row),
-    revisionId: row.revisionId,
-    startedAt: iso(row.startedAt),
-    createdBy: { id: row.createdById, displayLabel: row.createdByLabel },
-    lastRequeuedAt: iso(row.lastRequeuedAt),
-    lastRequeuedBy: row.lastRequeuedById
-      ? { id: row.lastRequeuedById, displayLabel: row.lastRequeuedByLabel }
-      : null,
-    optionNames: Object.keys(optionsOf(row.params) ?? {}),
-    recordedActions: recordedActionsOf(row.params),
-    parentJobId: row.parentJobId,
-    childrenQueuedAt: iso(row.childrenQueuedAt),
-    ...(parent ? { parent: toJobSummary(parent) } : {}),
-    children: children.map(toJobSummary),
-    ...(emailCounts ? { emailCounts } : {}),
+    row,
+    parent,
+    children,
+    emailCounts: addresses && sends ? countEmails(addresses, sends) : null,
+    output: outputs.get(row.id) ?? null,
   };
 };
 
+/** One job for the admin page, built from named fields only: its options are never returned. */
+export const toJobDetail = ({
+  row,
+  parent,
+  children,
+  emailCounts,
+  output,
+}: LoadedJob): JobDetail => ({
+  ...toJobListItem(row),
+  revisionId: row.revisionId,
+  startedAt: iso(row.startedAt),
+  createdBy: row.createdBy,
+  lastRequeuedAt: iso(row.lastRequeuedAt),
+  lastRequeuedBy: adminActorOf(row.lastRequeuedBy),
+  cancelRequestedBy: adminActorOf(row.cancelRequestedBy),
+  optionNames: Object.keys(optionsOf(row.params) ?? {}),
+  recordedActions: recordedActionsOf(row.params),
+  parentJobId: row.parentJobId,
+  childrenQueuedAt: iso(row.childrenQueuedAt),
+  ...(parent ? { parent: toJobSummary(parent) } : {}),
+  children: children.map(toJobSummary),
+  ...(emailCounts ? { emailCounts } : {}),
+  ...(output?.progress ? { progress: output.progress } : {}),
+  ...(output?.result ? { result: toJobResult(output.result) } : {}),
+});
+
+/** One job for a form's or a workspace's staff: no ids beyond the links, no option names. */
+export const toStaffJobDetail = ({
+  row,
+  parent,
+  children,
+  emailCounts,
+}: LoadedJob): StaffJobDetail => ({
+  ...toStaffJobListItem(row),
+  startedAt: iso(row.startedAt),
+  createdBy: { displayLabel: row.createdBy.displayLabel },
+  lastRequeuedAt: iso(row.lastRequeuedAt),
+  lastRequeuedBy: toStaffJobActor(row.lastRequeuedBy),
+  cancelRequestedBy: toStaffJobActor(row.cancelRequestedBy),
+  recordedActions: recordedActionsOf(row.params),
+  parentJobId: row.parentJobId,
+  childrenQueuedAt: iso(row.childrenQueuedAt),
+  ...(parent ? { parent: toJobSummary(parent) } : {}),
+  children: children.map(toJobSummary),
+  ...(emailCounts ? { emailCounts } : {}),
+});
+
+export const getJobDetail = async (id: string): Promise<JobDetail> =>
+  toJobDetail(await loadJob({ kind: 'all' }, id));
+
+export const getStaffJobDetail = async (scope: JobScope, id: string): Promise<StaffJobDetail> =>
+  toStaffJobDetail(await loadJob(scope, id));
+
 const TYPE_NAMES: Record<string, string> = {
   [JobType.submission_submitted]: 'Submission received',
+  [JobType.submission_export]: 'Submission export',
 };
 
 /** The job types this environment runs, named for the admin filter. */
@@ -205,15 +298,16 @@ export const listJobTypes = (): JobTypeItem[] => {
 };
 
 /**
- * Run a dead or cancelled job again as the same row, with the options recorded when it was queued,
- * and wake this pod's pool. The job's own start check still applies.
+ * Run a dead or cancelled job in the scope again as the same row, with the options recorded when it
+ * was queued, and wake this pod's pool. The job's own start check still applies.
  */
-export const rerunJob = async (id: string, actorId: string): Promise<JobDetail> => {
-  const row = await getJobForAdmin(id);
+export const rerunJob = async (scope: JobScope, id: string, actorId: string): Promise<void> => {
+  const row = await getJob(scope, id);
   if (!row) throw new NotFoundError(NOT_FOUND);
   const definition = getJobRegistry().get(row.type);
   const settings = getJobSettings();
-  const children = row.type === JobType.submission_submitted ? await listChildJobs(row.id) : [];
+  const children =
+    row.type === JobType.submission_submitted ? await listChildJobs(scope, row.id) : [];
   const refusal = rerunRefusal({
     status: row.status,
     type: row.type,
@@ -226,31 +320,34 @@ export const rerunJob = async (id: string, actorId: string): Promise<JobDetail> 
     leaseMs: definition ? settings.leaseMs[definition.pool] : 0,
   });
   if (refusal) throw new ConflictError(refusal);
-  if (!(await requeueJob(id, actorId)))
+  if (!(await requeueJob(scope, id, actorId)))
     throw new ConflictError('The job changed meanwhile; reload it');
-  log.info({ jobId: id, jobType: row.type, actorId }, 'Job re-run by an administrator');
+  log.info({ jobId: id, jobType: row.type, actorId, scope: scope.kind }, 'Job run again');
   nudgeJobs(row.type);
-  return getJobDetail(id);
 };
 
 /**
- * Stop a queued or running job. A queued job ends cancelled now; a running one is asked to stop and
- * ends at its next heartbeat. `stopped` is false while a running job has yet to stop.
+ * Stop a queued or running job in the scope. A queued job ends cancelled now; a running one is asked
+ * to stop and ends at its next heartbeat. `stopped` is false while a running job has yet to stop.
  */
 export const stopJob = async (
+  scope: JobScope,
   id: string,
   actorId: string,
-): Promise<{ stopped: boolean; job: JobDetail }> => {
-  const row = await getJobForAdmin(id);
+): Promise<{ stopped: boolean }> => {
+  const row = await getJob(scope, id);
   if (!row) throw new NotFoundError(NOT_FOUND);
   if (row.status !== JobStatus.queued && row.status !== JobStatus.running) {
     throw new ConflictError('Only a queued or running job can be stopped');
   }
-  const result = await cancelJob(row.workspaceId, id);
+  const result = await cancelJob(row.workspaceId, id, {
+    id: actorId,
+    admin: scope.kind === 'all',
+  });
   if (result === 'not_active') throw new ConflictError('The job finished meanwhile; reload it');
   log.info(
-    { jobId: id, jobType: row.type, actorId, result },
-    'Job stop requested by an administrator',
+    { jobId: id, jobType: row.type, actorId, scope: scope.kind, result },
+    'Job stop requested',
   );
-  return { stopped: result === 'cancelled', job: await getJobDetail(id) };
+  return { stopped: result === 'cancelled' };
 };

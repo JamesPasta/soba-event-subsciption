@@ -10,6 +10,8 @@ export interface ConfirmModalProps {
   message: string;
   /** Label for the action being confirmed, e.g. "Delete". */
   confirmLabel: string;
+  /** Label for backing out; "Cancel" unless that would read as the action itself. */
+  cancelLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
   pending?: boolean;
@@ -23,6 +25,7 @@ export function ConfirmModal({
   title,
   message,
   confirmLabel,
+  cancelLabel,
   onConfirm,
   onCancel,
   pending = false,
@@ -52,7 +55,7 @@ export function ConfirmModal({
             onPress={onCancel}
             data-testid="confirm-modal-cancel"
           >
-            {dict.general.cancel}
+            {cancelLabel ?? dict.general.cancel}
           </Button>
         </>
       }

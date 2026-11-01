@@ -29,13 +29,15 @@ import { apiErrorMessage, isConflict } from '@/src/shared/api/dataError';
 import { useCurrentUser } from '@/src/shared/api/useCurrentUser';
 import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
 import { useDebouncedValue } from '@/src/shared/hooks/useDebouncedValue';
-import { isWorkspaceManageRole } from '../workspaceRoles';
+import { isWorkspaceManageRole, isWorkspaceOwnerRole } from '../workspaceRoles';
 import WorkspaceFormSettings from '@/src/features/form-settings/ui/WorkspaceFormSettings';
 import WorkspacePostSubmissionTab from '@/src/features/post-submission/ui/WorkspacePostSubmissionTab';
+import { WorkspaceJobsTab } from '@/src/features/jobs/ui/ScopedJobsTabs';
 import { usePostSubmissionAvailable } from '@/src/features/post-submission/data/usePostSubmissionAvailable';
 import type { UpdateWorkspaceBody, WorkspaceItem } from '@/src/types/workspaces';
 import styles from './WorkspaceForm.module.css';
 import WorkspaceGroupTab from './WorkspaceGroupTab';
+import WorkspaceAccessTab from './WorkspaceAccessTab';
 
 // How long to wait after the last keystroke, and how short a name can be, before checking it.
 const NAME_CHECK_DEBOUNCE_MS = 400;
@@ -312,6 +314,8 @@ function WorkspaceForm({ workspaceId, first = false }: Readonly<WorkspaceFormPro
     workspace && isWorkspaceManageRole(workspace.role) ? { workspaceId: workspace.id } : null,
   );
 
+  const canSeeJobs = !!workspace && isWorkspaceOwnerRole(workspace.role);
+
   const tabParam = searchParams.get('tab');
   // A link to After Submission opens it once the check says it is available.
   const validTabs = useMemo(
@@ -320,8 +324,10 @@ function WorkspaceForm({ workspaceId, first = false }: Readonly<WorkspaceFormPro
       'form-settings',
       ...(postSubmissionAvailable ? ['post-submission'] : []),
       'groups',
+      'access',
+      ...(canSeeJobs ? ['jobs'] : []),
     ],
-    [postSubmissionAvailable],
+    [postSubmissionAvailable, canSeeJobs],
   );
   const [selectedTab, setSelectedTab] = useState<string | null>(null);
   const activeTab =
@@ -449,6 +455,24 @@ function WorkspaceForm({ workspaceId, first = false }: Readonly<WorkspaceFormPro
           <WorkspaceGroupTab dict={dict} workspaceId={workspace.id} />
         </div>
       </Tab>
+      <Tab
+        eventKey="access"
+        title={dictWorkspaces.accessTab}
+        tabAttrs={{ 'data-testid': 'workspace-access-tab' }}
+      >
+        <div className={styles.tabContent}>
+          <WorkspaceAccessTab dict={dict} workspaceId={workspace.id} />
+        </div>
+      </Tab>
+      {canSeeJobs && (
+        <Tab
+          eventKey="jobs"
+          title={dict.jobs.heading}
+          tabAttrs={{ 'data-testid': 'workspace-jobs-tab' }}
+        >
+          <WorkspaceJobsTab key={workspace.id} workspaceId={workspace.id} />
+        </Tab>
+      )}
     </Tabs>
   );
 }

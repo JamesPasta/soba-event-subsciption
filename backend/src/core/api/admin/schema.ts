@@ -14,6 +14,8 @@ import {
   ListDocumentGenerationAuditsResponseSchema as LibListDocumentGenerationAuditsResponseSchema,
   JobDetailSchema as LibJobDetailSchema,
   JobEmailCountsSchema as LibJobEmailCountsSchema,
+  JobProgressSchema as LibJobProgressSchema,
+  JobResultSchema as LibJobResultSchema,
   JobListItemSchema as LibJobListItemSchema,
   JobSortSchema as LibJobSortSchema,
   JobStatusSchema as LibJobStatusSchema,
@@ -170,6 +172,8 @@ export const JobSummarySchema = LibJobSummarySchema.extend({ status: JobStatusSc
   'Admin_JobSummary',
 );
 export const JobEmailCountsSchema = LibJobEmailCountsSchema.clone().openapi('Admin_JobEmailCounts');
+export const JobProgressSchema = LibJobProgressSchema.clone().openapi('Admin_JobProgress');
+export const JobResultSchema = LibJobResultSchema.clone().openapi('Admin_JobResult');
 
 // Built on the named list item, so the detail references it rather than repeat its fields.
 export const JobDetailSchema = JobListItemSchema.extend({
@@ -179,6 +183,7 @@ export const JobDetailSchema = JobListItemSchema.extend({
     createdBy: true,
     lastRequeuedAt: true,
     lastRequeuedBy: true,
+    cancelRequestedBy: true,
     optionNames: true,
     recordedActions: true,
     parentJobId: true,
@@ -187,6 +192,8 @@ export const JobDetailSchema = JobListItemSchema.extend({
   parent: JobSummarySchema.optional(),
   children: z.array(JobSummarySchema),
   emailCounts: JobEmailCountsSchema.optional(),
+  progress: JobProgressSchema.optional(),
+  result: JobResultSchema.optional(),
 }).openapi('Admin_JobDetail');
 
 export const JobTypeItemSchema = LibJobTypeItemSchema.clone().openapi('Admin_JobTypeItem');

@@ -2,14 +2,18 @@ import {
   FormEngineAdapter,
   type CreateSubmissionInput,
   type FormEngineReadinessResult,
+  type ReadSubmissionsOptions,
+  type ReadSubmissionsResult,
   type UpsertSchemaInput,
 } from '../../core/integrations/form-engine/FormEngineAdapter';
 import { PluginConfigReader } from '../../core/config/pluginConfig';
 import { InternalError, ValidationError } from '../../core/errors';
+import { mapInOrder } from '../../core/inOrder';
 import {
   getAuthenticatedFormioClient,
   isFormioNotFound,
   type FormioCommunityEditionAPIv5Client,
+  type FormioQuery,
 } from './formioV5Client';
 import { ApiErrorCodes, normalizeSchema as normalizeFormioSchema } from '@soba/lib';
 
@@ -125,6 +129,21 @@ export function stripEngineManagedFields(doc: Record<string, unknown>): Record<s
   }
   return cleaned;
 }
+
+/** A submission without engine fields and SOBA `metadata`. */
+const answerDocument = (doc: Record<string, unknown>): Record<string, unknown> => {
+  const cleaned = stripEngineManagedFields(doc);
+  delete cleaned.metadata;
+  return cleaned;
+};
+
+/** Submissions read per Form.io list call. */
+const READ_BATCH_SIZE = 100;
+
+/** Without `full`, Form.io's list shortens signature answers to "YES" and drops base64 file urls. */
+const batchQuery = (refs: string[], full: boolean): FormioQuery => ({
+  params: { _id__in: refs.join(','), limit: refs.length, ...(full ? { full: true } : {}) },
+});
 
 /**
  * Fields the renderer reads when filling: page or wizard display, form settings, the components
@@ -371,10 +390,35 @@ export class FormioEngineAdapter implements FormEngineAdapter {
       string,
       unknown
     > | null;
-    if (!doc) return null;
-    const cleaned = stripEngineManagedFields(doc);
-    delete cleaned.metadata;
-    return cleaned;
+    return doc ? answerDocument(doc) : null;
+  }
+
+  /**
+   * Many submissions of one form, in `_id__in` batches run one after another. A form Form.io no
+   * longer has fails with engine_document_missing; a ref that is not a Form.io id fails the read.
+   */
+  async readSubmissions(
+    engineFormRef: string,
+    engineRefs: string[],
+    signal?: AbortSignal,
+    { full = false }: ReadSubmissionsOptions = {},
+  ): Promise<ReadSubmissionsResult> {
+    if (engineRefs.length === 0) return { found: new Map(), missing: [] };
+    const client = await getAuthenticatedFormioClient(this.pluginConfig);
+    if (!client) {
+      throw new Error('Form.io admin client unavailable; cannot read submissions');
+    }
+    const batches: string[][] = [];
+    for (let start = 0; start < engineRefs.length; start += READ_BATCH_SIZE) {
+      batches.push(engineRefs.slice(start, start + READ_BATCH_SIZE));
+    }
+    const pages = await mapInOrder(batches, (refs) =>
+      missingAsError(client.loadSubmissions(engineFormRef, batchQuery(refs, full), signal)),
+    );
+    const found = new Map<string, Record<string, unknown>>(
+      pages.flat().map((doc) => [doc._id, answerDocument(doc)]),
+    );
+    return { found, missing: engineRefs.filter((ref) => !found.has(ref)) };
   }
 
   /** Delete a Form.io submission by form ref + submission ref (compensation / cleanup). */

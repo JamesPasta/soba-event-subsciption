@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { isStoragePrefix } from '../integrations/storage-engine/storageKey';
 
 let loaded = false;
 
@@ -173,6 +174,17 @@ export interface JobSettings {
   drainMs: number;
   /** How long an aborted handler has to stop before its lease is left to expire. */
   abortGraceMs: number;
+  /** Least time between progress writes for one job. */
+  progressIntervalMs: number;
+  /** Largest result file a job may store. */
+  resultMaxBytes: number;
+  /** Days a stored result is kept. */
+  resultRetentionDays: number;
+  /** Result files deleted per sweep. */
+  resultSweepBatch: number;
+  /** Storage profile and key prefix for result files. */
+  resultsStorageProfile: string;
+  resultsStoragePrefix: string;
 }
 
 /** Largest delay a Node timer accepts; a longer one fires after 1 ms. */
@@ -183,6 +195,9 @@ const MIN_LEASE_MS = 1000;
 
 /** Past this, now() minus the retention overflows a Postgres timestamp. */
 const MAX_RETENTION_DAYS = 36_500;
+
+/** file.size is an integer column. */
+const MAX_RESULT_BYTES = 2_147_483_647;
 
 /** Unset uses the fallback; a value that is not a whole number from `min` to `max` throws. */
 function wholeNumberSetting(
@@ -247,7 +262,25 @@ export function resolveJobSettings(source: EnvSource): JobSettings {
     deadRetentionDays: retentionDays('JOB_DEAD_RETENTION_DAYS', 90),
     drainMs: setting('JOB_DRAIN_MS', 15_000),
     abortGraceMs: setting('JOB_ABORT_GRACE_MS', 2_000),
+    progressIntervalMs: wholeNumberSetting(source, 'JOB_PROGRESS_INTERVAL_MS', 5_000, {
+      min: 1_000,
+    }),
+    resultMaxBytes: wholeNumberSetting(source, 'JOB_RESULT_MAX_BYTES', 209_715_200, {
+      max: MAX_RESULT_BYTES,
+    }),
+    resultRetentionDays: retentionDays('JOB_RESULT_RETENTION_DAYS', 7),
+    resultSweepBatch: setting('JOB_RESULT_SWEEP_BATCH', 100),
+    resultsStorageProfile: getOptionalEnvFrom(source, 'JOB_RESULTS_STORAGE_PROFILE') ?? 'default',
+    resultsStoragePrefix: resolveResultsPrefix(source),
   };
+}
+
+function resolveResultsPrefix(source: EnvSource): string {
+  const prefix = getOptionalEnvFrom(source, 'JOB_RESULTS_STORAGE_PREFIX') ?? 'job-results';
+  if (!isStoragePrefix(prefix)) {
+    throw new Error(`JOB_RESULTS_STORAGE_PREFIX is not a valid storage prefix, got '${prefix}'`);
+  }
+  return prefix;
 }
 
 export interface ShutdownSettings {
@@ -456,6 +489,10 @@ export const env = {
   getTemplatesStorageProfile: () => getOptionalEnv('TEMPLATES_STORAGE_PROFILE') ?? 'default',
   // Key prefix the templates feature stores under within its profile. Defaults to 'templates'.
   getTemplatesStoragePrefix: () => getOptionalEnv('TEMPLATES_STORAGE_PREFIX') ?? 'templates',
+  // Queued or running submission exports one form may have at once. Not a whole number of at least 1
+  // stops the start with an error naming the variable.
+  getSubmissionExportActiveLimit: () =>
+    wholeNumberSetting(process.env, 'SUBMISSION_EXPORT_ACTIVE_LIMIT', 2),
   getJobSettings: () => resolveJobSettings(process.env),
   getShutdownSettings: () => resolveShutdownSettings(process.env),
 };

@@ -1,4 +1,4 @@
-# PR environment — minimal resources, single replica, internal Form.io + MongoDB
+# PR environment - minimal resources, single replica, the dev release's Form.io and MongoDB
 backend:
   # Development data generator: on for PR review environments. Notifications send through notify-v1.
   features:
@@ -6,8 +6,13 @@ backend:
     notifications: "enabled"
     post-submission: "enabled"
     post-submission-email: "enabled"
+    submission-export: "enabled"
     user-search: "enabled"
   replicas: 1
+  # The PR file store PVC is 1 Gi, shared with attachments and templates.
+  jobs:
+    resultMaxBytes: "52428800"
+    resultRetentionDays: "1"
   # Files and templates on a per-PR PVC, which pr_close deletes with the release. PRs write nothing to S3.
   storage:
     defaultBackend: storage-local
@@ -37,8 +42,6 @@ backend:
     cdogsV2:
       endpoint: https://cdogs-dev.api.gov.bc.ca/api
       tokenUrl: https://dev.loginproxy.gov.bc.ca/auth/realms/comsvcauth/protocol/openid-connect/token
-    cdogsV3:
-      endpoint: http://common-document-generation-service-master.a12c97-prod:3000
   tenantEngine:
     cstarV1:
       apiBaseUrl: https://test.connect.digital.gov.bc.ca/api/v1
@@ -53,7 +56,8 @@ backend:
   userSearch:
     cssV1:
       apiBaseUrl: https://api.loginproxy.gov.bc.ca/api/v1
-      environment: test
+      # Matches the SSO dev realm sign-in uses; BCeID accounts differ between CSS environments.
+      environment: dev
       tokenUrl: https://loginproxy.gov.bc.ca/auth/realms/standard/protocol/openid-connect/token
   sso:
     jwksUri: https://dev.loginproxy.gov.bc.ca/auth/realms/standard/protocol/openid-connect/certs
@@ -95,25 +99,12 @@ frontend:
 
 formio:
   internal:
-    enabled: true
-  replicas: 1
-  # Formio depends on MongoDB; allow time for MongoDB to be ready after PR deploy
-  readinessProbe:
-    initialDelaySeconds: 45
-    timeoutSeconds: 10
-  livenessProbe:
-    initialDelaySeconds: 60
-  resources:
-    requests:
-      cpu: 25m
-      memory: 128Mi
-    limits:
-      cpu: 250m
-      memory: 512Mi
+    enabled: false
+  external:
+    url: http://soba-dev-formio.b82f30-dev:3001
 
 mongodb:
-  # MongoDB runs as its own release from deployments/helm/action-mongodb. The deploy
-  # workflow supplies external.host and external.authSecretName.
+  # Must stay false: the in-chart MongoDB is gated on this alone, not on formio.internal.enabled.
   internal:
     enabled: false
 

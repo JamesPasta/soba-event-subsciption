@@ -25,8 +25,8 @@ export const isHandledSend = (send: SendOutcome): boolean =>
 
 /**
  * A send that leaves its address handled for a job's current run. A refusal counts only since the
- * job's last re-run, so an administrator's re-run tries a refused address again, such as one added
- * to the provider's safelist since.
+ * job's last re-run, so a re-run tries a refused address again, such as one added to the provider's
+ * safelist since.
  */
 export const isHandledForRun = (
   send: SendOutcome & { createdAt: Date },

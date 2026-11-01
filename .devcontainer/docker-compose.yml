@@ -24,7 +24,8 @@ services:
     restart: unless-stopped
 
   formio:
-    image: formio/formio:latest
+    # Keep in step with formio.image.tag in deployments/helm/soba/values.yaml.
+    image: formio/formio:4.11.0
     platform: linux/amd64
     ports:
       - "3001:3001"

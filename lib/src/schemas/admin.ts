@@ -3,9 +3,16 @@ import { OffsetPageSchema, makeSortEnum } from './pagination';
 import {
   DOCGEN_AUDIT_SORT_FIELDS,
   FEATURE_SCOPE_SORT_FIELDS,
-  JOB_SORT_FIELDS,
   SOBA_ADMIN_SORT_FIELDS,
 } from '../sort';
+import {
+  JobEmailCountsSchema,
+  JobProgressSchema,
+  JobResultSchema,
+  JobSortSchema,
+  JobStatusSchema,
+  JobSummarySchema,
+} from './jobs';
 
 export const SobaAdminSortSchema = makeSortEnum(SOBA_ADMIN_SORT_FIELDS);
 
@@ -104,12 +111,6 @@ export type ListDocumentGenerationAuditsResponse = z.infer<
   typeof ListDocumentGenerationAuditsResponseSchema
 >;
 
-/** A background job's status, as the job table records it. */
-export const JOB_STATUSES = ['queued', 'running', 'succeeded', 'dead', 'cancelled'] as const;
-export const JobStatusSchema = z.enum(JOB_STATUSES);
-
-export const JobSortSchema = makeSortEnum(JOB_SORT_FIELDS);
-
 const actor = z.object({ id: z.string().uuid(), displayLabel: z.string().nullable() });
 
 /** A job as the admin list shows it. `lastError` never holds an address. */
@@ -147,28 +148,6 @@ export const ListJobsResponseSchema = z.object({
 });
 export type ListJobsResponse = z.infer<typeof ListJobsResponseSchema>;
 
-/** A related job: a parent or a child. */
-export const JobSummarySchema = z.object({
-  id: z.string().uuid(),
-  type: z.string(),
-  status: JobStatusSchema,
-  createdAt: z.string(),
-  finishedAt: z.string().nullable(),
-});
-export type JobSummary = z.infer<typeof JobSummarySchema>;
-
-/**
- * Where a job's emails stand, by address: sent, refused by the provider, or not sent yet. A re-run
- * sends to those not sent yet and tries the refused ones again. Counts only, never addresses.
- */
-export const JobEmailCountsSchema = z.object({
-  addresses: z.number().int(),
-  sent: z.number().int(),
-  refused: z.number().int(),
-  pending: z.number().int(),
-});
-export type JobEmailCounts = z.infer<typeof JobEmailCountsSchema>;
-
 /** One job with its relations. Options are named, never shown. */
 export const JobDetailSchema = JobListItemSchema.extend({
   revisionId: z.string().uuid().nullable(),
@@ -176,6 +155,7 @@ export const JobDetailSchema = JobListItemSchema.extend({
   createdBy: actor,
   lastRequeuedAt: z.string().nullable(),
   lastRequeuedBy: actor.nullable(),
+  cancelRequestedBy: actor.nullable(),
   /** The option names an action job runs with. */
   optionNames: z.array(z.string()),
   /** The action codes a submission-received job recorded. */
@@ -188,6 +168,10 @@ export const JobDetailSchema = JobListItemSchema.extend({
   children: z.array(JobSummarySchema),
   /** Present for a job that sends emails to a list of addresses. */
   emailCounts: JobEmailCountsSchema.optional(),
+  /** Present once the job has reported progress. */
+  progress: JobProgressSchema.optional(),
+  /** Present for a succeeded job that produced a file. Never downloadable here. */
+  result: JobResultSchema.optional(),
 });
 export type JobDetail = z.infer<typeof JobDetailSchema>;
 

@@ -29,6 +29,13 @@ import {
   type SubmissionReviewStatus,
   type UpdateSubmissionStatusBody,
 } from '@/src/types/submissionReview';
+import type {
+  StartSubmissionExportBody,
+  SubmissionExport,
+  SubmissionExportFieldsBody,
+  SubmissionExportFieldsResponse,
+  SubmissionExportList,
+} from '@/src/types/submissionExport';
 import { toListRequestQuery, type ListQueryArgs } from '@/src/types/list';
 import { sortLocaleHeaders } from './sortLocaleRequest';
 
@@ -300,5 +307,73 @@ export async function downloadSobaSubmissionFile(
   const response = await sobaFetch(`/design/submissions/${submissionId}/files/${fileId}`, {
     token,
   });
+  return parseDownload(response);
+}
+
+/** The fields an export with these filters can include. */
+export async function getSobaExportFields(
+  token: string,
+  formId: string,
+  filters: SubmissionExportFieldsBody,
+): Promise<SubmissionExportFieldsResponse> {
+  const response = await sobaFetch(`/design/forms/${formId}/exports/fields`, {
+    token,
+    method: 'POST',
+    json: filters,
+  });
+  return parseJson(response);
+}
+
+/** Start an export; answers with the queued export. */
+export async function startSobaSubmissionExport(
+  token: string,
+  formId: string,
+  body: StartSubmissionExportBody,
+): Promise<SubmissionExport> {
+  const response = await sobaFetch(`/design/forms/${formId}/exports`, {
+    token,
+    method: 'POST',
+    json: body,
+  });
+  return parseJson(response);
+}
+
+/** One page of the caller's exports of a form. */
+export async function listSobaSubmissionExports(
+  token: string,
+  formId: string,
+  args: ListQueryArgs,
+): Promise<SubmissionExportList> {
+  const response = await sobaFetch(`/design/forms/${formId}/exports`, {
+    token,
+    query: toListRequestQuery(args),
+  });
+  return parseJson(response);
+}
+
+/**
+ * Stop one of the caller's exports. `stopped` is false while a running export has yet to stop; a
+ * finished export answers 409.
+ */
+export async function stopSobaSubmissionExport(
+  token: string,
+  formId: string,
+  exportId: string,
+): Promise<{ stopped: boolean; export: SubmissionExport }> {
+  const response = await sobaFetch(`/design/forms/${formId}/exports/${exportId}/cancel`, {
+    token,
+    method: 'POST',
+  });
+  const item = await parseJson<SubmissionExport>(response);
+  return { stopped: response.status === 200, export: item };
+}
+
+/** A ready export's file. */
+export async function downloadSobaSubmissionExport(
+  token: string,
+  formId: string,
+  exportId: string,
+): Promise<DownloadedFile> {
+  const response = await sobaFetch(`/design/forms/${formId}/exports/${exportId}/file`, { token });
   return parseDownload(response);
 }

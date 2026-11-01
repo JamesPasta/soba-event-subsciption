@@ -3,6 +3,7 @@ import { sobaFetch } from '@/src/shared/api/sobaFetch';
 import { parseJson } from '@/src/shared/api/sobaHelpers';
 import { sortLocaleHeaders } from '@/src/shared/api/sortLocaleRequest';
 import type {
+  CreateUserFromSearchResponse,
   UserSearchCapabilitiesResponse,
   UserSearchQuery,
   UserSearchResponse,
@@ -41,6 +42,23 @@ export async function searchUsers(
     token,
     query,
     headers: sortLocaleHeaders(locale),
+  });
+  return parseJson(response);
+}
+
+/**
+ * The Soba user for a person found by search, made from the directory when they have never signed
+ * in. The server asks the directory again by guid; `created` is false when one already existed.
+ */
+export async function createUserFromSearch(
+  token: string,
+  scope: UserSearchScope,
+  person: { identityProvider: string; guid: string },
+): Promise<CreateUserFromSearchResponse> {
+  const response = await sobaFetch(`${scopePath(scope)}/users`, {
+    token,
+    method: 'POST',
+    json: person,
   });
   return parseJson(response);
 }

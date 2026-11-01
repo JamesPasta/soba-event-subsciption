@@ -34,14 +34,13 @@ jobs:
     steps:
       - name: Deploy Crunchy
         id: crunchy
-        uses: bcgov/action-crunchy@7ee9c0bdec27f5251a8239373f51db1e01c7c4d9 # v2.1.0
+        uses: bcgov/actions-openshift/crunchy@46f2614322f7ba1a5ad88a7e4e1b98569c80dcf7 # v0.6.0
         with:
           oc_namespace: ${{ secrets.OC_NAMESPACE }}
           oc_token: ${{ secrets.OC_TOKEN }}
           oc_server: ${{ vars.OC_SERVER }}
           values_file: deployments/helm/action-crunchy/values-uat.yml
           release_name: pg-soba-uat
-          ref: v2.1.0
 
       - name: Validate Crunchy resources
         env:

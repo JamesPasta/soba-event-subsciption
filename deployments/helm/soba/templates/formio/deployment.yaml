@@ -107,10 +107,12 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "soba.fullname" . }}-formio
+          {{- if and (not .Values.mongodb.internal.enabled) .Values.mongodb.external.authSecretName }}
           volumeMounts:
             - name: mongodb-password
               mountPath: /var/run/secrets/soba/mongodb
               readOnly: true
+          {{- end }}
           {{- else }}
           envFrom:
             - configMapRef:

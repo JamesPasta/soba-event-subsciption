@@ -11,14 +11,14 @@ import type {
   ListSobaAdminsResponse,
   SobaAdminItem,
 } from '@soba/lib';
-import { listJobsForAdmin } from '../../db/repos/jobAdminRepo';
+import { listJobs, type JobScope } from '../../db/repos/jobViewRepo';
 import {
   getJobDetail,
   listJobTypes,
   rerunJob,
   stopJob,
   toJobListItem,
-} from '../../services/jobAdminService';
+} from '../../services/jobViewService';
 import {
   listSobaAdmins,
   addDirectSobaAdmin,
@@ -225,6 +225,8 @@ export const listDocumentGenerationAuditsHandler = asyncHandler(
 
 type JobIdParams = z.infer<typeof JobIdParamsSchema>;
 
+const EVERY_JOB: JobScope = { kind: 'all' };
+
 export const listJobsHandler = asyncHandler(async (req: Request, res: Response) => {
   const query = req.query as unknown as ListJobsQuery;
   const filters = {
@@ -234,7 +236,7 @@ export const listJobsHandler = asyncHandler(async (req: Request, res: Response) 
     formId: query.formId,
     submissionId: query.submissionId,
   };
-  const { items, total } = await listJobsForAdmin({
+  const { items, total } = await listJobs(EVERY_JOB, {
     ...filters,
     offset: query.offset,
     limit: query.limit,
@@ -259,10 +261,11 @@ export const getJobHandler = asyncHandler(async (req: Request<JobIdParams>, res:
 });
 
 export const rerunJobHandler = asyncHandler(async (req: Request<JobIdParams>, res: Response) => {
-  res.json(await rerunJob(req.params.jobId, req.actorId!));
+  await rerunJob(EVERY_JOB, req.params.jobId, req.actorId!);
+  res.json(await getJobDetail(req.params.jobId));
 });
 
 export const stopJobHandler = asyncHandler(async (req: Request<JobIdParams>, res: Response) => {
-  const { stopped, job } = await stopJob(req.params.jobId, req.actorId!);
-  res.status(stopped ? 200 : 202).json(job);
+  const { stopped } = await stopJob(EVERY_JOB, req.params.jobId, req.actorId!);
+  res.status(stopped ? 200 : 202).json(await getJobDetail(req.params.jobId));
 });

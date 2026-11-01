@@ -17,9 +17,16 @@ interface Tally {
   refused: number;
 }
 
+/**
+ * The reason a job gives when a limit stops it. Its readers are the form's and workspace's staff, so
+ * the environment's reason carries no numbers: those describe every workspace's email.
+ */
+export const LIMIT_REACHED_ENVIRONMENT =
+  'Hourly email limit for this environment reached; try again later';
+
 /** Ends the job cancelled, before anything is sent, when this list would pass an hourly limit. */
 const checkBudgets = async (
-  notifications: SendContext['services']['notifications'],
+  { services: { notifications }, log }: Pick<SendContext, 'services' | 'log'>,
   toSend: number,
   limits: HourlyLimits,
 ): Promise<void> => {
@@ -30,8 +37,11 @@ const checkBudgets = async (
   ]);
   const over = exceededLimit({ form, workspace, environment }, toSend, limits);
   if (over) {
+    log.warn({ ...over, toSend }, 'Post-submission email over an hourly limit');
     throw new JobCancelledError(
-      `Hourly email limit for the ${over.scope} reached: ${over.sent} sent or refused in the last hour, ${toSend} to send, limit ${over.limit}`,
+      over.scope === 'environment'
+        ? LIMIT_REACHED_ENVIRONMENT
+        : `Hourly email limit for the ${over.scope} reached: ${toSend} to send, limit ${over.limit}`,
     );
   }
 };
@@ -41,7 +51,7 @@ const checkBudgets = async (
  * address is recorded and skipped; a fresh list refused at every address ends cancelled. Any other
  * failure, a missing audit row or an abort stops the run and throws, so the job retries and the
  * retry skips what was handled. Budgets are checked until the run has handled an address, so a retry
- * finishes a started list; a run starts when the job is created, or at an administrator's re-run.
+ * finishes a started list; a run starts when the job is created, or when it is run again.
  */
 export const sendNotices = async (
   { options, submission, services, signal, log }: SendContext,
@@ -53,7 +63,7 @@ export const sendNotices = async (
   const remaining = options.to.filter((address) => !handled.has(address));
   if (remaining.length === 0) return;
   if (!(await notifications.enabled())) throw new JobCancelledError(NOTIFICATIONS_OFF);
-  if (!runStarted) await checkBudgets(notifications, remaining.length, limits);
+  if (!runStarted) await checkBudgets({ services, log }, remaining.length, limits);
 
   const notice: Notice = buildNotice(submission, link);
   // One send at a time, so a failure stops the rest of the list.

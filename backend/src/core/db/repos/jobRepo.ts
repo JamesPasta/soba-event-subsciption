@@ -1,8 +1,9 @@
-import { and, eq, inArray, lt, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
-import { quietDb, type DbOrTx } from '../client';
+import { quietDb, type DbOrTx, type Tx } from '../client';
 import { JobStatus } from '../codes';
-import { jobs } from '../schema';
+import { files, jobs } from '../schema';
+import type { FileRecord } from './fileRepo';
 
 export type JobRecord = typeof jobs.$inferSelect;
 /** A job this worker holds; every later write must match its claim token. */
@@ -129,10 +130,66 @@ export const claimJobs = async (
       attempts: sql`${jobs.attempts} + 1`,
       leaseUntil: afterMs(leaseMs),
       startedAt: sql`now()`,
+      progressDone: null,
+      progressTotal: null,
     })
     .where(inArray(jobs.id, due))
     .returning();
   return rows.filter(isClaimed);
+};
+
+export interface JobProgress {
+  done: number;
+  total: number | null;
+}
+
+/** Record how far a held job has got. False once the job is no longer this worker's. */
+export const writeJobProgress = async (
+  id: string,
+  claimToken: string,
+  progress: JobProgress,
+): Promise<boolean> => {
+  const rows = await quietDb
+    .update(jobs)
+    .set({ progressDone: progress.done, progressTotal: progress.total })
+    .where(held(id, claimToken))
+    .returning({ id: jobs.id });
+  return rows.length > 0;
+};
+
+export type AttachResultOutcome =
+  | { attached: true; previous: FileRecord | null }
+  | { attached: false; reason: 'not_held' | 'cancel_requested' };
+
+/**
+ * Point a held job at its new result file, in the caller's transaction, and delete the row of the
+ * file it pointed at before; the caller deletes that file's bytes after commit. Refused once the job
+ * is no longer this worker's or a stop was asked for, so a stopped job never gains a result.
+ */
+export const attachJobResult = async (
+  tx: Tx,
+  id: string,
+  claimToken: string,
+  fileId: string,
+  retentionDays: number,
+): Promise<AttachResultOutcome> => {
+  const [row] = await tx
+    .select({ resultFileId: jobs.resultFileId, cancelRequestedAt: jobs.cancelRequestedAt })
+    .from(jobs)
+    .where(held(id, claimToken))
+    .for('update');
+  if (!row) return { attached: false, reason: 'not_held' };
+  if (row.cancelRequestedAt) return { attached: false, reason: 'cancel_requested' };
+  await tx
+    .update(jobs)
+    .set({
+      resultFileId: fileId,
+      resultExpiresAt: sql`now() + ${retentionDays}::int * interval '1 day'`,
+    })
+    .where(eq(jobs.id, id));
+  if (!row.resultFileId) return { attached: true, previous: null };
+  const [previous] = await tx.delete(files).where(eq(files.id, row.resultFileId)).returning();
+  return { attached: true, previous: previous ?? null };
 };
 
 /** Extend the lease. `held` is false once the job is no longer this worker's. */
@@ -180,15 +237,22 @@ const finishValues = (finish: JobFinish): PgUpdateSetSource<typeof jobs> => {
   }
 };
 
-/** Record how a claimed job ended. False when the job was no longer this worker's. */
+/**
+ * Record how a claimed job ended, with the progress it last reported. False when the job was no
+ * longer this worker's.
+ */
 export const finishJob = async (
   id: string,
   claimToken: string,
   finish: JobFinish,
+  progress?: JobProgress,
 ): Promise<boolean> => {
   const rows = await quietDb
     .update(jobs)
-    .set(finishValues(finish))
+    .set({
+      ...finishValues(finish),
+      ...(progress ? { progressDone: progress.done, progressTotal: progress.total } : {}),
+    })
     .where(held(id, claimToken))
     .returning({ id: jobs.id });
   return rows.length > 0;
@@ -215,18 +279,23 @@ export const releaseJob = async (id: string, claimToken: string): Promise<boolea
 
 /**
  * Cancel a job. A queued job is cancelled now; a running job is asked to stop and ends at its next
- * heartbeat. not_active: missing, or already finished.
+ * heartbeat. The first request's time and asker, and whether they asked through the administration
+ * routes, are kept. not_active: missing, or already finished.
  */
 export const cancelJob = async (
   workspaceId: string,
   id: string,
+  actor: { id: string; admin: boolean },
 ): Promise<'cancelled' | 'requested' | 'not_active'> => {
+  const firstAsk = sql`${jobs.cancelRequestedAt} is null`;
   const [row] = await quietDb
     .update(jobs)
     .set({
       status: sql`case when ${jobs.status} = ${JobStatus.queued} then ${JobStatus.cancelled} else ${jobs.status} end`,
       finishedAt: sql`case when ${jobs.status} = ${JobStatus.queued} then now() else ${jobs.finishedAt} end`,
       cancelRequestedAt: sql`coalesce(${jobs.cancelRequestedAt}, now())`,
+      cancelRequestedBy: sql`case when ${firstAsk} then ${actor.id}::uuid else ${jobs.cancelRequestedBy} end`,
+      cancelRequestedByAdmin: sql`case when ${firstAsk} then ${actor.admin} else ${jobs.cancelRequestedByAdmin} end`,
     })
     .where(
       and(
@@ -243,7 +312,8 @@ export const cancelJob = async (
 /**
  * Requeue running jobs whose lease expired (their worker died), or end them as cancelled or dead, then
  * delete up to `retentionBatch` finished jobs past retention. Succeeded jobs use
- * `succeededRetentionDays`; dead and cancelled jobs use `deadRetentionDays`.
+ * `succeededRetentionDays`; dead and cancelled jobs use `deadRetentionDays`. A job that still points
+ * at a result file is kept until the result sweep has removed it.
  */
 export const sweepJobs = async (retention: {
   retentionBatch: number;
@@ -262,14 +332,17 @@ export const sweepJobs = async (retention: {
     })
     .where(and(eq(jobs.status, JobStatus.running), lt(jobs.leaseUntil, sql`now()`)))
     .returning({ status: jobs.status });
-  const isPastRetention = or(
-    and(
-      eq(jobs.status, JobStatus.succeeded),
-      lt(jobs.finishedAt, daysAgo(retention.succeededRetentionDays)),
-    ),
-    and(
-      inArray(jobs.status, [JobStatus.dead, JobStatus.cancelled]),
-      lt(jobs.finishedAt, daysAgo(retention.deadRetentionDays)),
+  const isPastRetention = and(
+    isNull(jobs.resultFileId),
+    or(
+      and(
+        eq(jobs.status, JobStatus.succeeded),
+        lt(jobs.finishedAt, daysAgo(retention.succeededRetentionDays)),
+      ),
+      and(
+        inArray(jobs.status, [JobStatus.dead, JobStatus.cancelled]),
+        lt(jobs.finishedAt, daysAgo(retention.deadRetentionDays)),
+      ),
     ),
   );
   const pastRetention = quietDb
@@ -289,6 +362,44 @@ export const sweepJobs = async (retention: {
     deleted: deleted.rowCount ?? 0,
   };
 };
+
+const ENDED_UNSUCCESSFULLY = [JobStatus.dead, JobStatus.cancelled];
+
+/**
+ * Remove up to `batch` result files: those past their expiry, and those of jobs that ended dead or
+ * cancelled. One transaction locks the jobs (skipping any being written), points them away from their
+ * files and deletes the file rows; the caller then deletes the returned files' bytes. A dead or
+ * cancelled job's expiry goes too, so it never reads as expired.
+ */
+export const sweepJobResults = (batch: number): Promise<FileRecord[]> =>
+  quietDb.transaction(async (tx) => {
+    const due = await tx
+      .select({ id: jobs.id, resultFileId: jobs.resultFileId })
+      .from(jobs)
+      .where(
+        and(
+          isNotNull(jobs.resultFileId),
+          or(lte(jobs.resultExpiresAt, sql`now()`), inArray(jobs.status, ENDED_UNSUCCESSFULLY)),
+        ),
+      )
+      .limit(batch)
+      .for('update', { skipLocked: true });
+    const fileIds = due.flatMap((row) => (row.resultFileId ? [row.resultFileId] : []));
+    if (fileIds.length === 0) return [];
+    await tx
+      .update(jobs)
+      .set({
+        resultFileId: null,
+        resultExpiresAt: sql`case when ${inArray(jobs.status, ENDED_UNSUCCESSFULLY)} then null else ${jobs.resultExpiresAt} end`,
+      })
+      .where(
+        inArray(
+          jobs.id,
+          due.map((row) => row.id),
+        ),
+      );
+    return tx.delete(files).where(inArray(files.id, fileIds)).returning();
+  });
 
 export const jobStats = async (): Promise<JobStats> => {
   const [row] = await quietDb

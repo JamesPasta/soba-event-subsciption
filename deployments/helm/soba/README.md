@@ -277,6 +277,31 @@ A limit outside 100 to 1000000 fails the render.
 To retire an action, take its code off the list first and remove its plugin in a later release.
 Jobs already queued for a plugin that no pod has stay queued.
 
+## Job Result Files
+
+A background job can keep one file it produced, such as a submission export. Result files are not
+virus-scanned: no one uploads them. They are kept for `backend.jobs.resultRetentionDays` (default 7)
+and removed by the job sweeper, as are the files of jobs that failed or were stopped. A job whose file
+would pass `backend.jobs.resultMaxBytes` (default 200 MiB) fails. PR slots use 50 MiB and 1 day, as
+their file store volume is 1 Gi. Each running export needs temp disk up to that size.
+
+| Helm value                                 | Env var                       | Default       |
+| ------------------------------------------ | ----------------------------- | ------------- |
+| `backend.jobs.progressIntervalMs`          | `JOB_PROGRESS_INTERVAL_MS`    | 5000          |
+| `backend.jobs.resultMaxBytes`              | `JOB_RESULT_MAX_BYTES`        | 209715200     |
+| `backend.jobs.resultRetentionDays`         | `JOB_RESULT_RETENTION_DAYS`   | 7             |
+| `backend.jobs.resultSweepBatch`            | `JOB_RESULT_SWEEP_BATCH`      | 100           |
+| `backend.storage.jobResultsStorageProfile` | `JOB_RESULTS_STORAGE_PROFILE` | `default`     |
+| `backend.storage.jobResultsStoragePrefix`  | `JOB_RESULTS_STORAGE_PREFIX`  | `job-results` |
+
+The backend refuses to start with a results profile that is not configured. On S3, a pod that stops
+between uploading a file and recording it leaves the object behind, as can an interrupted multipart
+upload; a bucket lifecycle rule that aborts incomplete uploads and expires `job-results/` objects
+after the retention cleans those up.
+
+Submission export (`backend.features.submission-export`) is on in dev, PR and test and off in UAT and
+prod; the designer app's `featuresAllowed` lists it.
+
 ## Database Migration
 
 On every `helm install` and `helm upgrade`, a Kubernetes Job runs **before** the
@@ -465,7 +490,7 @@ being lost on uninstall.
 | File               | Purpose        | Replicas    | Form.io  | MongoDB          |
 | ------------------ | -------------- | ----------- | -------- | ---------------- |
 | `values.yaml`      | Base defaults  | 1           | Internal | Internal         |
-| `values-pr.yaml`   | PR review apps | 1           | Internal | Internal (256Mi) |
+| `values-pr.yaml`   | PR review apps | 1           | Dev's    | None             |
 | `values-dev.yaml`  | Development    | 1           | Internal | Internal         |
 | `values-test.yaml` | Test / UAT     | 2           | Internal | Internal (2Gi)   |
 | `values-prod.yaml` | Production     | 3 (HPA 3–6) | External | External         |

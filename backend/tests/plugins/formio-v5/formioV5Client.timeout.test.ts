@@ -29,6 +29,8 @@ const client = (timeoutMs: number) =>
     timeoutMs,
   });
 
+type Call = (c: FormioCommunityEditionAPIv5Client, signal: AbortSignal) => Promise<unknown>;
+
 describe('FormioCommunityEditionAPIv5Client against a Form.io that never answers', () => {
   it('gives up on a request within its budget', async () => {
     const started = Date.now();
@@ -42,11 +44,17 @@ describe('FormioCommunityEditionAPIv5Client against a Form.io that never answers
     expect(Date.now() - started).toBeLessThan(2000);
   });
 
-  it("stops when the caller's signal fires, before its own budget", async () => {
-    const started = Date.now();
-    await expect(
-      client(30_000).saveForm({ title: 'Form' }, AbortSignal.timeout(200)),
-    ).rejects.toThrow('Formio POST request timed out');
-    expect(Date.now() - started).toBeLessThan(2000);
-  });
+  it.each<[string, Call, string]>([
+    ['saveForm', (c, signal) => c.saveForm({ title: 'Form' }, signal), 'POST'],
+    ['loadSubmissions', (c, signal) => c.loadSubmissions('form-1', undefined, signal), 'GET'],
+  ])(
+    "%s stops when the caller's signal fires, before its own budget",
+    async (_name, call, method) => {
+      const started = Date.now();
+      await expect(call(client(30_000), AbortSignal.timeout(200))).rejects.toThrow(
+        `Formio ${method} request timed out`,
+      );
+      expect(Date.now() - started).toBeLessThan(2000);
+    },
+  );
 });

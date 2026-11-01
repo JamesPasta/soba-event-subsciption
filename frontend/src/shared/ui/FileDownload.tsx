@@ -15,10 +15,12 @@ import { saveBlob } from '@/src/shared/util/saveBlob';
 
 type FileDownloadProps = {
   load: (token: string) => Promise<DownloadedFile>;
+  /** Shown when the server has no such file; "This file could not be found." by default. */
+  notFound?: string;
 };
 
 /** Saves the loaded file once it arrives, with a button to save it again. */
-export function FileDownload({ load }: Readonly<FileDownloadProps>) {
+export function FileDownload({ load, notFound }: Readonly<FileDownloadProps>) {
   const dict = useDictionary();
   const text = dict.fileDownload;
   const authDefaults = useAuthErrorDefaults();
@@ -40,7 +42,7 @@ export function FileDownload({ load }: Readonly<FileDownloadProps>) {
           error={error}
           messages={{
             ...authDefaults,
-            notFound: dict.apiErrors.file_not_found,
+            notFound: notFound ?? dict.apiErrors.file_not_found,
             failed: text.loadError,
           }}
           testIds={{ notFound: 'file-download-notfound', failed: 'file-download-loaderror' }}

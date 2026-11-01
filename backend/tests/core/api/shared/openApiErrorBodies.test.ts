@@ -6,6 +6,7 @@ import {
   withMiddlewareErrors,
   type RegisterOpenApiPaths,
 } from '../../../../src/core/api/shared/openapi';
+import { registerAccessOpenApi } from '../../../../src/core/api/access/schema';
 import { registerAdminOpenApi } from '../../../../src/core/api/admin/schema';
 import { registerFormsOpenApi } from '../../../../src/core/api/forms/schema';
 import { registerGroupsOpenApi } from '../../../../src/core/api/groups/schema';
@@ -19,6 +20,8 @@ import { registerWorkspacesOpenApi } from '../../../../src/core/api/workspaces/s
 import { registerDocumentGenerationOpenApi } from '../../../../src/features/document-generation/schema';
 import { registerFilesOpenApi } from '../../../../src/features/files/schema';
 import { registerFormSettingsOpenApi } from '../../../../src/features/form-settings';
+import { registerJobsOpenApi } from '../../../../src/features/jobs/schema';
+import { registerSubmissionExportOpenApi } from '../../../../src/features/submission-export/schema';
 import { registerTemplatesOpenApi } from '../../../../src/features/templates/schema';
 
 // The same registrations the API index makes.
@@ -28,7 +31,10 @@ const REGISTRARS: RegisterOpenApiPaths[] = [
   registerSubmissionsOpenApi,
   registerSubmitOpenApi,
   registerGroupsOpenApi,
+  registerAccessOpenApi,
   registerMeOpenApi,
+  registerJobsOpenApi,
+  registerSubmissionExportOpenApi,
   registerMembersOpenApi,
   registerWorkspacesOpenApi,
   registerFilesOpenApi,

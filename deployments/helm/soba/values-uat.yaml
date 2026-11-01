@@ -5,6 +5,7 @@ backend:
     notifications: "disabled"
     post-submission: "enabled"
     post-submission-email: "enabled"
+    submission-export: "disabled"
     user-search: "disabled"
   replicas: 3
   resources:
@@ -40,8 +41,6 @@ backend:
     cdogsV2:
       endpoint: https://cdogs.api.gov.bc.ca/api
       tokenUrl: https://loginproxy.gov.bc.ca/auth/realms/comsvcauth/protocol/openid-connect/token
-    cdogsV3:
-      endpoint: http://common-document-generation-service-master.a12c97-prod:3000
 
 frontend:
   replicas: 3
@@ -62,13 +61,14 @@ formio:
   internal:
     enabled: true
   replicas: 2
+  nodeOptions: "--max-old-space-size=2048"
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: 250m
+      memory: 1Gi
     limits:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 1
+      memory: 3Gi
 
 mongodb:
   internal:

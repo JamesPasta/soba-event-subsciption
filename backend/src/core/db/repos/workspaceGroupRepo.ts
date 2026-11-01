@@ -1,7 +1,12 @@
 import { and, asc, count, eq, ilike, inArray, ne } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
-import { WORKSPACE_GROUP_SORT_FIELDS, type SortLocale, type SortToken } from '@soba/lib';
-import { db, type DbOrTx } from '../client';
+import {
+  ApiErrorCodes,
+  WORKSPACE_GROUP_SORT_FIELDS,
+  type SortLocale,
+  type SortToken,
+} from '@soba/lib';
+import { db, type DbOrTx, type Tx } from '../client';
 import { collated, likePattern, orderByForSort, type SortColumns } from '../listSort';
 import { readListPage } from '../listRead';
 import {
@@ -13,11 +18,14 @@ import {
 } from '../schema';
 import {
   GroupMemberKind,
+  SystemGroup,
   WorkspaceGroupMembershipStatus,
   WorkspaceGroupRoleStatus,
   WorkspaceGroupStatus,
   WorkspaceMembershipStatus,
 } from '../codes';
+import { ConflictError } from '../../errors';
+import { LAST_FORM_ADMIN } from '../../messages';
 
 /** Insert rows for a group's role set; duplicate codes collapse to one row. */
 const groupRoleRows = (args: {
@@ -288,28 +296,33 @@ export const getSystemGroupId = async (
   return rows[0]?.id ?? null;
 };
 
-/** The kind of an active member row in the group, or null when it isn't present. */
-export const activeGroupMemberKind = async (
-  groupId: string,
-  memberId: string,
-): Promise<string | null> => {
-  const rows = await db
-    .select({ memberKind: workspaceGroupMemberships.memberKind })
-    .from(workspaceGroupMemberships)
+/**
+ * Locks the workspace's Form administrators group row. Every write that can take a member out of
+ * it takes this lock first, so two such writes cannot each remove the other's last remaining
+ * member. Returns the group id, or null when the workspace has none.
+ */
+export const lockFormAdmins = async (tx: Tx, workspaceId: string): Promise<string | null> => {
+  const rows = await tx
+    .select({ id: workspaceGroups.id })
+    .from(workspaceGroups)
     .where(
       and(
-        eq(workspaceGroupMemberships.id, memberId),
-        eq(workspaceGroupMemberships.groupId, groupId),
-        eq(workspaceGroupMemberships.status, WorkspaceGroupMembershipStatus.active),
+        eq(workspaceGroups.workspaceId, workspaceId),
+        eq(workspaceGroups.systemCode, SystemGroup.form_admins),
+        eq(workspaceGroups.status, WorkspaceGroupStatus.active),
       ),
     )
-    .limit(1);
-  return rows[0]?.memberKind ?? null;
+    .for('no key update');
+  return rows[0]?.id ?? null;
 };
 
-/** Count of active `user` members whose workspace membership is also active. */
-export const countActiveUserMembers = async (groupId: string): Promise<number> => {
-  const rows = await db
+/** True when an active user member other than `membershipId` is in the group. */
+export const hasOtherActiveMember = async (
+  tx: Tx,
+  groupId: string,
+  membershipId: string,
+): Promise<boolean> => {
+  const rows = await tx
     .select({ id: workspaceGroupMemberships.id })
     .from(workspaceGroupMemberships)
     .innerJoin(
@@ -322,9 +335,22 @@ export const countActiveUserMembers = async (groupId: string): Promise<number> =
         eq(workspaceGroupMemberships.memberKind, GroupMemberKind.user),
         eq(workspaceGroupMemberships.status, WorkspaceGroupMembershipStatus.active),
         eq(workspaceMemberships.status, WorkspaceMembershipStatus.active),
+        ne(workspaceGroupMemberships.workspaceMembershipId, membershipId),
       ),
-    );
-  return rows.length;
+    )
+    .limit(1);
+  return rows.length > 0;
+};
+
+/** Refuses when the change would leave Form administrators with no active member. */
+export const assertFormAdminsKeepMember = async (
+  tx: Tx,
+  formAdminsId: string,
+  leavingMembershipId: string,
+): Promise<void> => {
+  if (!(await hasOtherActiveMember(tx, formAdminsId, leavingMembershipId))) {
+    throw new ConflictError(LAST_FORM_ADMIN, ApiErrorCodes.last_form_admin);
+  }
 };
 
 /** True if an active group with this name exists in the workspace (optionally excluding one group). */
@@ -417,22 +443,50 @@ export const addGroupMember = async (args: {
   await addUserToGroup(db, args);
 };
 
-/** Removes a member from a group by its row id; false when it wasn't present. */
-export const removeGroupMember = async (args: {
+/**
+ * Removes a member from a group by its row id; false when it wasn't present. Refuses to take the
+ * last active user member out of Form administrators.
+ */
+export const removeGroupMember = (args: {
+  workspaceId: string;
   groupId: string;
   memberId: string;
-}): Promise<boolean> => {
-  const rows = await db
-    .delete(workspaceGroupMemberships)
-    .where(
-      and(
-        eq(workspaceGroupMemberships.id, args.memberId),
-        eq(workspaceGroupMemberships.groupId, args.groupId),
-      ),
-    )
-    .returning({ id: workspaceGroupMemberships.id });
-  return rows.length > 0;
-};
+}): Promise<boolean> =>
+  db.transaction(async (tx) => {
+    const formAdminsId = await lockFormAdmins(tx, args.workspaceId);
+    if (args.groupId === formAdminsId) {
+      const [member] = await tx
+        .select({
+          membershipId: workspaceGroupMemberships.workspaceMembershipId,
+          memberKind: workspaceGroupMemberships.memberKind,
+          status: workspaceGroupMemberships.status,
+        })
+        .from(workspaceGroupMemberships)
+        .where(
+          and(
+            eq(workspaceGroupMemberships.id, args.memberId),
+            eq(workspaceGroupMemberships.groupId, args.groupId),
+          ),
+        );
+      if (
+        member?.membershipId &&
+        member.memberKind === GroupMemberKind.user &&
+        member.status === WorkspaceGroupMembershipStatus.active
+      ) {
+        await assertFormAdminsKeepMember(tx, formAdminsId, member.membershipId);
+      }
+    }
+    const rows = await tx
+      .delete(workspaceGroupMemberships)
+      .where(
+        and(
+          eq(workspaceGroupMemberships.id, args.memberId),
+          eq(workspaceGroupMemberships.groupId, args.groupId),
+        ),
+      )
+      .returning({ id: workspaceGroupMemberships.id });
+    return rows.length > 0;
+  });
 
 /** Updates a group's name and/or description. */
 export const renameGroup = async (args: {
@@ -465,6 +519,13 @@ export const softDeleteWorkspaceGroup = async (args: {
 }): Promise<void> => {
   const stamp = { updatedBy: args.displayLabel, updatedAt: new Date() };
   await db.transaction(async (tx) => {
+    // Locked first: a membership write holding the group waits here, so its rows are deactivated
+    // below, and one that comes after sees the group inactive.
+    await tx
+      .select({ id: workspaceGroups.id })
+      .from(workspaceGroups)
+      .where(eq(workspaceGroups.id, args.groupId))
+      .for('update');
     await tx
       .update(workspaceGroupMemberships)
       .set({ status: WorkspaceGroupMembershipStatus.inactive, ...stamp })

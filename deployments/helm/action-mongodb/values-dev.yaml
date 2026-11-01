@@ -2,7 +2,7 @@ mongodb:
   enabled: true
   fullnameOverride: soba-dev-mongodb
 
-  replicaCount: 1
+  replicaCount: 2
 
   auth:
     existingSecret: soba-dev-mongodb-auth
@@ -11,17 +11,23 @@ mongodb:
     databases:
       - formio-ce
 
+  # A volume claim template cannot change in place: growing an existing volume means patching its
+  # PVC and deleting the StatefulSet with --cascade=orphan before the upgrade.
   persistence:
     storageClass: netapp-block-standard
-    size: 1Gi
+    size: 5Gi
 
   resources:
     requests:
-      cpu: 50m
-      memory: 256Mi
+      cpu: 100m
+      memory: 1Gi
     limits:
-      cpu: 250m
-      memory: 768Mi
+      cpu: "1"
+      memory: 2Gi
+
+  # mongod's default cache for a 2Gi limit (half of the limit less 1Gi), pinned; change it with the limit.
+  extraFlags:
+    - "--wiredTigerCacheSizeGB=0.5"
 
   # TCP checks in place of the chart's exec probes, which start mongosh inside the container.
   customStartupProbe:
@@ -42,6 +48,36 @@ mongodb:
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 6
+
+  # Third voter: with two data members, either can go down and a primary is still elected.
+  arbiter:
+    enabled: true
+    resources:
+      requests:
+        cpu: 25m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 384Mi
+    # TCP checks in place of the chart's exec probes, which start mongosh inside the container.
+    customStartupProbe:
+      tcpSocket:
+        port: mongodb
+      periodSeconds: 10
+      failureThreshold: 30
+    customLivenessProbe:
+      tcpSocket:
+        port: mongodb
+      initialDelaySeconds: 30
+      periodSeconds: 20
+      timeoutSeconds: 5
+      failureThreshold: 6
+    customReadinessProbe:
+      tcpSocket:
+        port: mongodb
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
 
   pdb:
     create: false

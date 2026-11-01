@@ -60,6 +60,28 @@ describe('decideOutcome', () => {
   it('writes nothing for a failure after a lost lease', () => {
     expect(decideOutcome('aborted', 'lease_lost', firstOfThree, backoff)).toBeNull();
   });
+
+  it('ends a permanent failure dead on its first attempt, a timeout included', () => {
+    expect(decideOutcome('too big', undefined, firstOfThree, backoff, true)).toEqual({
+      kind: 'dead',
+      error: 'too big',
+    });
+    expect(decideOutcome('Timed out', 'timeout', firstOfThree, backoff, true)).toEqual({
+      kind: 'dead',
+      error: 'Timed out',
+    });
+  });
+
+  it('lets a cancel, a drain or a lost lease decide before a permanent failure', () => {
+    expect(decideOutcome('too big', 'cancel', firstOfThree, backoff, true)).toEqual({
+      kind: 'cancelled',
+      error: 'too big',
+    });
+    expect(decideOutcome('too big', 'drain', firstOfThree, backoff, true)).toEqual({
+      kind: 'release',
+    });
+    expect(decideOutcome('too big', 'lease_lost', firstOfThree, backoff, true)).toBeNull();
+  });
 });
 
 describe('errorText', () => {

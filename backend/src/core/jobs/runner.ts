@@ -7,14 +7,18 @@ import {
   finishJob,
   heartbeatJob,
   releaseJob,
+  writeJobProgress,
   type ClaimedJob,
+  type JobProgress,
 } from '../db/repos/jobRepo';
 import type { JobRegistry } from './registry';
+import { createProgressReporter, storeJobResult } from './results';
 import { OUTCOME_WRITE_RETRIES, OUTCOME_WRITE_RETRY_MS } from './settings';
 import {
   decideOutcome,
   errorText,
   JobCancelledError,
+  JobFailedError,
   type JobOutcome,
   type JobStopReason,
 } from './settlement';
@@ -24,6 +28,8 @@ interface RunningJob {
   job: ClaimedJob;
   controller: AbortController;
   stopReason?: JobStopReason;
+  /** The handler threw `JobFailedError`: no further attempts. */
+  permanent: boolean;
   /** The handler has returned; only the outcome write is left. */
   returned: boolean;
   stopHeartbeat: () => void;
@@ -56,10 +62,14 @@ const settlesWithin = async (promise: Promise<unknown>, ms: number): Promise<boo
   }
 };
 
-const recordOutcome = (job: ClaimedJob, outcome: JobOutcome): Promise<boolean> =>
+const recordOutcome = (
+  job: ClaimedJob,
+  outcome: JobOutcome,
+  progress: JobProgress | undefined,
+): Promise<boolean> =>
   outcome.kind === 'release'
     ? releaseJob(job.id, job.claimToken)
-    : finishJob(job.id, job.claimToken, outcome);
+    : finishJob(job.id, job.claimToken, outcome, progress);
 
 const OUTCOME_MESSAGES: Record<JobOutcome['kind'], string> = {
   succeeded: 'Job succeeded',
@@ -175,6 +185,7 @@ export class JobRunner {
     const entry: RunningJob = {
       job,
       controller: new AbortController(),
+      permanent: false,
       returned: false,
       stopHeartbeat: () => undefined,
       done: Promise.resolve(),
@@ -195,19 +206,24 @@ export class JobRunner {
     const { job } = entry;
     const log = this.log.child({ jobId: job.id, jobType: job.type, attempt: job.attempts });
     entry.stopHeartbeat = this.startHeartbeat(state, entry, log);
+    const progress = createProgressReporter(
+      (value) => writeJobProgress(job.id, job.claimToken, value),
+      this.settings.progressIntervalMs,
+      log,
+    );
     try {
       log.info('Job started');
-      const error = await this.runHandler(state, entry, log);
+      const error = await this.runHandler(state, entry, log, progress.report);
       entry.returned = true;
       clearTimeout(entry.abandonTimer);
-      const outcome = decideOutcome(error, entry.stopReason, job, this.settings);
+      const outcome = decideOutcome(error, entry.stopReason, job, this.settings, entry.permanent);
       if (!outcome) {
         log.warn({ reason: entry.stopReason, error }, 'Job stopped before finishing');
         return;
       }
       // The heartbeat keeps the lease while the outcome is written.
       const recorded = await withRetries(
-        () => recordOutcome(job, outcome),
+        () => recordOutcome(job, outcome, progress.latest()),
         OUTCOME_WRITE_RETRIES,
         OUTCOME_WRITE_RETRY_MS,
       );
@@ -228,6 +244,7 @@ export class JobRunner {
     state: PoolState,
     entry: RunningJob,
     log: Logger,
+    reportProgress: (done: number, total?: number | null) => void,
   ): Promise<string | undefined> {
     const { job, controller } = entry;
     let timeoutMs = this.settings.timeoutMs[state.pool];
@@ -236,9 +253,18 @@ export class JobRunner {
       const definition = this.registry.require(job.type);
       timeoutMs = definition.timeoutMs ?? timeoutMs;
       timer = setTimeout(() => this.abort(entry, 'timeout'), timeoutMs);
-      await definition.run({ job, signal: controller.signal, log });
+      await definition.run({
+        job,
+        signal: controller.signal,
+        log,
+        reportProgress,
+        resultMaxBytes: this.settings.resultMaxBytes,
+        storeResult: (staged, meta) =>
+          storeJobResult(job, staged, meta, this.settings, controller.signal),
+      });
       return undefined;
     } catch (err) {
+      if (err instanceof JobFailedError) entry.permanent = true;
       if (err instanceof JobCancelledError && !entry.stopReason) entry.stopReason = 'cancel';
       return entry.stopReason === 'timeout' ? `Timed out after ${timeoutMs} ms` : errorText(err);
     } finally {

@@ -55,14 +55,13 @@ jobs:
 
       - name: Deploy Crunchy
         id: crunchy
-        uses: bcgov/action-crunchy@7ee9c0bdec27f5251a8239373f51db1e01c7c4d9 # v2.1.0
+        uses: bcgov/actions-openshift/crunchy@46f2614322f7ba1a5ad88a7e4e1b98569c80dcf7 # v0.6.0
         with:
           oc_server: ${{ vars.OC_SERVER }}
           oc_namespace: ${{ vars.OC_NAMESPACE }}
           oc_token: ${{ secrets.OC_TOKEN }}
           values_file: deployments/helm/action-crunchy/values.yml
           release_name: pg-soba
-          ref: v2.0.0
 
   deploy-mongodb:
     name: Deploy MongoDB
@@ -229,7 +228,8 @@ jobs:
             internal:
               enabled: false
             external:
-              host: "soba-dev-mongodb-0.soba-dev-mongodb-headless"
+              # Both members, so Form.io can connect while either is down. The chart appends :port.
+              host: "soba-dev-mongodb-0.soba-dev-mongodb-headless:27017,soba-dev-mongodb-1.soba-dev-mongodb-headless"
               authSecretName: soba-dev-mongodb-auth
           temporal:
             address: "temporal-frontend.${NAMESPACE}.svc.cluster.local:7233"

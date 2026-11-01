@@ -19,3 +19,8 @@
 .tabContent {
   padding-top: var(--layout-padding-medium);
 }
+
+.filterField {
+  width: 240px;
+  max-width: 100%;
+}

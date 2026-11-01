@@ -104,6 +104,7 @@ backend:
     notifications: ""
     post-submission: ""
     post-submission-email: ""
+    submission-export: ""
     user-search: ""
 
   # -- configmap-app: general application config
@@ -166,6 +167,8 @@ backend:
     # that under the pod's 30 s grace period. "" uses the defaults in code (5000 and 28000).
     shutdownDelayMs: ""
     shutdownTimeoutMs: ""
+    # Queued or running submission exports one form may have (default 2).
+    submissionExportActiveLimit: ""
 
   # -- configmap-app: background job runner (JOB_*). "" uses the default in code.
   jobs:
@@ -191,6 +194,13 @@ backend:
     # that total is under config.shutdownTimeoutMs; the defaults (15 + 2 + 3 s of 28 s) leave 8 s.
     drainMs: ""
     abortGraceMs: ""
+    # Least time between a running job's progress writes (at least 1000).
+    progressIntervalMs: ""
+    # Largest result file a job may store, in bytes (default 200 MiB). A larger one fails the job.
+    resultMaxBytes: ""
+    # Days a job's result file is kept (default 7), and result files removed per sweep.
+    resultRetentionDays: ""
+    resultSweepBatch: ""
 
   # -- Shared temp storage PVC (RWX so it survives horizontal scaling).
   # Only provisioned/mounted when config.tempStorageDefaultCode is
@@ -223,6 +233,10 @@ backend:
     # (attachments, templates).
     filesStoragePrefix: ""
     templatesStoragePrefix: ""
+    # Profile and key prefix for files background jobs produce, such as submission exports. Empty
+    # uses the defaults in code (default, job-results).
+    jobResultsStorageProfile: ""
+    jobResultsStoragePrefix: ""
 
     # storage-local only: where the file store PVC is mounted and the default profile writes.
     # Required for storage-local.
@@ -267,7 +281,8 @@ backend:
       # -- outbound deadline in ms; empty uses the backend default (30000)
       timeoutMs: ""
     cdogsV3:
-      endpoint: ""
+      # -- gold cluster-local service; does not resolve from other clusters
+      endpoint: http://common-document-generation-service-master.b82f30-prod:3000
       # -- outbound deadline in ms; empty uses the backend default (30000)
       timeoutMs: ""
 
@@ -379,7 +394,7 @@ frontend:
   apps:
     designer:
       enabled: true
-      featuresAllowed: "design-mode,files,meta,marketing,templates,user-search"
+      featuresAllowed: "design-mode,files,meta,marketing,templates,user-search,submission-export"
       routePath: /designer
     forms:
       enabled: true
@@ -424,6 +439,8 @@ formio:
     tag: 4.11.0
     pullPolicy: IfNotPresent
   replicas: 1
+  # Heap cap kept below the memory limit so Node GCs before the container is OOM-killed.
+  nodeOptions: "--max-old-space-size=384"
   resources:
     requests:
       cpu: 50m

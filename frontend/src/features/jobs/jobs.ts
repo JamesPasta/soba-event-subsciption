@@ -1,10 +1,14 @@
 import { JOB_STATUSES } from '@soba/lib';
 import type { StatusTagVariant } from '@/src/components/StatusTag';
-import { postSubmissionActionUi } from '@/src/features/post-submission/actions/registry';
+import {
+  postSubmissionActionCodes,
+  postSubmissionActionUi,
+} from '@/src/features/post-submission/actions/registry';
 import type { Dictionary } from '@/src/types/dictionary';
-import type { JobDetail, JobStatus, JobTypeItem } from '@/src/types/admin';
+import type { JobStatus, JobTypeItem, JobViewModel } from '@/src/types/jobs';
 
 const SUBMISSION_SUBMITTED = 'submission.submitted';
+const SUBMISSION_EXPORT = 'submission-export';
 
 /** Text to show, and `lang` when only the server names it, which it does in English. */
 export type JobTypeLabel = { text: string; lang?: 'en' };
@@ -16,13 +20,20 @@ export type JobTypeLabel = { text: string; lang?: 'en' };
 export const jobTypeLabel = (
   type: string,
   dict: Dictionary,
-  types: readonly JobTypeItem[],
+  types: readonly JobTypeItem[] = [],
 ): JobTypeLabel => {
-  if (type === SUBMISSION_SUBMITTED) return { text: dict.admin.jobs.types.submissionSubmitted };
+  if (type === SUBMISSION_SUBMITTED) return { text: dict.jobs.types.submissionSubmitted };
+  if (type === SUBMISSION_EXPORT) return { text: dict.jobs.types.submissionExport };
   const action = postSubmissionActionUi(type);
   if (action) return { text: action.label(dict) };
   return { text: types.find((item) => item.type === type)?.name ?? type, lang: 'en' };
 };
+
+/** The types a submission's jobs can have that this build names: submission received and its actions. */
+export const submissionJobTypes = (): string[] => [
+  SUBMISSION_SUBMITTED,
+  ...postSubmissionActionCodes(),
+];
 
 const STATUS_VARIANTS: Record<JobStatus, StatusTagVariant> = {
   queued: 'primary',
@@ -43,9 +54,14 @@ export const isActiveJobStatus = (status: JobStatus): boolean =>
 export const canRerunJob = (status: JobStatus): boolean =>
   status === 'dead' || status === 'cancelled';
 
+/** An export is its starter's own request: they start a new one rather than run it again. */
+export const isExportJob = (type: string): boolean => type === SUBMISSION_EXPORT;
+
 /**
  * A submission-received job that queued its actions: the server refuses to run it again, since its
  * actions' jobs are the ones to run.
  */
-export const queuedItsActions = (job: JobDetail): boolean =>
+export const queuedItsActions = (
+  job: Pick<JobViewModel, 'type' | 'childrenQueuedAt' | 'children'>,
+): boolean =>
   job.type === SUBMISSION_SUBMITTED && (job.childrenQueuedAt !== null || job.children.length > 0);

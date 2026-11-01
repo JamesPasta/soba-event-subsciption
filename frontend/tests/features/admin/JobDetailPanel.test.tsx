@@ -44,7 +44,7 @@ import makeStore from '@/lib/store';
 import { setAuthenticated, setToken } from '@/lib/slices/keycloakSlice';
 import { JobDetailPanel } from '@/src/features/admin/ui/JobDetailPanel';
 
-const dictDetail = en.admin.jobs.detail;
+const dictDetail = en.jobs.detail;
 let store: ReturnType<typeof makeStore>;
 
 /** The job the server holds, read and changed by the handlers below. */
@@ -116,11 +116,69 @@ describe('JobDetailPanel', () => {
       `/en/admin/jobs/${PARENT_ID}`,
     );
     expect(screen.getByTestId(`job-related-${PARENT_ID}`)).toHaveTextContent(
-      en.admin.jobs.types.submissionSubmitted,
+      en.jobs.types.submissionSubmitted,
     );
     expect(screen.getByTestId('job-form-jobs').getAttribute('href')).toContain('jobs.formId=');
     expect(screen.getByTestId('job-rerun')).toBeInTheDocument();
     expect(screen.queryByTestId('job-stop')).not.toBeInTheDocument();
+  });
+
+  it("shows an export's progress and the file it produced, with no way to download it", async () => {
+    current = jobDetail({
+      type: 'submission-export',
+      status: 'succeeded',
+      lastError: null,
+      emailCounts: undefined,
+      progress: { done: 40, total: 40 },
+      result: {
+        state: 'ready',
+        filename: 'Permit 2026-10-29.csv',
+        size: 2100,
+        contentType: 'text/csv',
+        expiresAt: '2026-11-05T19:00:00.000Z',
+      },
+    });
+    stubJobsServer(readJob);
+    await renderPanel();
+
+    expect(await screen.findByTestId('job-fact-type')).toHaveTextContent(
+      en.jobs.types.submissionExport,
+    );
+    expect(screen.getByTestId('job-fact-progress')).toHaveTextContent('40 of 40');
+    expect(screen.getByTestId('job-fact-result')).toHaveTextContent(
+      'Permit 2026-10-29.csv, 2.1 kB',
+    );
+    expect(screen.getByTestId('job-fact-result')).toHaveTextContent('kept until');
+    expect(screen.queryByRole('link', { name: /Permit 2026-10-29/ })).not.toBeInTheDocument();
+  });
+
+  it.each(['cancelled', 'dead'] as const)(
+    'offers no Run again for a %s export, and says how to export again',
+    async (status) => {
+      current = jobDetail({ type: 'submission-export', status, emailCounts: undefined });
+      stubJobsServer(readJob);
+      await renderPanel();
+
+      expect(await screen.findByTestId('job-export-ended')).toHaveTextContent(
+        en.jobs.detail.exportEnded,
+      );
+      expect(screen.queryByTestId('job-rerun')).not.toBeInTheDocument();
+    },
+  );
+
+  it('says when the file a job produced expired', async () => {
+    current = jobDetail({
+      type: 'submission-export',
+      status: 'succeeded',
+      lastError: null,
+      emailCounts: undefined,
+      result: { state: 'expired', expiresAt: '2026-11-05T19:00:00.000Z' },
+    });
+    stubJobsServer(readJob);
+    await renderPanel();
+
+    expect(await screen.findByTestId('job-fact-result')).toHaveTextContent('Expired on');
+    expect(screen.queryByTestId('job-fact-progress')).not.toBeInTheDocument();
   });
 
   it('runs the job again after confirming, then offers Stop job', async () => {
@@ -149,7 +207,7 @@ describe('JobDetailPanel', () => {
     expect(server.calls('POST', `/admin/jobs/${JOB_ID}/rerun`)).toHaveLength(1);
     expect(await screen.findByTestId('job-stop')).toBeInTheDocument();
     expect(screen.queryByTestId('job-rerun')).not.toBeInTheDocument();
-    expect(screen.getByTestId('job-status')).toHaveTextContent(en.admin.jobs.statuses.queued);
+    expect(screen.getByTestId('job-status')).toHaveTextContent(en.jobs.statuses.queued);
     expect(screen.getByTestId('job-status-line')).toHaveFocus();
   });
 
@@ -240,9 +298,7 @@ describe('JobDetailPanel', () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
 
-    expect(await screen.findByTestId('job-status')).toHaveTextContent(
-      en.admin.jobs.statuses.succeeded,
-    );
+    expect(await screen.findByTestId('job-status')).toHaveTextContent(en.jobs.statuses.succeeded);
     const reads = server.calls('GET', `/admin/jobs/${JOB_ID}`).length;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(15_000);
@@ -277,9 +333,7 @@ describe('JobDetailPanel', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
-    expect(await screen.findByTestId('job-status')).toHaveTextContent(
-      en.admin.jobs.statuses.succeeded,
-    );
+    expect(await screen.findByTestId('job-status')).toHaveTextContent(en.jobs.statuses.succeeded);
     expect(screen.queryByTestId('job-refresh-error')).not.toBeInTheDocument();
   });
 
@@ -302,9 +356,7 @@ describe('JobDetailPanel', () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
 
-    expect(await screen.findByTestId('job-status')).toHaveTextContent(
-      en.admin.jobs.statuses.succeeded,
-    );
+    expect(await screen.findByTestId('job-status')).toHaveTextContent(en.jobs.statuses.succeeded);
   });
 
   it('says a parent that was deleted is no longer kept', async () => {

@@ -3,6 +3,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { Readable } from 'stream';
 import { storagePluginDefinition } from '../../../src/plugins/storage-local';
 import type { PluginConfigReader } from '../../../src/core/config/pluginConfig';
 
@@ -51,6 +52,24 @@ describe('storage-local adapter', () => {
     await (adapter as any).deleteFile(result.engineFileRef);
     const after = await (adapter as any).getFile(result.engineFileRef);
     expect(after).toBeNull();
+  });
+
+  it('rejects a stream that fails part way and leaves no partial file', async () => {
+    const failing = new Readable({
+      read() {
+        this.push(Buffer.from('partial'));
+        this.destroy(new Error('source failed'));
+      },
+    });
+    await expect(
+      (adapter as any).uploadFile({
+        workspaceId: 'w2',
+        prefix: 'job-results',
+        filename: 'export.csv',
+        stream: failing,
+      }),
+    ).rejects.toThrow('source failed');
+    expect(fs.readdirSync(path.join(tmp, 'job-results', 'w2'))).toEqual([]);
   });
 
   it('rejects path-traversal refs that escape basePath', async () => {

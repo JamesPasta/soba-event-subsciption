@@ -13,6 +13,7 @@ import { log } from '../../core/logging';
 import { objectKey, ownedKey } from './objectKey';
 
 const CODE = 'storage-s3';
+const PART_SIZE = 16 * 1024 * 1024;
 
 /**
  * S3-compatible (MinIO) storage plugin adapter.
@@ -67,7 +68,49 @@ function createMinioAdapter(config: PluginConfigReader): StorageEngineAdapter {
     useSSL,
     accessKey,
     secretKey,
+    // Each part is held in memory while it uploads; minio's own choice for a large or unsized
+    // stream runs to hundreds of MiB.
+    partSize: PART_SIZE,
   });
+
+  /**
+   * Upload a stream, rejecting when the source fails or closes before its end; minio's upload
+   * otherwise waits on such a source forever. A failed upload's parts are removed.
+   */
+  async function putStream(
+    key: string,
+    source: Readable,
+    size: number | undefined,
+    contentType: string,
+  ): Promise<void> {
+    let stop = (): void => undefined;
+    const sourceFailed = new Promise<never>((_resolve, reject) => {
+      const onError = (err: Error) => reject(err);
+      const onClose = () => {
+        if (!source.readableEnded) reject(new Error('Upload source closed before its end'));
+      };
+      source.once('error', onError);
+      source.once('close', onClose);
+      stop = () => {
+        source.off('error', onError);
+        source.off('close', onClose);
+      };
+    });
+    try {
+      await Promise.race([
+        client.putObject(bucket, key, source, size, { 'Content-Type': contentType }),
+        sourceFailed,
+      ]);
+    } catch (err) {
+      source.destroy();
+      await client.removeIncompleteUpload(bucket, key).catch((removeErr: unknown) => {
+        log.warn({ err: removeErr, plugin: CODE }, 'Incomplete upload not removed');
+      });
+      throw err;
+    } finally {
+      stop();
+    }
+  }
 
   function engineRefFor(key: string) {
     return `s3:${bucket}:${key}`;
@@ -99,9 +142,12 @@ function createMinioAdapter(config: PluginConfigReader): StorageEngineAdapter {
           'Content-Type': input.contentType || 'application/octet-stream',
         });
       } else if (input.stream) {
-        await client.putObject(bucket, key, input.stream as Readable, input.size, {
-          'Content-Type': input.contentType || 'application/octet-stream',
-        });
+        await putStream(
+          key,
+          input.stream as Readable,
+          input.size,
+          input.contentType || 'application/octet-stream',
+        );
       } else if (input.sourceUrl) {
         // Implementation could fetch the source URL and stream into putObject.
         throw new Error('sourceUrl uploads are not supported by storage-s3 adapter');

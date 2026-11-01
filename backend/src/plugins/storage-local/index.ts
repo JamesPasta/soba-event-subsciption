@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 // use fs.promises.mkdir with recursive instead of fs-extra
 import type {
   StorageEngineAdapter,
@@ -56,12 +57,12 @@ function createLocalStorageAdapter(config: PluginConfigReader): StorageEngineAda
       if (input.buffer) {
         await fs.promises.writeFile(dest, input.buffer);
       } else if (input.stream) {
-        const out = fs.createWriteStream(dest);
-        await new Promise<void>((resolve, reject) => {
-          input.stream!.pipe(out);
-          out.on('finish', () => resolve());
-          out.on('error', (e) => reject(e));
-        });
+        try {
+          await pipeline(input.stream, fs.createWriteStream(dest));
+        } catch (err) {
+          await fs.promises.rm(dest, { force: true });
+          throw err;
+        }
       } else if (input.sourceUrl) {
         // sourceUrl ingestion is not implemented in this adapter.
         throw new Error('sourceUrl uploads are not supported by storage-local adapter');

@@ -16,12 +16,28 @@ const textAt = (record: unknown, key: string): string | null => {
   return typeof value === 'string' && value.trim() ? value : null;
 };
 
+const GUID = /^[0-9a-f]{32}$/i;
+
+/**
+ * The guid in a `<guid>@<provider>` subject. A user made from user search has no IdP attributes
+ * until they sign in.
+ */
+const guidInSubject = (subject: string, identityProvider: string): string | null => {
+  const suffix = `@${identityProvider}`;
+  if (!subject.toLowerCase().endsWith(suffix)) return null;
+  const guid = subject.slice(0, -suffix.length);
+  return GUID.test(guid) ? guid : null;
+};
+
 function toHit(identityProvider: string, row: SobaUserSearchRow): UserSearchHit {
   const { profile, idpAttributes } = row;
   return {
     identityProvider,
     subject: row.subject,
-    guid: textAt(idpAttributes, 'idir_user_guid') ?? textAt(idpAttributes, 'bceid_user_guid'),
+    guid:
+      textAt(idpAttributes, 'idir_user_guid') ??
+      textAt(idpAttributes, 'bceid_user_guid') ??
+      guidInSubject(row.subject, identityProvider),
     username: textAt(profile, 'idir_username') ?? textAt(profile, 'bceid_username'),
     displayName: textAt(profile, 'displayName'),
     firstName: textAt(profile, 'firstName'),
@@ -30,7 +46,7 @@ function toHit(identityProvider: string, row: SobaUserSearchRow): UserSearchHit 
   };
 }
 
-/** Soba's own users, by the identities they signed in with. */
+/** Soba's own users, by their identities. */
 export class SobaUserSearchAdapter implements UserSearchAdapter {
   async capabilities(): Promise<readonly UserSearchCapability[]> {
     const identityProviders = await listLoginIdentityProviders(DEFAULT_SORT_LOCALE);

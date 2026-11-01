@@ -1,3 +1,4 @@
+import { getStorageAdapter } from '../integrations/plugins/PluginRegistry';
 import { log } from '../logging';
 import { getJobRegistry } from './catalog';
 import { JobRunner } from './runner';
@@ -9,10 +10,14 @@ export { assertJobShutdownFits, getJobSettings } from './settings';
 let runner: JobRunner | undefined;
 let sweeper: JobSweeper | undefined;
 
-/** Start the runner and sweeper in this process. Call outside any request. */
+/**
+ * Start the runner and sweeper in this process. Call outside any request. Throws when the results
+ * storage profile is not configured, rather than at the end of the first job that stores a file.
+ */
 export const startJobs = (): void => {
   if (runner) return;
   const settings = getJobSettings();
+  getStorageAdapter(settings.resultsStorageProfile);
   runner = new JobRunner(getJobRegistry(), settings, log.child({ component: 'job-runner' }));
   sweeper = new JobSweeper(settings, log.child({ component: 'job-sweeper' }));
   runner.start();

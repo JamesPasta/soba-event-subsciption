@@ -82,6 +82,8 @@ export const userIdentities = sobaSchema.table(
     subject: text('subject').notNull(),
     externalUserId: text('external_user_id'),
     idpAttributes: jsonb('idp_attributes'),
+    /** Null until the person signs in with this identity; set when sign-in creates it. */
+    firstSignInAt: timestamp('first_sign_in_at', { withTimezone: true }),
     ...auditColumns(),
   },
   (table) => ({
@@ -92,6 +94,11 @@ export const userIdentities = sobaSchema.table(
     userProviderUnique: uniqueIndex('user_identity_user_provider_uq').on(
       table.userId,
       table.identityProviderCode,
+    ),
+    // Sign-in and user search match subjects without case.
+    providerLowerSubjectIdx: index('user_identity_provider_lower_subject_idx').on(
+      table.identityProviderCode,
+      sql`lower(${table.subject})`,
     ),
     userIdx: index('user_identity_user_idx').on(table.userId),
   }),

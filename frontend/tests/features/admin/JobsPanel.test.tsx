@@ -109,11 +109,11 @@ describe('JobsPanel', () => {
 
     // The type filter lists the same names, so these are read from the table.
     const table = within(await screen.findByRole('table'));
-    expect(await table.findByText(en.admin.jobs.types.submissionSubmitted)).toBeInTheDocument();
+    expect(await table.findByText(en.jobs.types.submissionSubmitted)).toBeInTheDocument();
     expect(table.getByText(en.postSubmission.email.label)).toBeInTheDocument();
     expect(await table.findByText('Export submissions')).toHaveAttribute('lang', 'en');
     expect(screen.getByTestId('job-status-00000000-0000-4000-8000-000000000002')).toHaveTextContent(
-      en.admin.jobs.statuses.cancelled,
+      en.jobs.statuses.cancelled,
     );
   });
 

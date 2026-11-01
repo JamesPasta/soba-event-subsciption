@@ -20,12 +20,21 @@ export function createDiskTempStorageAdapter(baseDir: string): TempStorageAdapte
 
   const adapter: TempStorageAdapter = {
     async write(data: Buffer | Readable, opts?: TempWriteOptions): Promise<TempResource> {
+      const resource = adapter.reserve(opts);
+      const source = Buffer.isBuffer(data) ? Readable.from(data) : data;
+      try {
+        await pipeline(source, createWriteStream(resource.path));
+      } catch (err) {
+        await adapter.remove(resource);
+        throw err;
+      }
+      return resource;
+    },
+
+    reserve(opts?: TempWriteOptions): TempResource {
       ensureRoot();
       const id = randomUUID();
-      const filePath = path.join(root, `${opts?.prefix ?? 'soba'}-${id}`);
-      const source = Buffer.isBuffer(data) ? Readable.from(data) : data;
-      await pipeline(source, createWriteStream(filePath));
-      return { id, path: filePath };
+      return { id, path: path.join(root, `${opts?.prefix ?? 'soba'}-${id}`) };
     },
 
     createReadStream(resource: TempResource): Readable {

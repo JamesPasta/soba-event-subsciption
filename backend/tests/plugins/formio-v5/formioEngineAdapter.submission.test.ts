@@ -172,6 +172,7 @@ describe('FormioEngineAdapter submission methods', () => {
       const client = makeClient({
         loadForm: jest.fn().mockRejectedValue(missing),
         loadSubmission: jest.fn().mockRejectedValue(missing),
+        loadSubmissions: jest.fn().mockRejectedValue(missing),
       });
       mockedGetClient.mockResolvedValue(client);
       const adapter = new FormioEngineAdapter(makeConfig());
@@ -179,6 +180,9 @@ describe('FormioEngineAdapter submission methods', () => {
       await expect(adapter.readSchema('missing')).rejects.toBeInstanceOf(InternalError);
       await expect(adapter.readSchema('missing')).rejects.toMatchObject(engineDocumentMissing);
       await expect(adapter.readSubmission('form-ref-1', 'missing')).rejects.toMatchObject(
+        engineDocumentMissing,
+      );
+      await expect(adapter.readSubmissions('missing', ['sub-1'])).rejects.toMatchObject(
         engineDocumentMissing,
       );
     },
@@ -194,11 +198,13 @@ describe('FormioEngineAdapter submission methods', () => {
     const client = makeClient({
       loadForm: jest.fn().mockRejectedValue(failure),
       loadSubmission: jest.fn().mockRejectedValue(failure),
+      loadSubmissions: jest.fn().mockRejectedValue(failure),
     });
     mockedGetClient.mockResolvedValue(client);
     const adapter = new FormioEngineAdapter(makeConfig());
     await expect(adapter.readSchema('form-ref-1')).rejects.toBe(failure);
     await expect(adapter.readSubmission('form-ref-1', 'sub-1')).rejects.toBe(failure);
+    await expect(adapter.readSubmissions('form-ref-1', ['sub-1'])).rejects.toBe(failure);
   });
 
   it('deleteSubmission deletes the document under its form', async () => {
@@ -209,6 +215,140 @@ describe('FormioEngineAdapter submission methods', () => {
     await adapter.deleteSubmission('form-ref-1', 'sub-1');
 
     expect(client.deleteSubmission).toHaveBeenCalledWith('form-ref-1', 'sub-1');
+  });
+
+  type IdQuery = { params: { _id__in: string } };
+
+  /** Form.io documents for the requested ids, with engine fields and SOBA metadata to strip. */
+  const docsFor = (query: IdQuery) =>
+    query.params._id__in.split(',').map((id) => ({
+      _id: id,
+      owner: 'o1',
+      created: 'c',
+      metadata: { soba_submission_id: 's' },
+      data: { a: id },
+    }));
+
+  /** A loadSubmissions that returns every requested document. */
+  const loadDocs = (_form: string, query: IdQuery) => Promise.resolve(docsFor(query));
+
+  const refsOf = (count: number) => Array.from({ length: count }, (_, i) => `sub-${i}`);
+
+  /** The query readSubmissions sends for one batch of refs. */
+  const queryFor = (refs: string[]) => ({
+    params: { _id__in: refs.join(','), limit: refs.length },
+  });
+
+  const readSubmissions = (refs: string[], signal?: AbortSignal, full?: boolean) =>
+    new FormioEngineAdapter(makeConfig()).readSubmissions('form-ref-1', refs, signal, { full });
+
+  it('readSubmissions reads one batch by _id__in and strips each document', async () => {
+    const refs = refsOf(3);
+    const client = makeClient({ loadSubmissions: jest.fn(loadDocs) });
+    mockedGetClient.mockResolvedValue(client);
+
+    const { found, missing } = await readSubmissions(refs);
+
+    expect(client.loadSubmissions.mock.calls).toEqual([
+      ['form-ref-1', { params: { _id__in: 'sub-0,sub-1,sub-2', limit: 3 } }],
+    ]);
+    expect([...found.keys()]).toEqual(refs);
+    expect(found.get('sub-1')).toEqual({ data: { a: 'sub-1' } });
+    expect(missing).toEqual([]);
+  });
+
+  it('readSubmissions asks Form.io for whole documents only when told to', async () => {
+    const client = makeClient({ loadSubmissions: jest.fn(loadDocs) });
+    mockedGetClient.mockResolvedValue(client);
+
+    await readSubmissions(refsOf(1), undefined, true);
+
+    expect(client.loadSubmissions.mock.calls).toEqual([
+      ['form-ref-1', { params: { _id__in: 'sub-0', limit: 1, full: true } }],
+    ]);
+  });
+
+  it('readSubmissions splits 250 refs into batches of 100, 100 and 50', async () => {
+    const refs = refsOf(250);
+    const client = makeClient({ loadSubmissions: jest.fn(loadDocs) });
+    mockedGetClient.mockResolvedValue(client);
+
+    const { found } = await readSubmissions(refs);
+
+    expect(client.loadSubmissions.mock.calls).toEqual([
+      ['form-ref-1', queryFor(refs.slice(0, 100))],
+      ['form-ref-1', queryFor(refs.slice(100, 200))],
+      ['form-ref-1', queryFor(refs.slice(200))],
+    ]);
+    expect(found.size).toBe(250);
+  });
+
+  it("readSubmissions gives every batch the caller's signal", async () => {
+    const client = makeClient({ loadSubmissions: jest.fn(loadDocs) });
+    mockedGetClient.mockResolvedValue(client);
+    const signal = new AbortController().signal;
+
+    await readSubmissions(refsOf(150), signal);
+
+    expect(client.loadSubmissions).toHaveBeenCalledTimes(2);
+    expect(client.loadSubmissions.mock.calls[0][2]).toBe(signal);
+    expect(client.loadSubmissions.mock.calls[1][2]).toBe(signal);
+  });
+
+  it('readSubmissions starts the next batch only after the previous one resolves', async () => {
+    const firstBatch = Promise.withResolvers<void>();
+    const client = makeClient({
+      loadSubmissions: jest
+        .fn(loadDocs)
+        .mockImplementationOnce((form, query) =>
+          firstBatch.promise.then(() => loadDocs(form, query)),
+        ),
+    });
+    mockedGetClient.mockResolvedValue(client);
+
+    const read = readSubmissions(refsOf(150));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(client.loadSubmissions).toHaveBeenCalledTimes(1);
+
+    firstBatch.resolve();
+    const { found } = await read;
+    expect(client.loadSubmissions).toHaveBeenCalledTimes(2);
+    expect(found.size).toBe(150);
+  });
+
+  it('readSubmissions lists the refs Form.io did not return as missing', async () => {
+    const withoutSub1 = (_form: string, query: IdQuery) =>
+      Promise.resolve(docsFor(query).filter((doc) => doc._id !== 'sub-1'));
+    mockedGetClient.mockResolvedValue(makeClient({ loadSubmissions: jest.fn(withoutSub1) }));
+
+    const { found, missing } = await readSubmissions(refsOf(3));
+
+    expect([...found.keys()]).toEqual(['sub-0', 'sub-2']);
+    expect(missing).toEqual(['sub-1']);
+  });
+
+  it('readSubmissions makes no request for no refs', async () => {
+    expect(await readSubmissions([])).toEqual({ found: new Map(), missing: [] });
+    expect(mockedGetClient).not.toHaveBeenCalled();
+  });
+
+  it('readSubmissions stops at a failed batch and rejects with its error', async () => {
+    const failure = new FormioApiError(500, 'boom', 'http://formio.test');
+    const client = makeClient({
+      loadSubmissions: jest
+        .fn(loadDocs)
+        .mockImplementationOnce(loadDocs)
+        .mockRejectedValueOnce(failure),
+    });
+    mockedGetClient.mockResolvedValue(client);
+
+    await expect(readSubmissions(refsOf(250))).rejects.toBe(failure);
+    expect(client.loadSubmissions).toHaveBeenCalledTimes(2);
+  });
+
+  it('readSubmissions throws when no admin client is available', async () => {
+    mockedGetClient.mockResolvedValue(null);
+    await expect(readSubmissions(refsOf(1))).rejects.toThrow(/admin client/i);
   });
 
   it('deleteSubmission throws when no admin client is available', async () => {

@@ -132,11 +132,11 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           RESULTS: ${{ runner.temp }}/full-scan-sonar
         run: |
-          report_task() { sed -n "s/^$1=//p" .scannerwork/report-task.txt; }
+          report_task() { local key=$1; sed -n "s/^$key=//p" .scannerwork/report-task.txt; }
           server=$(report_task serverUrl)
           project=$(report_task projectKey)
           ce_task=$(report_task ceTaskUrl)
-          sonar() { curl -fsS -u "$SONAR_TOKEN:" --get "$server/api/$1" "${@:2}"; }
+          sonar() { local endpoint=$1; shift; curl -fsS -u "$SONAR_TOKEN:" --get "$server/api/$endpoint" "$@"; }
 
           # The issues API only sees the analysis once SonarQube Cloud has processed it.
           for _ in {1..60}; do

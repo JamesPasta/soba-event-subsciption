@@ -9,8 +9,10 @@ the people they return are merged into one list.
 | --- | --- |
 | `GET /api/v1/workspaces/{id}/user-search` | People found |
 | `GET /api/v1/workspaces/{id}/user-search/capabilities` | Identity providers searchable here, with the filters each accepts |
+| `POST /api/v1/workspaces/{id}/user-search/users` | The Soba user for a person found, made from the directory if they have none |
 | `GET /api/v1/design/forms/{id}/user-search` | Same as the workspace route, with access checked on the form |
 | `GET /api/v1/design/forms/{id}/user-search/capabilities` | Same as the workspace route, with access checked on the form |
+| `POST /api/v1/design/forms/{id}/user-search/users` | Same as the workspace route, with access checked on the form |
 
 - Filters: `email`, `firstName`, `lastName` and `guid`, each at least 2 characters. Give at least
   one; every filter given must match. `locale` (or `Accept-Language`) sets the sort language.
@@ -38,16 +40,35 @@ refused them.
 
 Searching creates no account or membership.
 
+## Making a user from a result
+
+`POST .../user-search/users` takes `{ identityProvider, guid }` for someone found who has no Soba
+user, so they can be added before they first sign in. Soba searches again by that guid and
+stores only what the directory returns. It answers:
+
+- 201 with `{ userId, created: true }` for a new user, or 200 with `created: false` when the
+  identity already has one. Asking again never makes a second.
+- 404 `person_not_found` when no one has the guid, 503 when a plugin that could not answer might
+  have.
+- 422 `identity_unconfirmed` unless exactly one person has the guid and their subject is
+  `<guid>@<identity provider>`, the subject sign-in will send. Stored in lower case; sign-in and
+  search match subjects without case.
+
+The new user has no access until something grants it, and records the caller as its creator. Its
+identity has no first sign-in yet: when the person signs in, Soba marks it and replaces the
+directory profile and display label with the token's, keeping any preferences.
+
 ## Plugins
 
 `USER_SEARCH_PLUGINS` lists the enabled plugins, comma-separated, in merge order. Unset enables
 none. Where both are enabled, `css-v1` is listed first. Soba stores a profile at first sign-in and
-never refreshes it.
+never refreshes it after that.
 
 ### user-search-soba
 
-Searches active Soba users by the identities they signed in with. It needs no config and can
-search every active login provider by every filter.
+Searches active Soba users by their identities, including ones made from a result that have not
+signed in yet. For those, the guid comes from the subject. It needs no config and can search
+every active login provider by every filter.
 
 | Filter | Matches |
 | --- | --- |
@@ -68,7 +89,7 @@ Looks people up through the CSS API with the team's CSS API account.
 | Setting | Value |
 | --- | --- |
 | `PLUGIN_CSS_V1_API_BASE_URL` | CSS API URL including `/api/v1` |
-| `PLUGIN_CSS_V1_ENVIRONMENT` | CSS environment searched: `dev`, `test` or `prod` |
+| `PLUGIN_CSS_V1_ENVIRONMENT` | CSS environment searched: `dev`, `test` or `prod`; the one matching the SSO realm Soba signs in through, since BCeID accounts differ between them |
 | `PLUGIN_CSS_V1_TOKEN_URL` | OAuth token endpoint |
 | `PLUGIN_CSS_V1_CLIENT_ID`, `PLUGIN_CSS_V1_CLIENT_SECRET` | CSS API account credentials |
 | `PLUGIN_CSS_V1_TIMEOUT_MS` | Optional budget for the token exchange, the request and its retry |
@@ -85,4 +106,5 @@ CSS API reference: https://bcgov.github.io/sso-docs/css-application/css-app-api
 Search filters are names, email addresses and guids. The request log drops the query string on
 `/user-search` routes, and outbound HTTP logs and errors carry the URL without its query string.
 `user-search-soba` passes the filters to its query as parameters, and the database query log
-writes parameters at `debug`.
+writes parameters at `debug`. Making a user sends the guid in the request body, which is not
+logged; the log line for a new user carries only ids and the identity provider.

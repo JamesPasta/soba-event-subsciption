@@ -27,6 +27,18 @@ export interface StoreFileInput {
   buffer: Buffer;
 }
 
+/** A file the system built itself, streamed from where it was staged. */
+export interface StoreGeneratedFileInput {
+  workspaceId: string;
+  actorId: string;
+  profile: string;
+  prefix: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  stream: NodeJS.ReadableStream;
+}
+
 /** The stored file, or the scan outcome that refused it. */
 export type StoreFileOutcome = FileRecord | Exclude<ScanOutcome, 'clean'>;
 
@@ -80,6 +92,42 @@ export const fileStore = {
     } catch (err) {
       // Storage and DB can't share a transaction; drop the stored bytes when the rows fail.
       // deleteFile swallows its own errors.
+      await adapter.deleteFile(result.engineFileRef);
+      throw err;
+    }
+  },
+
+  /**
+   * Store a file the system generated, then record it and its link. Not scanned: no one uploaded
+   * it. A failed upload stores nothing; a failed record write deletes the stored bytes.
+   */
+  async putGenerated(input: StoreGeneratedFileInput, link: FileLinkWrite): Promise<FileRecord> {
+    if (!isStoragePrefix(input.prefix)) {
+      throw new Error(`Invalid storage prefix '${input.prefix}'`);
+    }
+    const adapter = getStorageAdapter(input.profile);
+    const result = await adapter.uploadFile({
+      workspaceId: input.workspaceId,
+      prefix: input.prefix,
+      filename: input.filename,
+      contentType: input.contentType,
+      size: input.size,
+      stream: input.stream,
+    });
+    try {
+      return await createFileRecord(
+        {
+          workspaceId: input.workspaceId,
+          profile: input.profile,
+          backendRef: result.engineFileRef,
+          filename: input.filename,
+          contentType: input.contentType,
+          size: input.size,
+          createdBy: input.actorId,
+        },
+        link,
+      );
+    } catch (err) {
       await adapter.deleteFile(result.engineFileRef);
       throw err;
     }

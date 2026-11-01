@@ -119,9 +119,7 @@ describe('sendNotices', () => {
     const outcome = run(['a@example.com', 'b@example.com', 'c@example.com'], fake.notifications);
 
     await expect(outcome).rejects.toThrow(
-      new JobCancelledError(
-        'Hourly email limit for the form reached: 499 sent or refused in the last hour, 2 to send, limit 500',
-      ),
+      new JobCancelledError('Hourly email limit for the form reached: 2 to send, limit 500'),
     );
     expect(fake.emails).toEqual([]);
   });
@@ -141,20 +139,17 @@ describe('sendNotices', () => {
   });
 
   it.each([
-    [
-      'form',
-      { form: 499 },
-      'Hourly email limit for the form reached: 499 sent or refused in the last hour, 2 to send, limit 500',
-    ],
+    ['form', { form: 499 }, 'Hourly email limit for the form reached: 2 to send, limit 500'],
     [
       'workspace',
       { workspace: 1999 },
-      'Hourly email limit for the workspace reached: 1999 sent or refused in the last hour, 2 to send, limit 2000',
+      'Hourly email limit for the workspace reached: 2 to send, limit 2000',
     ],
+    // Staff read the reason; how much email the whole environment sent is not theirs to see.
     [
       'environment',
       { environment: 4999 },
-      'Hourly email limit for the environment reached: 4999 sent or refused in the last hour, 2 to send, limit 5000',
+      'Hourly email limit for this environment reached; try again later',
     ],
   ])(
     'ends cancelled, sending nothing, when the %s limit would be passed',
@@ -166,6 +161,18 @@ describe('sendNotices', () => {
       expect(fake.emails).toEqual([]);
     },
   );
+
+  it('logs the numbers a limit stopped it on, without addresses', async () => {
+    const fake = fakeNotifications({ sent: { environment: 4999 } });
+    const warn = jest.fn();
+    await expect(
+      run(['a@example.com', 'b@example.com'], fake.notifications, { warn }),
+    ).rejects.toBeInstanceOf(JobCancelledError);
+    expect(warn).toHaveBeenCalledWith(
+      { scope: 'environment', sent: 4999, limit: 5000, toSend: 2 },
+      'Post-submission email over an hourly limit',
+    );
+  });
 
   it.each([400, 422])(
     'records an address refused with %i, carries on, and warns with counts',

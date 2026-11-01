@@ -8,6 +8,9 @@ jest.mock('../../../src/core/db/repos/identityProviderRepo', () => ({
 jest.mock('../../../src/core/db/repos/identityLookup', () => ({
   findIdentityOwners: jest.fn(),
 }));
+jest.mock('../../../src/core/db/repos/membershipRepo', () => ({
+  findOrCreateUserFromDirectory: jest.fn(),
+}));
 
 import {
   createUserSearchAdapter,
@@ -15,6 +18,7 @@ import {
 } from '../../../src/core/integrations/user-search/UserSearchRegistry';
 import { listLoginIdentityProviders } from '../../../src/core/db/repos/identityProviderRepo';
 import { findIdentityOwners } from '../../../src/core/db/repos/identityLookup';
+import { findOrCreateUserFromDirectory } from '../../../src/core/db/repos/membershipRepo';
 import type {
   UserSearchCapability,
   UserSearchHit,
@@ -23,6 +27,7 @@ import type {
 } from '../../../src/core/integrations/user-search/UserSearchAdapter';
 import { ServiceUnavailableError, ValidationError } from '../../../src/core/errors';
 import {
+  createUserFromSearch,
   getUserSearchCapabilities,
   PLUGIN_LIMIT,
   RESULT_LIMIT,
@@ -372,5 +377,88 @@ describe('searchUsers', () => {
     expect(result.users).toHaveLength(RESULT_LIMIT);
     expect(result.truncated).toBe(true);
     expect(result.plugins[0]).toEqual({ code: 'css-v1', status: 'ok', truncated: true });
+  });
+});
+
+describe('createUserFromSearch', () => {
+  const GUID = 'F0E1D2C3B4A59687';
+  const ACTOR = { actorId: 'actor-1', actorDisplayLabel: 'Actor One' };
+  const person = hit(`${GUID.toLowerCase()}@azureidir`, {
+    guid: GUID,
+    username: 'JSMITH',
+    email: 'jo.smith@example.gov.bc.ca',
+  });
+
+  beforeEach(() => {
+    jest
+      .mocked(findOrCreateUserFromDirectory)
+      .mockResolvedValue({ userId: 'user-new', created: true });
+  });
+
+  it('makes the user from the directory hit, keyed by the lower-case sign-in subject', async () => {
+    const directory = css(found(person));
+    enable({ 'css-v1': directory });
+
+    await expect(
+      createUserFromSearch({ identityProvider: 'azureidir', guid: GUID }, {}, 'en', ACTOR),
+    ).resolves.toEqual({ userId: 'user-new', created: true });
+
+    expect(directory.search).toHaveBeenCalledWith(
+      expect.objectContaining({ identityProvider: 'azureidir', filters: { guid: GUID } }),
+    );
+    expect(findOrCreateUserFromDirectory).toHaveBeenCalledWith({
+      providerCode: 'azureidir',
+      subject: `${GUID.toLowerCase()}@azureidir`,
+      profile: expect.objectContaining({ idir_username: 'JSMITH', displayLabel: 'JSMITH' }),
+      actorDisplayLabel: 'Actor One',
+    });
+  });
+
+  it('refuses an identity provider that cannot be searched here, before asking anyone', async () => {
+    const directory = css(found(person));
+    enable({ 'css-v1': directory });
+
+    await expect(
+      createUserFromSearch({ identityProvider: 'idir', guid: GUID }, {}, 'en', ACTOR),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(directory.search).not.toHaveBeenCalled();
+    expect(findOrCreateUserFromDirectory).not.toHaveBeenCalled();
+  });
+
+  it('says the directory is unavailable rather than that no one has the guid', async () => {
+    enable({
+      'css-v1': css(() => Promise.reject(new ServiceUnavailableError('down'))),
+      'other-v1': other(found()),
+    });
+
+    await expect(
+      createUserFromSearch({ identityProvider: 'azureidir', guid: GUID }, {}, 'en', ACTOR),
+    ).rejects.toBeInstanceOf(ServiceUnavailableError);
+    expect(findOrCreateUserFromDirectory).not.toHaveBeenCalled();
+  });
+
+  it('answers person_not_found when every plugin answered and no one has the guid', async () => {
+    enable({
+      'css-v1': css(() => Promise.reject(new ValidationError('refused'))),
+      'other-v1': other(found(hit('someone@azureidir', { guid: 'OTHERGUID' }))),
+    });
+
+    await expect(
+      createUserFromSearch({ identityProvider: 'azureidir', guid: GUID }, {}, 'en', ACTOR),
+    ).rejects.toMatchObject({ statusCode: 404, code: 'person_not_found' });
+  });
+
+  it('returns the existing user when another plugin still finds them while the directory is down', async () => {
+    jest
+      .mocked(findOrCreateUserFromDirectory)
+      .mockResolvedValue({ userId: 'user-old', created: false });
+    enable({
+      'css-v1': css(() => Promise.reject(new ServiceUnavailableError('down'))),
+      'other-v1': other(found(person)),
+    });
+
+    await expect(
+      createUserFromSearch({ identityProvider: 'azureidir', guid: GUID }, {}, 'en', ACTOR),
+    ).resolves.toEqual({ userId: 'user-old', created: false });
   });
 });

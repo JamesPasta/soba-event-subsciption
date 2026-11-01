@@ -58,8 +58,3 @@ a {
   outline: var(--layout-border-width-medium) solid var(--app-focus-ring);
   outline-offset: 2px;
 }
-
-/* Quill's image button does nothing: NO_INLINE_IMAGE_EDITORS drops inline images. */
-.ql-snow.ql-toolbar button.ql-image {
-  display: none;
-}

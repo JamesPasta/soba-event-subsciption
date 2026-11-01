@@ -162,6 +162,8 @@ export const Features = {
   post_submission: 'post-submission',
   /** Emailing a notice to a list of addresses when a form receives a submission. */
   post_submission_email: 'post-submission-email',
+  /** Exporting a form's submissions to a file, run as a background job. */
+  submission_export: 'submission-export',
 } as const;
 export type FeatureCode = (typeof Features)[keyof typeof Features];
 
@@ -252,8 +254,18 @@ export type JobStatusCode = (typeof JobStatus)[keyof typeof JobStatus];
 /** Kind of background job (job.type); each has one registered handler. */
 export const JobType = {
   submission_submitted: 'submission.submitted',
+  submission_export: 'submission-export',
 } as const;
 export type JobTypeCode = (typeof JobType)[keyof typeof JobType];
+
+/** What a submission_export_audit row records. */
+export const SubmissionExportAuditAction = {
+  started: 'started',
+  finished: 'finished',
+  downloaded: 'downloaded',
+} as const;
+export type SubmissionExportAuditActionCode =
+  (typeof SubmissionExportAuditAction)[keyof typeof SubmissionExportAuditAction];
 
 /** What a document template is for (document_template.type). The list lives in @soba/lib. */
 export const DocumentTemplateType = {

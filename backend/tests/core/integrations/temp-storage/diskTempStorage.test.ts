@@ -36,6 +36,30 @@ describe('diskTempStorage', () => {
     expect(await streamToString(adapter.createReadStream(resource))).toBe('streamed');
   });
 
+  it('removes what a failed write staged', async () => {
+    const adapter = createDiskTempStorageAdapter(base);
+    const failing = new Readable({
+      read() {
+        this.push(Buffer.from('partial'));
+        this.destroy(new Error('source failed'));
+      },
+    });
+    await expect(adapter.write(failing, { prefix: 'scan' })).rejects.toThrow('source failed');
+    expect(fs.readdirSync(base)).toEqual([]);
+  });
+
+  it('reserves a path in the base dir without creating the file', async () => {
+    const adapter = createDiskTempStorageAdapter(base);
+    const resource = adapter.reserve({ prefix: 'export' });
+    expect(path.dirname(resource.path)).toBe(path.resolve(base));
+    expect(path.basename(resource.path).startsWith('export-')).toBe(true);
+    expect(fs.existsSync(resource.path)).toBe(false);
+    fs.writeFileSync(resource.path, 'written by the caller');
+    await adapter.remove(resource);
+    await adapter.remove(resource);
+    expect(fs.existsSync(resource.path)).toBe(false);
+  });
+
   it('remove deletes the file', async () => {
     const adapter = createDiskTempStorageAdapter(base);
     const resource = await adapter.write(Buffer.from('x'));

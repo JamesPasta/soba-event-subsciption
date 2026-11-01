@@ -10,7 +10,7 @@ type PageProps = {
 };
 
 export async function generateMetadata({ params }: PageProps) {
-  return pageMetadata(params, (dict) => `${dict.admin.jobs.heading} | ${dict.general.title}`);
+  return pageMetadata(params, (dict) => `${dict.jobs.heading} | ${dict.general.title}`);
 }
 
 export default async function Page({ params }: Readonly<PageProps>) {

@@ -1,6 +1,10 @@
 import type { NextFunction, Request, Response } from 'express';
 import { ForbiddenError } from '../errors';
-import { isWorkspaceManageRole, isWorkspacePeopleReadRole } from '../db/repos/membershipRepo';
+import {
+  isWorkspaceManageRole,
+  isWorkspaceOwnerRole,
+  isWorkspacePeopleReadRole,
+} from '../db/repos/membershipRepo';
 
 /**
  * Gates a route on the caller's workspace membership role. Runs after workspace resolution (needs
@@ -20,6 +24,13 @@ const requireWorkspaceRole =
     }
     next();
   };
+
+/** Owner only. */
+export const requireWorkspaceOwner = requireWorkspaceRole(
+  'requireWorkspaceOwner',
+  isWorkspaceOwnerRole,
+  'Requires the workspace owner role',
+);
 
 /** Owner or admin: workspace management. */
 export const requireWorkspaceManage = requireWorkspaceRole(

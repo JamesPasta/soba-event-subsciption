@@ -1,16 +1,18 @@
 'use client';
 
-import { useMemo } from 'react';
-import useSWR, { type SWRConfiguration } from 'swr';
+import { useCallback, useMemo } from 'react';
+import useSWR, { useSWRConfig, type SWRConfiguration } from 'swr';
 import { useAuthedSWR } from '@/src/shared/api/useAuthedSWR';
 import { sessionReadConfig } from '@/src/shared/api/swrConfig';
 import { classifyDataError, isSessionExpired } from '@/src/shared/api/dataError';
+import type { WriteOutcome } from '@/src/shared/api/dataContracts';
 import { ApiError } from '@/src/shared/api/sobaHelpers';
 import { loadFeaturesMeta } from '@/src/shared/config/featuresMeta';
 import { createIsFeatureAllowed, FEATURE_CODES } from '@/src/shared/featureFlags/flags';
 import { useDebouncedValue } from '@/src/shared/hooks/useDebouncedValue';
 import { useSortLocale } from '@/src/shared/list/useSortLocale';
 import type {
+  CreateUserFromSearchResponse,
   UserSearchCapabilitiesResponse,
   UserSearchField,
   UserSearchIdentityProvider,
@@ -18,11 +20,14 @@ import type {
   UserSearchScope,
   UserSearchUser,
 } from '@/src/types/userSearch';
-import { fetchUserSearchCapabilities, searchUsers } from './api';
+import { createUserFromSearch, fetchUserSearchCapabilities, searchUsers } from './api';
 
 /** The shortest term a search is sent for; the API refuses shorter ones. */
 export const USER_SEARCH_MIN_LENGTH = 2;
 const TYPING_PAUSE_MS = 300;
+
+/** Every user search key starts with this, so a write can re-read a scope's searches. */
+const USER_SEARCH_KEY = 'user-search';
 
 const EMPTY_PROVIDERS: UserSearchIdentityProvider[] = [];
 const EMPTY_USERS: UserSearchUser[] = [];
@@ -62,7 +67,7 @@ export function useUserSearchAllowed(): boolean | null {
 export function useUserSearchCapabilities(scope: UserSearchScope | null) {
   const locale = useSortLocale();
   const { data, isLoading, error } = useAuthedSWR<UserSearchCapabilitiesResponse>(
-    scope ? ['user-search', 'capabilities', scope.kind, scope.id, locale] : null,
+    scope ? [USER_SEARCH_KEY, 'capabilities', scope.kind, scope.id, locale] : null,
     (token) => fetchUserSearchCapabilities(token, scope as UserSearchScope, locale),
     capabilitiesReadConfig,
   );
@@ -101,7 +106,7 @@ export function useUserSearch(scope: UserSearchScope | null, input: UserSearchIn
     settled.field === field &&
     typed.length >= USER_SEARCH_MIN_LENGTH &&
     settled.term.length >= USER_SEARCH_MIN_LENGTH
-      ? ['user-search', scope.kind, scope.id, settled.field, settled.term, locale]
+      ? [USER_SEARCH_KEY, scope.kind, scope.id, settled.field, settled.term, locale]
       : null;
   const ready = key !== null;
   const { data, isValidating, error } = useAuthedSWR<FieldAnswer>(
@@ -132,4 +137,29 @@ export function useUserSearch(scope: UserSearchScope | null, input: UserSearchIn
     isSearching: ready && isValidating,
     error: ready && error ? classifyDataError(error) : null,
   };
+}
+
+/**
+ * Makes the Soba user for a person found by search in the scope. Every stored search is cleared
+ * and read again afterwards, so the person shows as an existing user wherever they were found.
+ */
+export function useUserFromSearchWriter({ kind, id }: UserSearchScope) {
+  const { mutate } = useSWRConfig();
+  const create = useCallback(
+    async (
+      token: string,
+      person: { identityProvider: string; guid: string },
+    ): Promise<WriteOutcome<CreateUserFromSearchResponse>> => {
+      const result = await createUserFromSearch(token, { kind, id }, person);
+      // Cleared, not only revalidated: a search no picker is showing keeps its data otherwise.
+      await mutate(
+        (key) => Array.isArray(key) && key[0] === USER_SEARCH_KEY && key[1] !== 'capabilities',
+        undefined,
+        { revalidate: true },
+      );
+      return { status: 'applied', value: result };
+    },
+    [kind, id, mutate],
+  );
+  return { create };
 }

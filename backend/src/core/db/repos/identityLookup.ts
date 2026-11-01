@@ -68,6 +68,8 @@ export interface SignInState {
   userId: string | null;
   /** The stored IdP attributes equal the token's. */
   attributesCurrent: boolean;
+  /** The identity exists and has never been signed in with, as one made from user search. */
+  firstSignInPending: boolean;
   admin: SobaAdminGrant | null;
 }
 
@@ -81,12 +83,14 @@ export async function findSignInState(
   idpAttributes: IdpAttributes,
 ): Promise<SignInState | null> {
   const attributesCurrent = sql<boolean>`${userIdentities.idpAttributes} is not distinct from ${JSON.stringify(idpAttributes)}::jsonb`;
+  const firstSignInPending = sql<boolean>`${userIdentities.id} is not null and ${userIdentities.firstSignInAt} is null`;
   const rows = await db
     .select({
       providerActive: identityProviders.isActive,
       identityId: userIdentities.id,
       userId: userIdentities.userId,
       attributesCurrent,
+      firstSignInPending,
       adminSource: sobaAdmins.source,
       adminIdentityProviderCode: sobaAdmins.identityProviderCode,
     })
@@ -95,11 +99,14 @@ export async function findSignInState(
       userIdentities,
       and(
         eq(userIdentities.identityProviderCode, identityProviders.code),
-        eq(userIdentities.subject, subject),
+        sql`lower(${userIdentities.subject}) = ${subject.toLowerCase()}`,
       ),
     )
     .leftJoin(sobaAdmins, eq(sobaAdmins.userId, userIdentities.userId))
     .where(eq(identityProviders.code, providerCode.toLowerCase()))
+    // Subjects match without case, so a user made from user search is found whatever case the
+    // token uses; an exact spelling wins when both exist.
+    .orderBy(sql`${userIdentities.subject} = ${subject} desc nulls last`)
     .limit(1);
   const row = rows[0];
   if (!row) return null;
@@ -108,6 +115,7 @@ export async function findSignInState(
     identityId: row.identityId,
     userId: row.userId,
     attributesCurrent: row.attributesCurrent,
+    firstSignInPending: row.firstSignInPending,
     admin: row.adminSource
       ? { source: row.adminSource, identityProviderCode: row.adminIdentityProviderCode }
       : null,

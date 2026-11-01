@@ -19,12 +19,8 @@ import {
 import { useSWRConfig } from 'swr';
 import { useAuthedSWR } from '@/src/shared/api/useAuthedSWR';
 import { listReadConfig, sessionReadConfig } from '@/src/shared/api/swrConfig';
-import {
-  classifyDataError,
-  isForbidden,
-  isNotFound,
-  isSessionExpired,
-} from '@/src/shared/api/dataError';
+import { classifyDataError } from '@/src/shared/api/dataError';
+import { ADMIN_JOBS_KEY, clearJobLists, jobPollConfig } from '@/src/features/jobs/data/jobReads';
 import type { ListResult, Resource, WriteOutcome } from '@/src/shared/api/dataContracts';
 import type { ListQueryArgs } from '@/src/types/list';
 import type {
@@ -195,12 +191,8 @@ export function useSobaAdminWriter() {
   return { add, remove };
 }
 
-const JOBS_KEY = 'admin-jobs';
+const JOBS_KEY = ADMIN_JOBS_KEY;
 const JOB_KEY = 'admin-job';
-const JOB_POLL_MS = 5000;
-
-const isActiveJob = (job: JobDetail | undefined): boolean =>
-  job?.status === 'queued' || job?.status === 'running';
 
 /** Background jobs across every workspace, newest first unless sorted otherwise. */
 export function useJobs(filters: JobFilters, query: ListQueryArgs): ListResult<JobListItem> {
@@ -254,17 +246,7 @@ export function useJob(jobId: string | null): Resource<JobDetail> {
   const { data, isLoading, error, mutate } = useAuthedSWR(
     jobId ? [JOB_KEY, jobId, readId] : null,
     (token) => fetchJob(token, jobId as string),
-    {
-      // SWR polls only while the last read succeeded, so a failed read, such as during a backend
-      // restart, is tried again on the same beat until one succeeds. An ended session, a refusal
-      // or a job that is gone is not.
-      shouldRetryOnError: (err: unknown) =>
-        !isSessionExpired(err) && !isForbidden(err) && !isNotFound(err),
-      onErrorRetry: (_err, _key, _config, revalidate, { retryCount }) => {
-        setTimeout(() => void revalidate({ retryCount }), JOB_POLL_MS);
-      },
-      refreshInterval: (latest) => (isActiveJob(latest) ? JOB_POLL_MS : 0),
-    },
+    jobPollConfig<JobDetail>(),
   );
   const refresh = useCallback(async () => {
     await mutate();
@@ -285,11 +267,7 @@ export function useJobWriter() {
       await mutate((key) => Array.isArray(key) && key[0] === JOB_KEY && key[1] === job.id, job, {
         revalidate: false,
       });
-      // Clears pages the list is not showing, so going back to it reads them again rather than
-      // show the old status first.
-      await mutate((key) => Array.isArray(key) && key[0] === JOBS_KEY, undefined, {
-        revalidate: true,
-      });
+      await clearJobLists(mutate);
     },
     [mutate],
   );

@@ -17,7 +17,7 @@ import { useDataTable } from '@/src/shared/list/useDataTable';
 import type { JobFilters, JobListItem } from '@/src/types/admin';
 import { useJobs, useJobTypes } from '../data/useAdminData';
 import { isUuid } from '@/src/shared/util/uuid';
-import { jobStatusVariant, jobTypeLabel, toJobStatus } from '../jobs';
+import { jobStatusVariant, jobTypeLabel, toJobStatus } from '@/src/features/jobs/jobs';
 import styles from './AdminPanel.module.css';
 
 const ALL = 'all';
@@ -75,7 +75,8 @@ type JobFilterFormProps = Readonly<{
  */
 function JobFilterForm({ filters, typeOptions, onSearch, onClear }: JobFilterFormProps) {
   const dict = useDictionary();
-  const dictJobs = dict.admin.jobs;
+  const dictJobs = dict.jobs;
+  const dictAdmin = dict.admin.jobs;
   const [draft, setDraft] = useState(() => draftOf(filters));
   // The URL filters the fields last showed. A change from elsewhere, such as Back or a link,
   // reseeds them; the form's own Search and Reset do not, so the form keeps focus.
@@ -100,9 +101,9 @@ function JobFilterForm({ filters, typeOptions, onSearch, onClear }: JobFilterFor
   );
 
   const labels: Record<(typeof ID_FIELDS)[number], string> = {
-    workspaceId: dictJobs.workspaceIdLabel,
-    formId: dictJobs.formIdLabel,
-    submissionId: dictJobs.submissionIdLabel,
+    workspaceId: dictAdmin.workspaceIdLabel,
+    formId: dictAdmin.formIdLabel,
+    submissionId: dictAdmin.submissionIdLabel,
   };
 
   return (
@@ -145,7 +146,7 @@ function JobFilterForm({ filters, typeOptions, onSearch, onClear }: JobFilterFor
           value={draft[field]}
           onChange={set(field)}
           isInvalid={invalid(draft[field])}
-          errorMessage={dictJobs.invalidId}
+          errorMessage={dictAdmin.invalidId}
           data-testid={`jobs-${field}-filter`}
         />
       ))}
@@ -172,7 +173,8 @@ function JobFilterForm({ filters, typeOptions, onSearch, onClear }: JobFilterFor
 /** Every workspace's background jobs, for platform administrators. */
 export function JobsPanel() {
   const dict = useDictionary();
-  const dictJobs = dict.admin.jobs;
+  const dictJobs = dict.jobs;
+  const dictAdmin = dict.admin.jobs;
   const router = useRouter();
   const locale = getLocaleFromPath(usePathname());
   const formatDateTime = useFormatLongDateTime();
@@ -255,7 +257,7 @@ export function JobsPanel() {
       {
         // Names only: the ids would wrap over several lines. The job's page shows them.
         key: 'workspace',
-        label: dictJobs.columns.workspace,
+        label: dictAdmin.columns.workspace,
         render: (job) => job.workspaceName,
       },
       {
@@ -285,14 +287,21 @@ export function JobsPanel() {
           ),
       },
     ],
-    [dictJobs, dict.general.unknown, typeLabel, formatDateTime, openJob],
+    [
+      dictJobs,
+      dictAdmin.columns.workspace,
+      dict.general.unknown,
+      typeLabel,
+      formatDateTime,
+      openJob,
+    ],
   );
 
   const handleSearch = useCallback((next: JobFilters) => setFilters(asParams(next)), [setFilters]);
 
   return (
     <div className={styles.tabContent}>
-      <p className={styles.panelIntro}>{dictJobs.intro}</p>
+      <p className={styles.panelIntro}>{dictAdmin.intro}</p>
       <JobFilterForm
         filters={filters}
         typeOptions={typeOptions}

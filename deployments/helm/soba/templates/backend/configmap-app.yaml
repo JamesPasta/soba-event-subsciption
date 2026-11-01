@@ -80,6 +80,9 @@ data:
   {{- with include "soba.optionalSetting" .Values.backend.config.shutdownTimeoutMs }}
   SHUTDOWN_TIMEOUT_MS: {{ . }}
   {{- end }}
+  {{- with include "soba.optionalSetting" .Values.backend.config.submissionExportActiveLimit }}
+  SUBMISSION_EXPORT_ACTIVE_LIMIT: {{ . }}
+  {{- end }}
   {{- $jobEnv := dict
       "pools" "JOB_POOLS"
       "lightPollMs" "JOB_LIGHT_POLL_MS"
@@ -98,7 +101,11 @@ data:
       "succeededRetentionDays" "JOB_SUCCEEDED_RETENTION_DAYS"
       "deadRetentionDays" "JOB_DEAD_RETENTION_DAYS"
       "drainMs" "JOB_DRAIN_MS"
-      "abortGraceMs" "JOB_ABORT_GRACE_MS" }}
+      "abortGraceMs" "JOB_ABORT_GRACE_MS"
+      "progressIntervalMs" "JOB_PROGRESS_INTERVAL_MS"
+      "resultMaxBytes" "JOB_RESULT_MAX_BYTES"
+      "resultRetentionDays" "JOB_RESULT_RETENTION_DAYS"
+      "resultSweepBatch" "JOB_RESULT_SWEEP_BATCH" }}
   {{- range $key, $name := $jobEnv }}
   {{- with include "soba.optionalSetting" (index $.Values.backend.jobs $key) }}
   {{ $name }}: {{ . }}

@@ -1,7 +1,11 @@
 import type { IdpMapPayloadResult } from '../auth/IdpPlugin';
 import { ForbiddenError } from '../errors';
 import { findSignInState, type SobaAdminGrant } from '../db/repos/identityLookup';
-import { findOrCreateUserByIdentity, updateIdentityAttributes } from '../db/repos/membershipRepo';
+import {
+  completeFirstSignIn,
+  findOrCreateUserByIdentity,
+  updateIdentityAttributes,
+} from '../db/repos/membershipRepo';
 import {
   grantSobaAdminFromIdp,
   isSobaAdmin,
@@ -55,7 +59,8 @@ async function applySobaAdminClaim(
 
 /**
  * The app user and platform admin flag for a signed-in caller, from one read. Writes only what the
- * token changes: a new user, different IdP attributes, or a different admin grant.
+ * token changes: a new user, the profile at an identity's first sign-in, different IdP attributes,
+ * or a different admin grant.
  */
 export async function resolveSignedInActor(
   pluginCode: string,
@@ -76,7 +81,16 @@ export async function resolveSignedInActor(
       mapped.profile,
       mapped.idpAttributes,
     ));
-  if (state.identityId && !state.attributesCurrent) {
+  if (state.identityId && state.firstSignInPending) {
+    // Made from directory details: the token's profile replaces them.
+    await completeFirstSignIn({
+      identityId: state.identityId,
+      userId: actorId,
+      subject: mapped.subject,
+      profile: mapped.profile,
+      idpAttributes: mapped.idpAttributes,
+    });
+  } else if (state.identityId && !state.attributesCurrent) {
     await updateIdentityAttributes(state.identityId, mapped.idpAttributes);
   }
 

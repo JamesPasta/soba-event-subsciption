@@ -71,6 +71,12 @@ export class InternalError extends AppError {
   }
 }
 
+export class TooManyRequestsError extends AppError {
+  constructor(message: string = 'Too many requests', code?: ApiErrorCode) {
+    super(message, 429, code);
+  }
+}
+
 export class ServiceUnavailableError extends AppError {
   constructor(message: string = 'Service unavailable', code?: ApiErrorCode) {
     super(message, 503, code);

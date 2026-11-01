@@ -57,7 +57,7 @@ the selected GitHub environment.
 | --- | --- | --- |
 | `pr` | `gw-d3969` | Gold |
 | `dev` | `gw-93f93` | Gold |
-| `test` | Gold configuration planned separately | Not yet configured |
+| `test` | `gw-7f49d` | Gold |
 | `prod` | not configured | Not configured |
 
 ## Manual check

@@ -12,6 +12,9 @@ export type JobOutcome = JobFinish | { kind: 'release' };
 /** Thrown by a handler that decides its job should not run; the job ends cancelled, not retried. */
 export class JobCancelledError extends Error {}
 
+/** Thrown by a handler whose job would fail the same way on every attempt; the job ends dead. */
+export class JobFailedError extends Error {}
+
 const MAX_ERROR_LENGTH = 2000;
 
 /**
@@ -33,19 +36,20 @@ export const errorText = (err: unknown): string => {
 /**
  * What to record when a handler returns; `error` is undefined when it succeeded. A success is
  * recorded even after an abort. A failure after a cancel ends cancelled; after a drain the job is
- * released without using an attempt; after a lost lease nothing is written. A timeout counts as a
- * failed attempt.
+ * released without using an attempt; after a lost lease nothing is written. A permanent failure
+ * (`JobFailedError`) ends dead; any other failure, a timeout included, counts as a failed attempt.
  */
 export const decideOutcome = (
   error: string | undefined,
   stopReason: JobStopReason | undefined,
   job: { attempts: number; maxAttempts: number },
   backoff: { backoffBaseMs: number; backoffMaxMs: number },
+  permanent = false,
 ): JobOutcome | null => {
   if (error === undefined) return { kind: 'succeeded' };
   if (stopReason === 'cancel') return { kind: 'cancelled', error };
   if (stopReason === 'drain') return { kind: 'release' };
   if (stopReason === 'lease_lost') return null;
-  if (job.attempts >= job.maxAttempts) return { kind: 'dead', error };
+  if (permanent || job.attempts >= job.maxAttempts) return { kind: 'dead', error };
   return { kind: 'retry', delayMs: backoffDelayMs(job.attempts, backoff), error };
 };
