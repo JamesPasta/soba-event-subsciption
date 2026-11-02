@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
+  canChangeReviewStatus,
   SUBMISSION_STATUS_MOVES,
   SubmissionReviewStatuses,
   type SubmissionEdit,
@@ -27,7 +28,7 @@ import {
   submissions,
 } from '../schema';
 import { profileHelpers, type StoredProfile } from '../../auth/jwtClaims';
-import { restoreLastSubmitted } from './submissionRevisionChain';
+import { restoreLastSettled } from './submissionRevisionChain';
 
 /** How a person on a review record is named: their profile's name, else their stamp label. */
 const nameOf = (profile: unknown, label: string | null): string =>
@@ -354,6 +355,8 @@ export const listReviewUsers = async (userIds: string[]): Promise<SubmissionRevi
  * replayed    - a retry of a change already made: same id, submission, status, assignee and author.
  * taken       - the id is already used for a different change.
  * stale       - the status moved on since the reviewer saw it.
+ * updates_off - the form's review settings turn status changes off, and this is not ending a
+ *               revision.
  * not_allowed - the move is not allowed from the current status.
  * missing     - the submission is not live in the workspace, or has no status yet.
  */
@@ -362,6 +365,7 @@ export type ChangeStatusOutcome =
   | 'replayed'
   | 'taken'
   | 'stale'
+  | 'updates_off'
   | 'not_allowed'
   | 'missing';
 
@@ -402,7 +406,7 @@ export const findRevisionStartedAt = async (
  * one after the other.
  *
  * Moving to Revising opens the submission to its submitters again. Moving on from Revising ends the
- * revision: the last submitted answers become current again and the submission is submitted, so
+ * revision: the last settled answers become current again and the submission is submitted, so
  * whatever the submitters saved while revising is kept in the history but no longer shown.
  */
 export const changeStatus = (input: {
@@ -414,6 +418,8 @@ export const changeStatus = (input: {
   assigneeId: string | null;
   actorId: string;
   actorDisplayLabel: string | null;
+  /** The form's review setting; a submitter's own revise and dev data are not bound by it. */
+  allowStatusUpdates?: boolean;
   /** Narrows the move to one from this status, as a submitter's own revise is. */
   onlyFrom?: SubmissionReviewStatus;
   /** A comment saved with the change as a staff note, under the change's id. */
@@ -435,7 +441,7 @@ export const changeStatus = (input: {
         ),
       )
       .limit(1)
-      .for('update');
+      .for('no key update');
     if (!submission?.statusId) return 'missing';
 
     const [existing] = await tx
@@ -459,6 +465,9 @@ export const changeStatus = (input: {
     if (submission.statusId !== input.fromStatusId) return 'stale';
 
     const current = await headStatusOf(tx, submission.statusId);
+    if (!canChangeReviewStatus(input.allowStatusUpdates ?? true, current?.status)) {
+      return 'updates_off';
+    }
     const moves = current ? (SUBMISSION_STATUS_MOVES[current.status] ?? []) : [];
     if (!moves.includes(input.status)) return 'not_allowed';
     if (input.onlyFrom && current?.status !== input.onlyFrom) return 'not_allowed';
@@ -492,7 +501,7 @@ export const changeStatus = (input: {
     const workflowState = workflowStateAfter(current?.status, input.status);
     const restored =
       workflowState === SubmissionWorkflowState.submitted
-        ? await restoreLastSubmitted(tx, {
+        ? await restoreLastSettled(tx, {
             workspaceId: input.workspaceId,
             submissionId: input.submissionId,
             headRevisionId: submission.headRevisionId,

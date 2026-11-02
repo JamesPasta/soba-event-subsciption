@@ -16,6 +16,7 @@ import { submissionReviewKey } from './useSubmissionReview';
 import { clearJobLists } from '@/src/features/jobs/data/jobReads';
 
 const EMPTY: SubmissionListItem[] = [];
+const FORM_SUBMISSIONS_KEY = 'form-submissions';
 
 /** Narrows a form's submissions by their review. */
 export interface FormSubmissionFilters {
@@ -38,7 +39,7 @@ export function useFormSubmissions(
   const { data, isLoading, isValidating, error, mutate } = useAuthedSWR(
     formId && opened
       ? [
-          'form-submissions',
+          FORM_SUBMISSIONS_KEY,
           formId,
           query.offset,
           query.limit,
@@ -82,6 +83,16 @@ export function useFormSubmissions(
   };
 }
 
+/** Reads a form's submission lists again; its review settings decide the columns and filters. */
+export function useFormSubmissionsRefresh(formId: string) {
+  const { mutate } = useSWRConfig();
+  return useCallback(
+    () =>
+      mutate((key) => Array.isArray(key) && key[0] === FORM_SUBMISSIONS_KEY && key[1] === formId),
+    [mutate, formId],
+  );
+}
+
 /** Delete a submission. */
 export function useSubmissionDeleter() {
   const { mutate } = useSWRConfig();
@@ -89,7 +100,7 @@ export function useSubmissionDeleter() {
     async (token: string, submissionId: string): Promise<WriteOutcome<void>> => {
       await deleteSobaSubmission(token, submissionId);
       await Promise.all([
-        mutate((key) => Array.isArray(key) && key[0] === 'form-submissions'),
+        mutate((key) => Array.isArray(key) && key[0] === FORM_SUBMISSIONS_KEY),
         // Dropped, not re-read: an open review page would read a 404 before it navigates away.
         mutate(designSubmissionKey(submissionId), undefined, { revalidate: false }),
         mutate(submissionReviewKey(submissionId), undefined, { revalidate: false }),

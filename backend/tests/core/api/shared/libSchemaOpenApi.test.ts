@@ -126,6 +126,7 @@ describe('OpenAPI components for lib-backed schemas', () => {
     'SubmissionExport_Result',
     'Admin_JobProgress',
     'Admin_JobResult',
+    'Submissions_SubmissionReviewUser',
   ])('keeps %s free of nullable at its top', (name) => {
     expect(at(schemas, name, 'nullable')).toBeUndefined();
   });

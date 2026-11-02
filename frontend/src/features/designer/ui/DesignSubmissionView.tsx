@@ -10,6 +10,7 @@ import { useDesignSubmission } from '@/src/features/designer/data/useDesignSubmi
 import { useStaffPrint } from '@/src/features/templates/data/useSubmissionPrint';
 import { printBaseName } from '@/src/features/templates/printFileName';
 import { PrintSubmissionButton } from '@/src/features/templates/ui/PrintSubmissionButton';
+import { navLink } from '@/src/shared/list/listQueryMemory';
 import { SubmissionReview } from './SubmissionReview';
 import { getLocaleFromPath } from '@/src/shared/util/locale';
 
@@ -52,7 +53,7 @@ export function DesignSubmissionView({
       <div className="mb-3 d-flex align-items-center gap-2 d-print-none">
         <Link
           data-testid="design-submission-back"
-          onPress={() => router.push(`/${locale}/build/${formId}?tab=submissions`)}
+          onPress={() => router.push(navLink(`/${locale}/build/${formId}?tab=submissions`))}
         >
           {dict.submission.backToSubmissions}
         </Link>

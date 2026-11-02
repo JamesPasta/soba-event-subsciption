@@ -18,8 +18,9 @@ extendZodWithOpenApi(z);
 export const SubmissionReviewUserSchema = SobaSubmissionReviewUserSchema.clone().openapi(
   'Submissions_SubmissionReviewUser',
 );
+// A union: `.nullable()` on a named schema marks the shared component itself nullable.
 export const SubmissionStatusChangeSchema = SobaSubmissionStatusChangeSchema.extend({
-  assignee: SubmissionReviewUserSchema.nullable(),
+  assignee: z.union([SubmissionReviewUserSchema, z.null()]),
 }).openapi('Submissions_SubmissionStatusChange');
 export const SubmissionNoteSchema = SobaSubmissionNoteSchema.clone().openapi(
   'Submissions_SubmissionNote',
@@ -102,11 +103,12 @@ export const registerSubmissionReviewOpenApi = (registry: OpenAPIRegistry) => {
         description: 'The assignee cannot review submissions of this form (assignee_invalid)',
       },
       403: {
-        description: "The form's review settings turn status updates off (status_updates_disabled)",
+        description:
+          "The form's review settings turn status updates off and the submission is not revising (status_updates_disabled)",
       },
       409: {
         description:
-          'The status changed since it was read (status_changed), the move is not allowed from the current status (status_move_not_allowed), or the id is already used (status_id_taken)',
+          'The status changed since it was read (status_changed), the move is not allowed from the current status (status_move_not_allowed), an anonymous submission cannot be sent back (revision_needs_submitter), or the id is already used (status_id_taken)',
       },
     },
   });

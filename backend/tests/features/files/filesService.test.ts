@@ -336,7 +336,7 @@ describe('filesService', () => {
     expect(listBlobs(tmp)).toEqual(before);
   });
 
-  // Ending the revision restores the last submitted answers, which may hold the file.
+  // Ending the revision restores the answers from before it, which may hold the file.
   it('only takes a file attached before the revision out of the answers', async () => {
     const record = await uploadFor('sub1', 'before.txt');
     mockFindRevisionStartedAt.mockResolvedValue(new Date(record.createdAt.getTime() + 1000));
@@ -348,6 +348,17 @@ describe('filesService', () => {
     expect(mockLinks.get(record.id)).toBe('sub1');
     expect(listBlobs(tmp)).toEqual(blobs);
     expect(mockFindRevisionStartedAt).toHaveBeenCalledWith('ws1', 'sub1');
+  });
+
+  // The state was read as revising, and the revision ended before its start was read.
+  it('keeps the file when the revision has just ended', async () => {
+    const record = await uploadFor('sub1', 'ended.txt');
+    mockFindRevisionStartedAt.mockResolvedValue(null);
+    submissionMock.mockResolvedValue({ workspaceId: 'ws1', workflowState: 'revising' });
+    holding(['submission_create']);
+
+    expect(await filesService.deleteForCaller(record.id, owner)).toBe('deleted');
+    expect(mockLinks.get(record.id)).toBe('sub1');
   });
 
   it('deletes a file attached during the revision', async () => {

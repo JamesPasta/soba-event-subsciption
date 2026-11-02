@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { z } from 'zod';
 import {
   ApiErrorCodes,
+  canContinueSubmission,
   type MySubmissionRole,
   type ReviseSubmissionBody,
   type SubmitFillBundle,
@@ -11,6 +12,7 @@ import { asyncHandler } from '../shared/asyncHandler';
 import { NotFoundError } from '../../errors';
 import { formsApiService, formVersionService, submissionsApiService } from '../../container';
 import type { SubmitterSubmissionRow } from '../../db/repos/submitterSubmissionRepo';
+import { resolveCaller } from '../../middleware/actor';
 import { loadedForm, loadedFormVersion, loadedSubmission } from '../../middleware/formSubmitAccess';
 import { toSubmitterFormDto } from '../forms/serviceFactory';
 import { toSubmissionDto } from '../submissions/serviceFactory';
@@ -64,7 +66,12 @@ export const reviseOwnSubmission = asyncHandler(
 );
 
 export const getSubmitSubmission: RequestHandler = (req, res) => {
-  res.json(toSubmissionDto(loadedSubmission(req).submission));
+  const { submission, access, form } = loadedSubmission(req);
+  res.json({
+    ...toSubmissionDto(submission),
+    reviewLabel: access.reviewStatus,
+    canContinue: canContinueSubmission(access, form, resolveCaller(req)),
+  });
 };
 
 export const getSubmitSubmissionData = asyncHandler(async (req: Request, res: Response) => {

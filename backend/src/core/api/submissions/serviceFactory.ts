@@ -1,6 +1,5 @@
 import { SubmissionService, type SubmissionContentRefs } from '../../services/submissionService';
 import type { WriteLanding } from '../../services/submissionWriteGate';
-import { SubmissionWorkflowState } from '../../db/codes';
 import type { FormAccessGrant } from '../../db/repos/formAccessRepo';
 import { toSubmitterFormDto } from '../forms/serviceFactory';
 import type {
@@ -11,6 +10,7 @@ import type {
 import { reviewUserOf } from '../../db/repos/submissionReviewRepo';
 import { findEffectiveReviewSettingsOfForm } from '../../../features/form-settings/review/repo';
 import {
+  SUBMISSION_CONFIRMED_STATES,
   submitterReviewLabelOf,
   type ListMySubmissionsResponse,
   type MySubmissionRole,
@@ -62,14 +62,11 @@ export interface ListMySubmissionsQueryInput {
   locale: SortLocale;
 }
 
-// The code exists from open but is shown only once the submission is submitted, and still while a
-// reviewer has it sent back to revise.
-const CONFIRMED_STATES: ReadonlySet<string> = new Set([
-  SubmissionWorkflowState.submitted,
-  SubmissionWorkflowState.revising,
-]);
+// The code exists from open but is shown only once the submission is confirmed.
 const confirmationCodeOf = (item: { workflowState: string; confirmationCode: string }) =>
-  CONFIRMED_STATES.has(item.workflowState) ? item.confirmationCode : null;
+  (SUBMISSION_CONFIRMED_STATES as readonly string[]).includes(item.workflowState)
+    ? item.confirmationCode
+    : null;
 
 export const toSubmissionDto = (item: SubmissionDetailRow) => ({
   id: item.id,

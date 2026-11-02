@@ -32,9 +32,15 @@ import {
   MyWorkspaceLookupItemSchema as LibMyWorkspaceLookupItemSchema,
   MyWorkspaceLookupResponseSchema as LibMyWorkspaceLookupResponseSchema,
   ReviseSubmissionBodySchema as LibReviseSubmissionBodySchema,
+  SubmitSubmissionResponseSchema as LibSubmitSubmissionResponseSchema,
 } from '@soba/lib';
 
 extendZodWithOpenApi(z);
+
+/** A submission as its submitter reads it, with its review as they are told it. */
+export const SubmitSubmissionResponseSchema = LibSubmitSubmissionResponseSchema.clone().openapi(
+  'Submit_SubmissionResponse',
+);
 
 /** A form as a submitter sees it: what it is, and its facts for the caller. */
 export const SubmitterFormSchema = LibSubmitterFormSchema.clone().openapi('Submit_SubmitterForm');
@@ -313,7 +319,7 @@ export const registerSubmitOpenApi = (registry: OpenAPIRegistry) => {
     responses: {
       200: {
         description: 'Submission confirmation',
-        content: { 'application/json': { schema: SubmissionResponseSchema } },
+        content: { 'application/json': { schema: SubmitSubmissionResponseSchema } },
       },
       401: { description: SUBMISSION_AUTH_REQUIRED },
       403: { description: NOT_PARTICIPANT },

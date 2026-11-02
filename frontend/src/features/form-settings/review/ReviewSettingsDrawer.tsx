@@ -3,6 +3,7 @@
 import { useId, useMemo, useRef, useState } from 'react';
 import { Checkbox, InlineAlert } from '@bcgov/design-system-react-components';
 
+import { useFormSubmissionsRefresh } from '@/src/features/designer/data/useFormSubmissions';
 import FormSettingsDrawers from '@/src/features/form-settings/ui/FormSettingsDrawers';
 import InheritCheckbox from '@/src/features/form-settings/ui/InheritCheckbox';
 import { useInheritableEdit } from '@/src/features/form-settings/ui/useInheritableEdit';
@@ -31,6 +32,7 @@ export default function ReviewSettingsDrawer({
 }: FormSettingsSectionProps) {
   const t = dict.form.settings;
   const { token } = useKeycloak();
+  const refreshSubmissions = useFormSubmissionsRefresh(formId);
   const {
     settings,
     error: settingsError,
@@ -74,6 +76,7 @@ export default function ReviewSettingsDrawer({
     setSaving(true);
     try {
       await save(token, body);
+      void refreshSubmissions();
       edit.reset();
       addNotification({ type: 'success', text: t.formSettingsDrawerSaveSuccessMessage });
     } catch (err) {

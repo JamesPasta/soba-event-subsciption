@@ -3,6 +3,7 @@ import type { MySubmissionListItem, SubmitterForm } from '@soba/lib';
 export type {
   SubmissionListItem,
   SubmissionResponse,
+  SubmitSubmissionResponse,
   SubmissionRevisionInfo,
   SubmissionWriteResponse,
   ListSubmissionsResponse,

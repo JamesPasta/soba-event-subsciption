@@ -21,8 +21,8 @@ import type {
   SubmissionDataBody,
   SubmissionResponse,
   SubmissionWriteResponse,
-  SubmissionListItem,
   SubmitSubmissionBody,
+  SubmitSubmissionResponse,
   ListMySubmissionsResponse,
   MySubmissionState,
   ReviseSubmissionBody,
@@ -190,7 +190,7 @@ export async function reviseSubmitSubmission(
 export async function getSubmitSubmission(
   token: string | undefined,
   id: string,
-): Promise<SubmissionListItem> {
+): Promise<SubmitSubmissionResponse> {
   const response = await sobaFetch(`/submit/submissions/${id}`, { token });
   return parseJson(response);
 }

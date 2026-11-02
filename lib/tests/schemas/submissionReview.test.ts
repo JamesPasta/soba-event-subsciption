@@ -1,5 +1,6 @@
 import {
   AddSubmissionNoteBodySchema,
+  canChangeReviewStatus,
   nextSubmissionStatuses,
   SUBMISSION_NOTE_MAX_LENGTH,
   SubmissionReviewSchema,
@@ -76,6 +77,19 @@ describe('submission review schemas', () => {
 
   it('moves nothing before the submission is submitted', () => {
     expect(nextSubmissionStatuses(undefined)).toEqual([]);
+  });
+
+  it.each(['SUBMITTED', 'ASSIGNED', 'COMPLETED'] as const)(
+    'lets reviewers change %s only while status updates are on',
+    (status) => {
+      expect(canChangeReviewStatus(true, status)).toBe(true);
+      expect(canChangeReviewStatus(false, status)).toBe(false);
+    },
+  );
+
+  it('lets reviewers end a revision whatever the settings', () => {
+    expect(canChangeReviewStatus(true, 'REVISING')).toBe(true);
+    expect(canChangeReviewStatus(false, 'REVISING')).toBe(true);
   });
 
   it('takes an assignee with Assigned and none with Completed', () => {

@@ -24,7 +24,7 @@ import {
   useFormSubmissions,
   useSubmissionDeleter,
 } from '@/src/features/designer/data/useFormSubmissions';
-import { FORM_SUBMISSIONS_LIST_QUERY } from '@/src/shared/list/listQueryMemory';
+import { FORM_SUBMISSIONS_LIST_QUERY, scopedListQuery } from '@/src/shared/list/listQueryMemory';
 import { submissionDeleteMessage } from '@/src/features/submissions/submissionDeleteMessage';
 import { useListQuery } from '@/src/shared/list/useListQuery';
 import { useDataTable } from '@/src/shared/list/useDataTable';
@@ -50,7 +50,12 @@ export default function FormSubmissionTab({
   formId,
   opened,
 }: Readonly<FormSubmissionTabProps>) {
-  const query = useListQuery(FORM_SUBMISSIONS_LIST_QUERY);
+  const listSpec = useMemo(
+    () =>
+      formId ? scopedListQuery(FORM_SUBMISSIONS_LIST_QUERY, formId) : FORM_SUBMISSIONS_LIST_QUERY,
+    [formId],
+  );
+  const query = useListQuery(listSpec);
   const dictReview = dict.submission.review;
   const currentUserId = useCurrentUser().data?.actor?.id;
   const reviewStatus = toReviewStatus(query.filters.reviewStatus);
@@ -63,6 +68,8 @@ export default function FormSubmissionTab({
   );
   // The review columns and filters show only when the form's settings let reviewers change status.
   const showReview = submissionsResult.allowStatusUpdates;
+  // A filter from a shared link still applies when the review is hidden, so it stays clearable.
+  const showFilters = showReview || !!reviewStatus || mine;
   const { setFilters } = query;
   const setReviewFilter = useCallback(
     (next: { reviewStatus?: string; mine?: boolean }) => {
@@ -226,7 +233,7 @@ export default function FormSubmissionTab({
           </Button>
         </div>
       ) : null}
-      {showReview ? (
+      {showFilters ? (
         <ListPageFilters>
           <Select
             size="medium"

@@ -94,9 +94,9 @@ export type AddSubmissionNoteBody = z.infer<typeof AddSubmissionNoteBodySchema>;
 /**
  * Where a reviewer may move a submission from each status; the server and the status panel both
  * use it, as CHEFS v1 did. Assigned can move to Assigned, to hand the submission to someone else.
- * Revising asks the submitter to revise; moving on from it ends the revision and restores the last
- * submitted answers. The submitter's resubmit moves Revising to Submitted, which is not a reviewer
- * move.
+ * Revising asks the submitter to revise; moving on from it ends the revision and restores the
+ * answers from before it. The submitter's resubmit moves Revising to Submitted, which is not a
+ * reviewer move.
  */
 export const SUBMISSION_STATUS_MOVES: Readonly<
   Record<SubmissionReviewStatus, readonly SubmissionReviewStatus[]>
@@ -125,6 +125,15 @@ export const SUBMISSION_STATUS_MOVES: Readonly<
 export const nextSubmissionStatuses = (
   current: SubmissionReviewStatus | undefined,
 ): readonly SubmissionReviewStatus[] => (current ? SUBMISSION_STATUS_MOVES[current] : []);
+
+/**
+ * Whether a reviewer can change the status: when the form's review settings allow it, and always
+ * while it is Revising, so a revision can be ended whatever the settings became.
+ */
+export const canChangeReviewStatus = (
+  allowStatusUpdates: boolean,
+  current: SubmissionReviewStatus | undefined,
+): boolean => allowStatusUpdates || current === SubmissionReviewStatuses.revising;
 
 /**
  * A status change. `id` is chosen by the client (a UUID), so a retry writes it once.

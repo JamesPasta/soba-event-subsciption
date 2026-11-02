@@ -4,6 +4,7 @@ import { v7 as uuidv7 } from 'uuid';
 import {
   MY_SUBMISSION_STATES,
   STAFF_SUBMISSION_SORT_FIELDS,
+  SUBMISSION_CONFIRMED_STATES,
   SUBMISSION_SORT_FIELDS,
   type MySubmissionState,
   type SortLocale,
@@ -39,7 +40,7 @@ import { listAllowsNothing, permittedFormsWhere, type FormAccessGrant } from './
 import { liveSubmission } from './liveRows';
 import { isActiveOwner } from './submissionParticipantRepo';
 import { recordSubmittedStatus } from './submissionReviewRepo';
-import { demoteHead, nextRevisionNo } from './submissionRevisionChain';
+import { demoteHead, nextRevisionNo, resolveRevisionStanding } from './submissionRevisionChain';
 import { listSubmitterForms, type SubmitterFormListRow } from './submitterFormRepo';
 
 export type SubmissionRecord = typeof submissions.$inferSelect;
@@ -157,7 +158,12 @@ const STAFF_SUBMISSION_SORT_COLUMNS: SortColumns<(typeof STAFF_SUBMISSION_SORT_F
   ...SUBMISSION_SORT_COLUMNS,
   // Only a submitted submission has a review status, and only an assigned one an assignee.
   reviewStatus: { column: submissionStatuses.status, nullable: true },
-  assignee: { column: reviewAssignees.displayLabel, nullable: true, linguistic: true },
+  // The name the row shows: the profile's, else the stamp label.
+  assignee: {
+    column: sql`coalesce(${reviewAssignees.profile}->>'displayName', ${reviewAssignees.displayLabel})`,
+    nullable: true,
+    linguistic: true,
+  },
 };
 
 export interface ParticipantSubmissionListRow {
@@ -434,10 +440,10 @@ export const getSubmissionWorkspaceAndState = async (
   return rows[0] ?? null;
 };
 
-// Codes are hidden until submitted, so only a submitted row matches on its code.
-const submittedCodeMatches = (pattern: string) =>
+// Codes are hidden until submitted, so only a row showing its code matches on it.
+const shownCodeMatches = (pattern: string) =>
   and(
-    eq(submissions.workflowState, SubmissionWorkflowState.submitted),
+    inArray(submissions.workflowState, [...SUBMISSION_CONFIRMED_STATES]),
     ilike(submissions.confirmationCode, pattern),
   );
 
@@ -492,7 +498,7 @@ export const listSubmissionsForWorkspace = async (
       or(
         ilike(forms.name, pattern),
         sql`${submissions.id}::text ilike ${pattern}`,
-        submittedCodeMatches(pattern),
+        shownCodeMatches(pattern),
       ),
     );
   }
@@ -577,7 +583,7 @@ export const listSubmissionsForParticipant = async (
 
   if (input.q) {
     const pattern = likePattern(input.q);
-    whereClauses.push(or(ilike(forms.name, pattern), submittedCodeMatches(pattern)));
+    whereClauses.push(or(ilike(forms.name, pattern), shownCodeMatches(pattern)));
   }
 
   const where = and(...whereClauses);
@@ -707,35 +713,6 @@ const toAppendResult = (
 ): AppendSubmissionRevisionResult => ({ outcome, record, revisionId, revisionNo, status, reason });
 
 /**
- * Resolve where a write lands. A 'current' intent whose head still matches its base applies as
- * current/accepted. A 'current' intent whose head moved under the lock is kept as pending, labelled
- * `closed` when the mover made the record terminal and `conflict` otherwise. A 'pending' intent keeps
- * the gate's reason.
- */
-const resolveRevisionStanding = (
-  intent: Extract<RevisionStatusCode, 'current' | 'pending'>,
-  gateReason: RevisionReasonCode,
-  headMoved: boolean,
-  workflowState: string,
-): { applyAsCurrent: boolean; status: RevisionStatusCode; reason: RevisionReasonCode } => {
-  if (intent === RevisionStatus.current && !headMoved) {
-    return {
-      applyAsCurrent: true,
-      status: RevisionStatus.current,
-      reason: RevisionReason.accepted,
-    };
-  }
-  if (intent === RevisionStatus.current) {
-    const reason =
-      workflowState === SubmissionWorkflowState.submitted
-        ? RevisionReason.closed
-        : RevisionReason.conflict;
-    return { applyAsCurrent: false, status: RevisionStatus.pending, reason };
-  }
-  return { applyAsCurrent: false, status: RevisionStatus.pending, reason: gateReason };
-};
-
-/**
  * Lock a live submission row until commit. Save, submit and delete all take this lock first, so a head
  * check and a head move cannot interleave with another writer on the same submission.
  */
@@ -764,10 +741,10 @@ const lockLiveSubmission = async (
  * every revision (current and pending), so it is not the current version's number. A 'current' write
  * whose head still matches its base demotes the outgoing head to `superseded`, inserts the new head as
  * `current`, applies the workflow state, marks the engine sync `ready`, and stamps `submitted_at` on
- * submit; `afterEngineSubmissionRef` becomes the current ref.
+ * the first submit; `afterEngineSubmissionRef` becomes the current ref.
  *
- * A 'pending' write - or a 'current' write whose head moved since the gate read it - is recorded off
- * the current chain and the submission row is left entirely untouched (head, current revision no,
+ * A 'pending' write - or a 'current' write whose head moved, or whose submission was submitted, since
+ * the gate read it - is recorded off the current chain and the submission row is left entirely untouched (head, current revision no,
  * workflow state, engine ref and sync status all unchanged), so a side-branch write never disturbs the
  * live version. The new engine document stays referenced by the pending revision, so no document is
  * orphaned. The caller's own write of the same event, already recorded under the revision id, is
@@ -849,8 +826,9 @@ export const appendSubmissionRevision = (
 
     if (!applyAsCurrent) {
       // A pending intent advertised nothing on the submission, so leave the row untouched. A current
-      // intent downgraded here (head moved under the lock) had set 'provisioning' before the engine
-      // write; clear just that flag, without bumping the current version or its audit fields.
+      // intent downgraded here (closed or head moved under the lock) had set 'provisioning' before
+      // the engine write; clear just that flag, without bumping the current version or its audit
+      // fields.
       let record = submission;
       if (input.status === RevisionStatus.current) {
         const [settled] = await tx

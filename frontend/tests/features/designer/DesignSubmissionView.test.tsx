@@ -6,6 +6,7 @@ import { Provider } from 'react-redux';
 import { SWRConfig } from 'swr';
 import userEvent from '@testing-library/user-event';
 import { ApiErrorCodes } from '@soba/lib';
+import { navLink } from '@/src/shared/list/listQueryMemory';
 import { SubmissionReviewStatuses } from '@/src/types/submissionReview';
 
 const { mockPush } = vi.hoisted(() => ({ mockPush: vi.fn() }));
@@ -21,10 +22,15 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/src/features/formio-v5/ui/ReadOnlyFormView', () => ({
-  ReadOnlyFormView: () => <div data-testid="submission-view-form">rendered</div>,
+  ReadOnlyFormView: ({ submission }: { submission: { data: Record<string, unknown> } }) => (
+    <div data-testid="submission-view-form" data-answers={JSON.stringify(submission.data)}>
+      rendered
+    </div>
+  ),
 }));
 
-// Stands in for Form.io: a button that changes one answer, as typing into the form would.
+// Stands in for Form.io: a button that changes one answer, as typing into the form would, on the
+// submission object it was given.
 vi.mock('@/src/features/formio-v5/ui/EditableFormView', () => ({
   EditableFormView: ({
     submission,
@@ -36,7 +42,10 @@ vi.mock('@/src/features/formio-v5/ui/EditableFormView', () => ({
     <button
       type="button"
       data-testid="submission-edit-form"
-      onClick={() => onDataChange({ ...submission.data, field: 'changed' })}
+      onClick={() => {
+        submission.data.field = 'changed';
+        onDataChange(submission.data);
+      }}
     >
       edit
     </button>
@@ -183,7 +192,7 @@ describe('DesignSubmissionView', () => {
       fireEvent.click(screen.getByTestId('design-submission-back'));
     });
 
-    expect(mockPush).toHaveBeenCalledWith('/en/build/f1?tab=submissions');
+    expect(mockPush).toHaveBeenCalledWith(navLink('/en/build/f1?tab=submissions'));
   });
 
   it('prints every review panel open, then reopens only the ones the user had open', async () => {
@@ -402,6 +411,55 @@ describe('DesignSubmissionView', () => {
       expect(getSobaSubmissionReviewers).not.toHaveBeenCalled();
     });
 
+    it('offers the way out of a revision even with status changes turned off', async () => {
+      signIn();
+      getSobaSubmissionReview.mockResolvedValue({
+        ...REVIEW,
+        statusHistory: [
+          { ...REVIEW.statusHistory[0], status: SubmissionReviewStatuses.revising },
+          ...REVIEW.statusHistory,
+        ],
+      });
+      await renderView();
+
+      expect(await screen.findByTestId('submission-status-select')).toBeInTheDocument();
+      expect(screen.queryByTestId('submission-status-updates-off')).not.toBeInTheDocument();
+    });
+
+    it('says when it cannot read who a submission can be assigned to', async () => {
+      signIn();
+      getSobaSubmissionReview.mockResolvedValue(UPDATES_ON);
+      getSobaSubmissionReviewers.mockRejectedValue(new ApiError('Request failed (500)', 500));
+      await renderView();
+
+      expect(await screen.findByTestId('submission-reviewers-loaderror')).toBeInTheDocument();
+    });
+
+    // A move in or out of Revising changes the workflow state and can change the answers.
+    it('reads the submission again after a change, so the page shows where it now stands', async () => {
+      signIn();
+      getSobaSubmissionReview.mockResolvedValue(UPDATES_ON);
+      updateSobaSubmissionStatus.mockResolvedValue({
+        ...UPDATES_ON,
+        statusHistory: [
+          { ...UPDATES_ON.statusHistory[0], id: 's2', status: SubmissionReviewStatuses.revising },
+          ...UPDATES_ON.statusHistory,
+        ],
+      });
+      await renderView({ submissionId: SUBMISSION_ID });
+      expect(await screen.findByTestId('submission-view-status')).toHaveTextContent('SUBMITTED');
+
+      getSobaSubmission.mockResolvedValue({
+        ...(await getSobaSubmission()),
+        workflowState: 'revising',
+      });
+      await changeStatusTo('Revising');
+
+      await waitFor(() =>
+        expect(screen.getByTestId('submission-view-status')).toHaveTextContent('REVISING'),
+      );
+    });
+
     it('offers no status change to a caller who cannot review', async () => {
       signIn();
       getSobaForm.mockResolvedValue({ id: 'f1', permissions: ['form_read', 'submission_read'] });
@@ -499,7 +557,7 @@ describe('DesignSubmissionView', () => {
     });
 
     await waitFor(() => expect(deleteSobaSubmission).toHaveBeenCalledWith('token', SUBMISSION_ID));
-    expect(mockPush).toHaveBeenCalledWith('/en/build/f1?tab=submissions');
+    expect(mockPush).toHaveBeenCalledWith(navLink('/en/build/f1?tab=submissions'));
   });
 
   const notifications = () =>
@@ -770,30 +828,84 @@ describe('DesignSubmissionView staff edits', () => {
     expect(second[2].revisionId).toBe(first[2].revisionId);
   });
 
-  it('re-reads the answers when someone else changed them first', async () => {
+  it.each([ApiErrorCodes.data_changed, ApiErrorCodes.edit_closed])(
+    're-reads the submission and ends the edit on %s',
+    async (code) => {
+      const user = userEvent.setup();
+      updateSobaSubmissionData.mockRejectedValue(new ApiError('conflict', 409, code));
+      await renderView({ submissionId: SUBMISSION_ID });
+      const readsBefore = getSobaSubmission.mock.calls.length;
+
+      await user.click(await screen.findByTestId('submission-edit'));
+      await user.click(screen.getByTestId('submission-edit-form'));
+      await user.click(screen.getByTestId('submission-edit-update'));
+      await user.click(await screen.findByTestId('confirm-modal-confirm'));
+
+      await waitFor(() => expect(getSobaSubmission.mock.calls.length).toBeGreaterThan(readsBefore));
+      await waitFor(() => expect(screen.queryByTestId('submission-edit-form')).toBeNull());
+    },
+  );
+
+  it('ends the edit for good when the submission goes back to its submitters', async () => {
     const user = userEvent.setup();
-    updateSobaSubmissionData.mockRejectedValue(
-      new ApiError('changed', 409, ApiErrorCodes.data_changed),
-    );
+    const reviewAt = (status: string) => ({
+      ...REVIEW,
+      allowStatusUpdates: true,
+      statusHistory: [{ ...REVIEW.statusHistory[0], id: status, status }, ...REVIEW.statusHistory],
+    });
+    const moveTo = async (option: string) => {
+      const select = await screen.findByTestId('submission-status-select');
+      await user.click(within(select).getByRole('button'));
+      await user.click(await screen.findByRole('option', { name: option }));
+      await user.click(screen.getByTestId('submission-status-update'));
+    };
+    getSobaSubmissionReview.mockResolvedValue({ ...REVIEW, allowStatusUpdates: true });
+    getSobaSubmissionReviewers.mockResolvedValue({ items: [] });
+    const submitted = await getSobaSubmission();
     await renderView({ submissionId: SUBMISSION_ID });
-    const readsBefore = getSobaSubmission.mock.calls.length;
 
     await user.click(await screen.findByTestId('submission-edit'));
     await user.click(screen.getByTestId('submission-edit-form'));
-    await user.click(screen.getByTestId('submission-edit-update'));
-    await user.click(await screen.findByTestId('confirm-modal-confirm'));
 
-    await waitFor(() => expect(getSobaSubmission.mock.calls.length).toBeGreaterThan(readsBefore));
+    getSobaSubmission.mockResolvedValue({ ...submitted, workflowState: 'revising' });
+    updateSobaSubmissionStatus.mockResolvedValueOnce(reviewAt(SubmissionReviewStatuses.revising));
+    await moveTo('Revising');
+    await waitFor(() => expect(screen.queryByTestId('submission-edit-form')).toBeNull());
+
+    getSobaSubmission.mockResolvedValue(submitted);
+    updateSobaSubmissionStatus.mockResolvedValueOnce(reviewAt(SubmissionReviewStatuses.completed));
+    await moveTo('Completed');
+
+    expect(await screen.findByTestId('submission-edit')).toBeInTheDocument();
+    expect(screen.queryByTestId('submission-edit-form')).toBeNull();
   });
 
-  it('leaves the answers untouched on Cancel', async () => {
+  it('holds Update until an answer changes', async () => {
     const user = userEvent.setup();
     await renderView({ submissionId: SUBMISSION_ID });
 
     await user.click(await screen.findByTestId('submission-edit'));
+    expect(screen.getByTestId('submission-edit-update')).toBeDisabled();
+
+    await user.click(screen.getByTestId('submission-edit-form'));
+    expect(screen.getByTestId('submission-edit-update')).toBeEnabled();
+  });
+
+  it('discards what was typed on Cancel, in the view and in the next edit', async () => {
+    const user = userEvent.setup();
+    await renderView({ submissionId: SUBMISSION_ID });
+
+    await user.click(await screen.findByTestId('submission-edit'));
+    await user.click(screen.getByTestId('submission-edit-form'));
     await user.click(screen.getByTestId('submission-edit-cancel'));
 
-    expect(screen.getByTestId('submission-view-form')).toBeInTheDocument();
+    expect(screen.getByTestId('submission-view-form')).toHaveAttribute(
+      'data-answers',
+      JSON.stringify({ field: 'value' }),
+    );
     expect(updateSobaSubmissionData).not.toHaveBeenCalled();
+
+    await user.click(screen.getByTestId('submission-edit'));
+    expect(screen.getByTestId('submission-edit-update')).toBeDisabled();
   });
 });

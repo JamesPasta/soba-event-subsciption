@@ -5,6 +5,11 @@ import {
   findUserEmail,
   type StatusEmailFacts,
 } from '../../core/db/repos/submissionReviewRepo';
+import {
+  cleanName,
+  designerSubmissionLink,
+  withoutTrailingSlashes,
+} from '../../core/integrations/notification/emailText';
 import { log } from '../../core/logging';
 import { notificationService } from '../notifications/service';
 
@@ -23,14 +28,12 @@ interface StatusEmailTemplate {
   fr: { subject: string; body: string };
 }
 
-const designerLink = (facts: StatusEmailFacts, submissionId: string) => {
-  const base = env.getDesignerAppUrl();
-  return base ? `${base}/en/build/${facts.formId}/submissions/${submissionId}` : null;
-};
+const designerLink = (facts: StatusEmailFacts, submissionId: string) =>
+  designerSubmissionLink(env.getDesignerAppUrl(), facts.formId, submissionId);
 
 const formsLink = (path: string) => (_facts: StatusEmailFacts, submissionId: string) => {
   const base = env.getFormsAppUrl();
-  return base ? `${base}/en/${path}/${submissionId}` : null;
+  return base ? `${withoutTrailingSlashes(base)}/en/${path}/${submissionId}` : null;
 };
 
 /**
@@ -79,8 +82,11 @@ const STATUS_EMAILS: Partial<Record<SubmissionReviewStatus, StatusEmailTemplate>
 const COMMENT_HEADING = { en: 'Comment from the reviewer:', fr: 'Commentaire de l’examinateur :' };
 const LINK_HEADING = { en: 'Open it here:', fr: 'Ouvrez-la ici :' };
 
+// Replacer functions, so a `$` in a form name stays as typed.
 const fill = (text: string, facts: StatusEmailFacts) =>
-  text.replaceAll('{code}', facts.confirmationCode).replaceAll('{form}', facts.formName);
+  text
+    .replaceAll('{code}', () => facts.confirmationCode)
+    .replaceAll('{form}', () => cleanName(facts.formName));
 
 /** The email text, English then French, with the reviewer's comment and the link when there are. */
 export const statusEmailContent = (
@@ -137,14 +143,19 @@ export const sendStatusEmail = async (input: StatusEmailInput): Promise<void> =>
       template.link(facts, input.submissionId),
       input.comment,
     );
-    await notificationService.sendEmail(
-      {
-        workspaceId: input.workspaceId,
-        formId: facts.formId,
-        submissionId: input.submissionId,
-        actorId: input.actorId,
-      },
-      { recipients: { to }, content: { ...content, bodyType: 'text' } },
+    // One email per address, so submitters do not see each other's addresses.
+    await Promise.all(
+      to.map((address) =>
+        notificationService.sendEmail(
+          {
+            workspaceId: input.workspaceId,
+            formId: facts.formId,
+            submissionId: input.submissionId,
+            actorId: input.actorId,
+          },
+          { recipients: { to: [address] }, content: { ...content, bodyType: 'text' } },
+        ),
+      ),
     );
   } catch (err) {
     log.error(

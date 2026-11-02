@@ -3,7 +3,7 @@ import { DEFAULT_SORT_LOCALE, type SortLocale, type SortToken } from '@soba/lib'
 import { ValidationError } from '../errors';
 
 interface SortableColumn {
-  column: Column;
+  column: Column | SQL;
   /** Rows with no value sort last in both directions. */
   nullable?: boolean;
   /**
@@ -23,7 +23,7 @@ const SORT_COLLATIONS: Record<SortLocale, SQL> = {
 };
 
 /** `column` in the sort locale's ICU collation, for an `orderBy` that does not take a sort token. */
-export const collated = (column: Column, locale: SortLocale): SQL =>
+export const collated = (column: Column | SQL, locale: SortLocale): SQL =>
   sql`${column} collate ${SORT_COLLATIONS[locale] ?? SORT_COLLATIONS[DEFAULT_SORT_LOCALE]}`;
 
 /**

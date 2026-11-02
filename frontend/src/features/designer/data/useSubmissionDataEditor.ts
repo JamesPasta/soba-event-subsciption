@@ -12,8 +12,10 @@ import { designSubmissionKey } from './useDesignSubmission';
 import { submissionReviewKey } from './useSubmissionReview';
 import { useDesignFormRead } from './useForm';
 
-const isDataChanged = (error: unknown) =>
-  error instanceof ApiError && error.code === ApiErrorCodes.data_changed;
+/** The answers moved on, or the submission went back to its submitters, since the edit began. */
+export const isEditConflict = (error: unknown) =>
+  error instanceof ApiError &&
+  (error.code === ApiErrorCodes.data_changed || error.code === ApiErrorCodes.edit_closed);
 
 /**
  * Staff changes to a submitted submission's answers. `canEdit` says whether the caller holds
@@ -44,8 +46,8 @@ export function useSubmissionDataEditor(submissionId: string, formId: string) {
         unsaved.saved();
         await reread();
       } catch (error) {
-        // Someone changed the answers first: show theirs, so the editor starts again from them.
-        if (isDataChanged(error)) await reread();
+        // Someone got there first: show where it now stands, so the editor starts again from it.
+        if (isEditConflict(error)) await reread();
         throw error;
       }
     },

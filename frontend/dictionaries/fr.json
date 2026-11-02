@@ -679,7 +679,7 @@
       "noStatus": "Aucun statut de révision pour l'instant. La révision d'une soumission commence lorsqu'elle est soumise.",
       "statusUpdatesOff": "Les changements d'état sont désactivés dans les paramètres d'examen de ce formulaire.",
       "revisingHint": "Les personnes ayant soumis peuvent modifier leurs réponses et leurs fichiers, puis soumettre de nouveau.",
-      "endRevisionHint": "Mettre fin à la révision rétablit les dernières réponses soumises. Les modifications non soumises sont mises de côté.",
+      "endRevisionHint": "Mettre fin à la révision rétablit les réponses d’avant la révision. Les modifications non soumises sont mises de côté.",
       "assignOrUpdate": "Attribuer ou mettre à jour l’état",
       "selectPlaceholder": "Sélectionner",
       "assignTo": "Attribuer à",
@@ -711,7 +711,8 @@
       "confirmChangeMessage": "Voulez-vous vraiment modifier les données soumises?",
       "editData": "Modifier",
       "cancelEdit": "Annuler",
-      "editingNotice": "Vous modifiez les réponses soumises. Le formulaire les vérifie lors de la mise à jour.",
+      "editingNotice": "Vous modifiez les réponses soumises. Le formulaire les vérifie lors de la mise à jour. Les fichiers ne peuvent pas être modifiés ici.",
+      "editInvalid": "Certaines réponses ne sont pas valides. Corrigez les champs indiqués, puis mettez à jour.",
       "submit": "Soumettre",
       "dataHistoryTitle": "Historique des données soumises",
       "dataHistoryIntro": "Ce journal indique qui a modifié cette soumission après la soumission initiale.",
@@ -722,7 +723,8 @@
       "noteAdded": "Note ajoutée",
       "dataUpdated": "Soumission mise à jour",
       "saveFailure": "Impossible d’enregistrer votre modification.",
-      "loadError": "Impossible de charger l’état, les notes et l’historique de cette soumission."
+      "loadError": "Impossible de charger l’état, les notes et l’historique de cette soumission.",
+      "reviewersLoadError": "Impossible de charger les personnes à qui cette soumission peut être attribuée."
     },
     "formList": {
       "columns": {

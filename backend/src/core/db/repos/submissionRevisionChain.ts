@@ -1,7 +1,43 @@
-import { and, desc, eq, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { Tx } from '../client';
-import { RevisionReason, RevisionStatus, SubmissionEventType } from '../codes';
+import {
+  RevisionReason,
+  RevisionStatus,
+  SubmissionEventType,
+  SubmissionWorkflowState,
+  type RevisionReasonCode,
+  type RevisionStatusCode,
+} from '../codes';
 import { submissionRevisions } from '../schema';
+
+/**
+ * Resolve where a write lands, from the submission under the lock. A 'current' intent applies as
+ * current/accepted while the submission is open and its head still matches the base. Otherwise it is
+ * kept as pending: `closed` when the submission is submitted, `conflict` when only the head moved.
+ * Ending a revision can close a submission without moving its head, so the head alone does not show
+ * it. A 'pending' intent keeps the gate's reason.
+ */
+export const resolveRevisionStanding = (
+  intent: Extract<RevisionStatusCode, 'current' | 'pending'>,
+  gateReason: RevisionReasonCode,
+  headMoved: boolean,
+  workflowState: string,
+): { applyAsCurrent: boolean; status: RevisionStatusCode; reason: RevisionReasonCode } => {
+  if (intent !== RevisionStatus.current) {
+    return { applyAsCurrent: false, status: RevisionStatus.pending, reason: gateReason };
+  }
+  if (workflowState === SubmissionWorkflowState.submitted) {
+    return { applyAsCurrent: false, status: RevisionStatus.pending, reason: RevisionReason.closed };
+  }
+  if (headMoved) {
+    return {
+      applyAsCurrent: false,
+      status: RevisionStatus.pending,
+      reason: RevisionReason.conflict,
+    };
+  }
+  return { applyAsCurrent: true, status: RevisionStatus.current, reason: RevisionReason.accepted };
+};
 
 /** Append order over all revisions; the current version's number lives in current_revision_no. */
 export const nextRevisionNo = async (
@@ -48,13 +84,20 @@ export interface RestoredHead {
   engineSubmissionRef: string | null;
 }
 
+/** The revisions that settle the answers; a submitter's saves while revising do not. */
+const SETTLED_EVENTS = [
+  SubmissionEventType.submitted,
+  SubmissionEventType.edited,
+  SubmissionEventType.restored,
+];
+
 /**
- * Make the last submitted answers current again, inside the caller's transaction, which holds the
+ * Make the last settled answers current again, inside the caller's transaction, which holds the
  * submission's row lock. Answer documents are never changed, so the restore is a new current
- * revision pointing at the last submit's document. Null when the head already is the last submit,
+ * revision pointing at the settled revision's document. Null when the head already is that revision,
  * or nothing was ever submitted.
  */
-export const restoreLastSubmitted = async (
+export const restoreLastSettled = async (
   tx: Tx,
   input: {
     workspaceId: string;
@@ -64,7 +107,7 @@ export const restoreLastSubmitted = async (
     actorId: string;
   },
 ): Promise<RestoredHead | null> => {
-  const [lastSubmit] = await tx
+  const [lastSettled] = await tx
     .select({
       id: submissionRevisions.id,
       afterEngineSubmissionRef: submissionRevisions.afterEngineSubmissionRef,
@@ -74,13 +117,13 @@ export const restoreLastSubmitted = async (
       and(
         eq(submissionRevisions.workspaceId, input.workspaceId),
         eq(submissionRevisions.submissionId, input.submissionId),
-        eq(submissionRevisions.eventType, SubmissionEventType.submitted),
+        inArray(submissionRevisions.eventType, SETTLED_EVENTS),
         ne(submissionRevisions.status, RevisionStatus.pending),
       ),
     )
     .orderBy(desc(submissionRevisions.revisionNo))
     .limit(1);
-  if (!lastSubmit || lastSubmit.id === input.headRevisionId) return null;
+  if (!lastSettled || lastSettled.id === input.headRevisionId) return null;
 
   const revisionNo = await nextRevisionNo(tx, input.workspaceId, input.submissionId);
   await demoteHead(tx, input.workspaceId, input.headRevisionId);
@@ -95,13 +138,13 @@ export const restoreLastSubmitted = async (
       status: RevisionStatus.current,
       reason: RevisionReason.accepted,
       beforeEngineSubmissionRef: input.engineSubmissionRef,
-      afterEngineSubmissionRef: lastSubmit.afterEngineSubmissionRef,
+      afterEngineSubmissionRef: lastSettled.afterEngineSubmissionRef,
       changedBy: input.actorId,
     })
     .returning({ id: submissionRevisions.id });
   return {
     headRevisionId: restored.id,
     currentRevisionNo: revisionNo,
-    engineSubmissionRef: lastSubmit.afterEngineSubmissionRef,
+    engineSubmissionRef: lastSettled.afterEngineSubmissionRef,
   };
 };

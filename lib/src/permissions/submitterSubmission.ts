@@ -73,6 +73,12 @@ export const SUBMISSION_EDITABLE_STATES: readonly SubmissionWorkflowStateCode[] 
   SubmissionWorkflowState.revising,
 ];
 
+/** The states a submission shows its confirmation code in: submitted, or sent back to revise. */
+export const SUBMISSION_CONFIRMED_STATES: readonly SubmissionWorkflowStateCode[] = [
+  SubmissionWorkflowState.submitted,
+  SubmissionWorkflowState.revising,
+];
+
 /** Whether the submission's submitters can edit it: continued, not viewed. */
 export const isSubmissionEditable = (workflowState: string): boolean =>
   (SUBMISSION_EDITABLE_STATES as readonly string[]).includes(workflowState);
@@ -180,7 +186,7 @@ export const canUploadSubmissionFile = (
 
 /**
  * A file delete: a write while its submitters can edit it; once submitted, only the form's update
- * permission; in any other state, no one. While revising, a file the last submitted answers may hold
+ * permission; in any other state, no one. While revising, a file the answers from before it may hold
  * is only taken out of the answers, so ending the revision can restore it.
  */
 export const canDeleteSubmissionFile = (

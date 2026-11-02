@@ -149,7 +149,7 @@ describe('SubmissionStatusPanel', () => {
     // Typing a sentence is slow under a full-suite run.
   }, 15_000);
 
-  it('warns that ending a revision restores the last submitted answers', async () => {
+  it('warns that ending a revision restores the answers from before it', async () => {
     const user = userEvent.setup();
     render(<SubmissionStatusPanel review={REVISING_REVIEW} canUpdate />);
 
@@ -157,8 +157,21 @@ describe('SubmissionStatusPanel', () => {
     await choose(user, 'submission-status-select', 'Completed');
 
     expect(screen.getByTestId('submission-status-move-hint')).toHaveTextContent(
-      'Ending the revision restores the last submitted answers.',
+      'Ending the revision restores the answers from before it.',
     );
+  });
+
+  // Someone else's change can remove the move the reviewer had picked.
+  it('drops a chosen status the current one no longer moves to', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<SubmissionStatusPanel review={ONLY_SUBMITTED} canUpdate />);
+    await choose(user, 'submission-status-select', 'Revising');
+    expect(screen.getByTestId('submission-status-update')).toBeEnabled();
+
+    rerender(<SubmissionStatusPanel review={REVISING_REVIEW} canUpdate />);
+
+    expect(screen.getByTestId('submission-status-update')).toBeDisabled();
+    expect(screen.queryByTestId('submission-status-move-hint')).toBeNull();
   });
 
   it('assigns the submission to the reviewer picked', async () => {

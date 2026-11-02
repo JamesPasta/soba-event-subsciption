@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
+import { useSWRConfig } from 'swr';
 import { ApiErrorCodes } from '@soba/lib';
 import {
   addSobaSubmissionNote,
@@ -8,10 +9,11 @@ import {
   getSobaSubmissionReviewers,
   updateSobaSubmissionStatus,
 } from '@/src/shared/api/sobaApi';
-import type {
-  SubmissionReview,
-  SubmissionReviewers,
-  SubmissionReviewStatus,
+import {
+  canChangeReviewStatus,
+  type SubmissionReview,
+  type SubmissionReviewers,
+  type SubmissionReviewStatus,
 } from '@/src/types/submissionReview';
 import { Permissions } from '@/src/types/permissions';
 import { useAuthedSWR } from '@/src/shared/api/useAuthedSWR';
@@ -20,6 +22,7 @@ import { classifyDataError } from '@/src/shared/api/dataError';
 import type { Resource } from '@/src/shared/api/dataContracts';
 import { hasPermission } from '@/src/shared/util/permissions';
 import { useUnsavedId } from '@/src/shared/hooks/useUnsavedId';
+import { designSubmissionKey } from './useDesignSubmission';
 import { useDesignFormRead } from './useForm';
 
 export const submissionReviewKey = (submissionId: string) => ['submission-review', submissionId];
@@ -54,12 +57,15 @@ export function useSubmissionReview(submissionId: string, formId: string) {
   const { data: form } = useDesignFormRead(formId);
   const canReview = hasPermission(form?.permissions, Permissions.submission_review) === true;
   const current = data?.statusHistory[0];
-  // The status controls show for reviewers when the form's settings allow it and there is a status
-  // to move from.
-  const canUpdateStatus = canReview && data?.allowStatusUpdates === true && current !== undefined;
+  // The status controls show for reviewers when the status can change and there is one to move from.
+  const canUpdateStatus =
+    canReview &&
+    current !== undefined &&
+    canChangeReviewStatus(data?.allowStatusUpdates === true, current.status);
 
   const unsavedNote = useUnsavedId();
   const unsavedStatus = useUnsavedId();
+  const { mutate: mutateKey } = useSWRConfig();
 
   // Each write answers with the updated review, which replaces the cached one.
   const addNote = useCallback(
@@ -77,8 +83,10 @@ export function useSubmissionReview(submissionId: string, formId: string) {
     async (token: string, change: StatusChange) => {
       if (!current) throw new Error('A submission without a status cannot change status');
       const id = unsavedStatus.idFor(
-        `${current.id}:${change.status}:${change.assigneeId}:${change.comment ?? ''}`,
+        `${current.id}:${change.status}:${change.assigneeId}:${change.comment ?? ''}:${change.attachCommentToEmail === true}`,
       );
+      // A status change can move the workflow state and the answers, which the submission read holds.
+      const rereadSubmission = () => mutateKey(designSubmissionKey(submissionId));
       try {
         await mutate(
           updateSobaSubmissionStatus(token, submissionId, {
@@ -89,13 +97,14 @@ export function useSubmissionReview(submissionId: string, formId: string) {
           { revalidate: false },
         );
         unsavedStatus.saved();
+        await rereadSubmission();
       } catch (e: unknown) {
         // Someone else changed the status first: show theirs, so the reviewer decides again.
-        if (isStatusChanged(e)) await mutate();
+        if (isStatusChanged(e)) await Promise.all([mutate(), rereadSubmission()]);
         throw e;
       }
     },
-    [current, mutate, submissionId, unsavedStatus],
+    [current, mutate, mutateKey, submissionId, unsavedStatus],
   );
 
   const refresh = useCallback(async () => {

@@ -10,8 +10,8 @@ jest.mock('../../../src/features/notifications/service', () => ({
 }));
 jest.mock('../../../src/core/config/env', () => ({
   env: {
-    getDesignerAppUrl: () => 'https://design.example',
-    getFormsAppUrl: () => 'https://forms.example',
+    getDesignerAppUrl: () => 'https://design.example/',
+    getFormsAppUrl: () => 'https://forms.example/',
   },
 }));
 
@@ -68,14 +68,33 @@ it('asks the submitters to revise, in English and French, with the comment attac
     comment: 'Please attach the signed declaration.',
   });
 
-  const { email } = sent();
-  expect(email.recipients.to).toEqual(['sub@example.com', 'collab@example.com']);
+  expect(mockSend.mock.calls.map(([, email]) => email.recipients.to)).toEqual([
+    ['sub@example.com'],
+    ['collab@example.com'],
+  ]);
+  const [, email] = mockSend.mock.calls[0];
   expect(email.content.body).toMatch(
     /revise your submission K7M2Q9XA of Permit application[\s\S]*Comment from the reviewer:\nPlease attach the signed declaration\.[\s\S]*https:\/\/forms\.example\/en\/submit\/s1[\s\S]*---[\s\S]*Commentaire de l’examinateur/,
   );
 });
 
+it('keeps a form name to one plain line, with no links and any $ as typed', async () => {
+  mockFacts.mockResolvedValue({
+    ...FACTS,
+    formName: 'Grant $$ \n https://evil.example form',
+    submitterEmails: ['sub@example.com'],
+  });
+
+  await sendStatusEmail({ ...BASE, status: SubmissionReviewStatuses.completed });
+
+  const { email } = sent();
+  expect(email.content.body).toContain('K7M2Q9XA of Grant $$ [link removed] form is complete.');
+  expect(email.content.body).not.toContain('evil.example');
+});
+
 it('tells the submitters the review is complete, without a comment unless attached', async () => {
+  mockFacts.mockResolvedValue({ ...FACTS, submitterEmails: ['sub@example.com'] });
+
   await sendStatusEmail({ ...BASE, status: SubmissionReviewStatuses.completed });
 
   const { email } = sent();

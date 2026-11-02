@@ -82,6 +82,15 @@ export const SubmissionWriteResponseSchema = SubmissionResponseSchema.extend({
   revision: SubmissionRevisionInfoSchema,
 });
 
+/**
+ * A submission as its submitter reads it: its review as they are told it, and whether they can
+ * continue it on the fill page.
+ */
+export const SubmitSubmissionResponseSchema = SubmissionResponseSchema.extend({
+  reviewLabel: SubmitterReviewLabelSchema.nullable(),
+  canContinue: z.boolean(),
+});
+
 export type SubmissionRevisionInfo = z.infer<typeof SubmissionRevisionInfoSchema>;
 export type SubmissionWriteResponse = z.infer<typeof SubmissionWriteResponseSchema>;
 
@@ -90,6 +99,7 @@ export type SubmissionDataBody = z.infer<typeof SubmissionDataBodySchema>;
 export type SubmitSubmissionBody = z.infer<typeof SubmitSubmissionBodySchema>;
 export type SubmissionListItem = z.infer<typeof SubmissionListItemSchema>;
 export type SubmissionResponse = z.infer<typeof SubmissionResponseSchema>;
+export type SubmitSubmissionResponse = z.infer<typeof SubmitSubmissionResponseSchema>;
 
 export const SubmissionSortSchema = makeSortEnum(SUBMISSION_SORT_FIELDS);
 export type SubmissionListSort = z.infer<typeof SubmissionSortSchema>;

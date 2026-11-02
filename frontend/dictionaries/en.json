@@ -678,7 +678,7 @@
       "noStatus": "No review status yet. A submission starts its review when it is submitted.",
       "statusUpdatesOff": "Status changes are turned off in this form's review settings.",
       "revisingHint": "The submitters can change their answers and files, then submit again.",
-      "endRevisionHint": "Ending the revision restores the last submitted answers. Changes the submitters have not submitted are set aside.",
+      "endRevisionHint": "Ending the revision restores the answers from before it. Changes the submitters have not submitted are set aside.",
       "assignOrUpdate": "Assign or Update Status",
       "selectPlaceholder": "Select",
       "assignTo": "Assign To",
@@ -710,7 +710,8 @@
       "confirmChangeMessage": "Are you sure you want to change the submitted data?",
       "editData": "Edit",
       "cancelEdit": "Cancel",
-      "editingNotice": "You are changing the submitted answers. The form checks them when you update.",
+      "editingNotice": "You are changing the submitted answers. The form checks them when you update. Files cannot be changed here.",
+      "editInvalid": "Some answers are not valid. Correct the marked fields, then update.",
       "submit": "Submit",
       "dataHistoryTitle": "Submitted Data History",
       "dataHistoryIntro": "This is an audit log of who has made changes to this submission after the original submission.",
@@ -721,7 +722,8 @@
       "noteAdded": "Note added",
       "dataUpdated": "Submission updated",
       "saveFailure": "Could not save your change.",
-      "loadError": "Could not load the status, notes and history of this submission."
+      "loadError": "Could not load the status, notes and history of this submission.",
+      "reviewersLoadError": "Could not load who this submission can be assigned to."
     },
     "formList": {
       "columns": {

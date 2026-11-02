@@ -171,7 +171,6 @@ export const updateReviewSettings = (input: {
     },
   );
 
-/** The review settings that apply to a form: its own, else its workspace's; off without a row. */
 /** The review settings a form uses, found by the form alone; all off when it has none. */
 export const findEffectiveReviewSettingsOfForm = async (
   formId: string,
@@ -186,6 +185,7 @@ export const findEffectiveReviewSettingsOfForm = async (
     : { allowStatusUpdates: false, allowSubmitterRevision: false };
 };
 
+/** The review settings that apply to a form: its own, else its workspace's; off without a row. */
 export const findEffectiveReviewSettings = async (
   workspaceId: string,
   formId: string,

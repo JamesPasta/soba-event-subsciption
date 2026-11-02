@@ -43,7 +43,7 @@ type OpenedFile = { record: FileRecord; file: GetFileResult };
 
 /**
  * Whether a file stays stored when its submitters remove it: while revising, a file attached before
- * the revision was asked for may be in the last submitted answers, which ending the revision
+ * the revision was asked for may be in the answers from before it, which ending the revision
  * restores. Files are not versioned, so removing one then only takes it out of the answers.
  */
 async function keptForRestore(
@@ -52,7 +52,8 @@ async function keptForRestore(
 ): Promise<boolean> {
   if (submission.workflowState !== SubmissionWorkflowState.revising) return false;
   const since = await findRevisionStartedAt(submission.workspaceId, submission.id);
-  return !!since && record.createdAt <= since;
+  // Null when the revision ended after the submission was read; the restored answers may hold it.
+  return !since || record.createdAt <= since;
 }
 
 /** The file's stored bytes, or 'unavailable'. */

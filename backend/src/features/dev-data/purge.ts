@@ -223,8 +223,9 @@ async function purgePostgres(
 type RecordFn = (label: string, run: Promise<{ rowCount: number | null }>) => Promise<void>;
 
 /**
- * Memberships a dev user holds in a workspace that is not being deleted, plus invitations they
- * issued. Either would block the app_user delete and roll the whole purge back.
+ * Memberships a dev user holds in a workspace that is not being deleted, invitations they issued and
+ * submissions assigned to them there. Any of these would block the app_user delete and roll the
+ * whole purge back.
  */
 async function purgeUserScoped(tx: DbOrTx, userIds: string[], record: RecordFn): Promise<void> {
   const stranded = await tx
@@ -256,6 +257,11 @@ async function purgeUserScoped(tx: DbOrTx, userIds: string[], record: RecordFn):
     .update(workspaceMemberships)
     .set({ invitedByUserId: null })
     .where(inArray(workspaceMemberships.invitedByUserId, userIds));
+
+  await tx
+    .update(submissionStatuses)
+    .set({ assigneeId: null })
+    .where(inArray(submissionStatuses.assigneeId, userIds));
 }
 
 /**

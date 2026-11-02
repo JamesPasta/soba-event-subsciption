@@ -106,9 +106,10 @@ export const submissionReviewService = {
   },
 
   /**
-   * Moves the submission to a new status when the form's review settings allow it, the move is
-   * allowed from the current status, and the status has not moved on since the reviewer saw it. An
-   * assignee must hold submission_review on the form. A retry of the same change makes it once.
+   * Moves the submission to a new status when the form's review settings allow it or the move ends a
+   * revision, the move is allowed from the current status, and the status has not moved on since the
+   * reviewer saw it. An assignee must hold submission_review on the form. A retry of the same change
+   * makes it once.
    */
   async updateStatus(
     ctx: SubmissionReviewContext,
@@ -117,12 +118,6 @@ export const submissionReviewService = {
   ): Promise<SubmissionReview> {
     const formId = formIdOf(ctx);
     const settings = await findEffectiveReviewSettings(ctx.workspaceId, formId);
-    if (!settings.allowStatusUpdates) {
-      throw new ForbiddenError(
-        'Status updates are turned off for this form',
-        ApiErrorCodes.status_updates_disabled,
-      );
-    }
     if (body.assigneeId) {
       const permissions = await resolveFormPermissions(body.assigneeId, ctx.workspaceId, formId);
       if (!hasAllPermissions(permissions, [Permissions.submission_review])) {
@@ -145,6 +140,7 @@ export const submissionReviewService = {
       assigneeId: body.assigneeId,
       actorId: ctx.actorId,
       actorDisplayLabel: ctx.actorDisplayLabel,
+      allowStatusUpdates: settings.allowStatusUpdates,
       comment: body.comment || undefined,
     });
     // After the commit, and only for a change this request made: a retry sends nothing again.
@@ -167,6 +163,11 @@ export const submissionReviewService = {
         throw new ConflictError(
           'The status changed since it was read',
           ApiErrorCodes.status_changed,
+        );
+      case 'updates_off':
+        throw new ForbiddenError(
+          'Status updates are turned off for this form',
+          ApiErrorCodes.status_updates_disabled,
         );
       case 'not_allowed':
         throw new ConflictError(
