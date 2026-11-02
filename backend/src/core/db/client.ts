@@ -18,15 +18,14 @@ const dbQueryTimeoutMs = Math.max(
   env.getDbQueryTimeoutMs(),
   dbStatementTimeoutMs + CLIENT_TIMEOUT_GRACE_MS,
 );
-const dbLockTimeoutMs = env.getDbLockTimeoutMs();
 
+// statement_timeout and lock_timeout are role defaults set by migrate.ts: PgBouncer refuses them as
+// startup parameters.
 const pool = new Pool({
   connectionString: databaseUrl,
   max: dbPoolMax,
   connectionTimeoutMillis: dbConnectionTimeoutMs,
   query_timeout: dbQueryTimeoutMs,
-  statement_timeout: dbStatementTimeoutMs,
-  lock_timeout: dbLockTimeoutMs,
 });
 // Pipeline performance fix: Revert if needed.
 
