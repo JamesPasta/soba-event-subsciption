@@ -76,7 +76,7 @@ export function SubmissionStatusPanel({
 }: Readonly<SubmissionStatusPanelProps>) {
   const dictReview = useDictionary().submission.review;
   const formatLongDate = useFormatLongDate();
-  const [chosenStatus, setStatus] = useState<SubmissionReviewStatus | null>(null);
+  const [chosenStatus, setChosenStatus] = useState<SubmissionReviewStatus | null>(null);
   const [assigneeId, setAssigneeId] = useState<string | null>(null);
   const [comment, setComment] = useState('');
   const [attachComment, setAttachComment] = useState(false);
@@ -103,7 +103,7 @@ export function SubmissionStatusPanel({
     });
     setSaving(false);
     if (!saved) return;
-    setStatus(null);
+    setChosenStatus(null);
     setAssigneeId(null);
     setComment('');
     setAttachComment(false);
@@ -179,7 +179,7 @@ export function SubmissionStatusPanel({
             value={status}
             isRequired
             isDisabled={saving}
-            onChange={(key) => setStatus(key as SubmissionReviewStatus)}
+            onChange={(key) => setChosenStatus(key as SubmissionReviewStatus)}
             items={moves.map((id) => ({ id, label: dictReview.statuses[id] }))}
             data-testid="submission-status-select"
           />
