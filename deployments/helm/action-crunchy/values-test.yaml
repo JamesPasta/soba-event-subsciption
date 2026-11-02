@@ -69,7 +69,8 @@ crunchy:
       requests:
         cpu: 5m
         memory: 32Mi
-      maxConnections: 10
+      maxConnections: 25
+      minPoolSize: 5
       poolMode: transaction
   pgmonitor:
     enabled: true
