@@ -205,7 +205,7 @@ jobs:
           NAMESPACE: ${{ vars.OC_NAMESPACE }}
           CLUSTER: ${{ needs.deploy-crunchy.outputs.cluster }}
         run: |
-          SECRET_NAME="${CLUSTER}-pguser-app"
+          SECRET_NAME="${CLUSTER}-pguser-appproxy"
           echo "secret_name=$SECRET_NAME" >> "$GITHUB_OUTPUT"
 
       # Pipeline performance fix: Revert if needed.
