@@ -4,15 +4,26 @@ import { sortLocale } from '../../middleware/sortLocale';
 import { workspaceListScope, workspaceFromResource } from '../../middleware/workspaceContext';
 import { requireFormPermissions } from '../../middleware/requireFormPermissions';
 import { Permissions } from '../../db/codes';
-import { deleteSubmission, getSubmission, getSubmissionData, listSubmissions } from './controller';
+import {
+  deleteSubmission,
+  getSubmission,
+  getSubmissionData,
+  listSubmissions,
+  updateSubmissionData,
+} from './controller';
 import {
   addSubmissionNote,
   getSubmissionReview,
-  recordSubmissionEdit,
+  listSubmissionReviewers,
   updateSubmissionStatus,
 } from './reviewController';
+import { SUBMISSION_DATA_SUBPATH, SubmissionReviewSubpaths } from '@soba/lib';
 import { AddSubmissionNoteBodySchema, UpdateSubmissionStatusBodySchema } from './reviewSchema';
-import { ListSubmissionsQuerySchema, SubmissionIdParamsSchema } from './schema';
+import {
+  ListSubmissionsQuerySchema,
+  SubmissionDataBodySchema,
+  SubmissionIdParamsSchema,
+} from './schema';
 
 // Design-mode submission management: mounted under /api/v1/design/submissions with mandatory auth.
 // Staff-only (list/read/delete). Opening/saving/submitting a submission and the submit-mode
@@ -41,11 +52,18 @@ router.get(
   getSubmission,
 );
 router.get(
-  `${ID_PATH}/data`,
+  `${ID_PATH}${SUBMISSION_DATA_SUBPATH}`,
   validateRequest({ params: SubmissionIdParamsSchema }),
   submissionResource,
   requireFormPermissions([Permissions.submission_read]),
   getSubmissionData,
+);
+router.put(
+  `${ID_PATH}${SUBMISSION_DATA_SUBPATH}`,
+  validateRequest({ params: SubmissionIdParamsSchema, body: SubmissionDataBodySchema }),
+  submissionResource,
+  requireFormPermissions([Permissions.submission_update]),
+  updateSubmissionData,
 );
 router.delete(
   ID_PATH,
@@ -55,7 +73,8 @@ router.delete(
   deleteSubmission,
 );
 
-// Review of a submission. Served from sample data for now; see reviewService.
+// Review of a submission: anyone who reads it sees the review; writing to it, or listing who it can
+// be assigned to, takes review.
 router.get(
   REVIEW_PATH,
   validateRequest({ params: SubmissionIdParamsSchema }),
@@ -64,25 +83,25 @@ router.get(
   getSubmissionReview,
 );
 router.post(
-  `${REVIEW_PATH}/status`,
-  validateRequest({ params: SubmissionIdParamsSchema, body: UpdateSubmissionStatusBodySchema }),
-  submissionResource,
-  requireFormPermissions([Permissions.submission_review]),
-  updateSubmissionStatus,
-);
-router.post(
-  `${REVIEW_PATH}/notes`,
+  `${REVIEW_PATH}${SubmissionReviewSubpaths.notes}`,
   validateRequest({ params: SubmissionIdParamsSchema, body: AddSubmissionNoteBodySchema }),
   submissionResource,
   requireFormPermissions([Permissions.submission_review]),
   addSubmissionNote,
 );
 router.post(
-  `${REVIEW_PATH}/edits`,
+  `${REVIEW_PATH}${SubmissionReviewSubpaths.status}`,
+  validateRequest({ params: SubmissionIdParamsSchema, body: UpdateSubmissionStatusBodySchema }),
+  submissionResource,
+  requireFormPermissions([Permissions.submission_review]),
+  updateSubmissionStatus,
+);
+router.get(
+  `${REVIEW_PATH}${SubmissionReviewSubpaths.reviewers}`,
   validateRequest({ params: SubmissionIdParamsSchema }),
   submissionResource,
-  requireFormPermissions([Permissions.submission_update]),
-  recordSubmissionEdit,
+  requireFormPermissions([Permissions.submission_review]),
+  listSubmissionReviewers,
 );
 
 export { router as designSubmissionsRouter };

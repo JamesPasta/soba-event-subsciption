@@ -28,6 +28,12 @@ export const Roles = {
 } as const;
 export type RoleCode = (typeof Roles)[keyof typeof Roles];
 
+/** Status of a user (app_user.status). */
+export const AppUserStatus = {
+  active: 'active',
+} as const;
+export type AppUserStatusCode = (typeof AppUserStatus)[keyof typeof AppUserStatus];
+
 export const RoleStatus = {
   active: 'active',
   deprecated: 'deprecated',
@@ -84,6 +90,10 @@ export const SubmissionEventType = {
   opened: 'opened',
   saved: 'saved',
   submitted: 'submitted',
+  /** A reviewer ended a revision, making the last submitted answers current again. */
+  restored: 'restored',
+  /** Staff changed the answers of a submitted submission. */
+  edited: 'edited',
   deleted: 'deleted',
 } as const;
 export type SubmissionEventTypeCode =

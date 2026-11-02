@@ -3,10 +3,13 @@ import {
   addSobaSubmissionNote,
   deleteSobaSubmission,
   getSobaSubmissionReview,
-  recordSobaSubmissionEdit,
+  getSobaSubmissionReviewers,
   selectWorkspace,
+  reviseSubmitSubmission,
+  updateSobaSubmissionData,
   updateSobaSubmissionStatus,
 } from '@/src/shared/api/sobaApi';
+import { SubmissionReviewStatuses } from '@/src/types/submissionReview';
 
 function mockResponse() {
   return {
@@ -89,7 +92,7 @@ describe('deleteSobaSubmission', () => {
 });
 
 describe('submission review calls', () => {
-  const REVIEW = { assignees: [], statusHistory: [], notes: [], editHistory: [] };
+  const REVIEW = { allowStatusUpdates: false, statusHistory: [], notes: [], editHistory: [] };
   const reviewResponse = () =>
     ({
       ok: true,
@@ -120,37 +123,65 @@ describe('submission review calls', () => {
     expect(result).toEqual(REVIEW);
   });
 
-  it('posts a status change with its assignee', async () => {
+  it('posts a note with the id the caller chose', async () => {
     const fetchMock = stubFetch();
-    const body = { status: 'ASSIGNED', assignee: 'Grace Hopper' } as const;
+    const note = { id: '01a1891a-3246-773c-a7ec-39fca5fea6bf', text: 'Needs a second look' };
 
-    await updateSobaSubmissionStatus('tok', 's1', body);
-
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toMatch(/\/design\/submissions\/s1\/review\/status$/);
-    expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body)).toEqual(body);
-  });
-
-  it('posts a note as its text', async () => {
-    const fetchMock = stubFetch();
-
-    await addSobaSubmissionNote('tok', 's1', 'Needs a second look');
+    await addSobaSubmissionNote('tok', 's1', note);
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toMatch(/\/design\/submissions\/s1\/review\/notes$/);
     expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body)).toEqual({ text: 'Needs a second look' });
+    expect(JSON.parse(init.body)).toEqual(note);
   });
 
-  it('posts an edit record with no body', async () => {
+  it('posts a status change from the status the caller saw', async () => {
     const fetchMock = stubFetch();
+    const change = {
+      id: '01a1891a-3246-773c-a7ec-39fca5fea6c0',
+      fromStatusId: '01a1891a-3246-773c-a7ec-39fca5fea6c1',
+      status: SubmissionReviewStatuses.completed,
+      assigneeId: null,
+    };
 
-    await recordSobaSubmissionEdit('tok', 's1');
+    await updateSobaSubmissionStatus('tok', 's1', change);
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toMatch(/\/design\/submissions\/s1\/review\/edits$/);
+    expect(String(url)).toMatch(/\/design\/submissions\/s1\/review\/status$/);
     expect(init.method).toBe('POST');
-    expect(init.body).toBeUndefined();
+    expect(JSON.parse(init.body)).toEqual(change);
+  });
+
+  it('reads who the submission can be assigned to', async () => {
+    const fetchMock = stubFetch();
+
+    await getSobaSubmissionReviewers('tok', 's1');
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/design\/submissions\/s1\/review\/reviewers$/);
+    expect(init.method).toBe('GET');
+  });
+
+  it('puts staff changes to the answers, with the revision they were based on', async () => {
+    const fetchMock = stubFetch();
+    const body = { data: { a: 2 }, revisionId: 'r3', baseRevisionId: 'r2' };
+
+    await updateSobaSubmissionData('tok', 's1', body);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/design\/submissions\/s1\/data$/);
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body)).toEqual(body);
+  });
+
+  it("sends the owner's own submission back to revise under the client's id", async () => {
+    const fetchMock = stubFetch();
+
+    await reviseSubmitSubmission('tok', 's1', { id: 'c1' });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toMatch(/\/submit\/submissions\/s1\/revise$/);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ id: 'c1' });
   });
 });

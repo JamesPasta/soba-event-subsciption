@@ -20,8 +20,6 @@ import {
 extendZodWithOpenApi(z);
 
 const EXPORTS_PATH = '/design/forms/{id}/exports';
-// Placeholder: added to the route descriptions while the field list is sample data.
-const SAMPLE_NOTE = 'The field list is sample data for now.';
 
 export const FormIdParamSchema = z.object({ id: z.uuid() }).openapi('SubmissionExport_FormIdParam');
 
@@ -83,7 +81,7 @@ const jsonBody = (schema: z.ZodType) => ({
 });
 
 const answer = (description: string, schema: z.ZodType) => ({
-  description: `${description} ${SAMPLE_NOTE}`,
+  description,
   content: { 'application/json': { schema } },
 });
 
@@ -99,7 +97,7 @@ export function registerSubmissionExportOpenApi(registry: OpenAPIRegistry) {
     summary: 'The fields an export with these filters can include',
     request: { params: FormIdParamSchema, body: jsonBody(SubmissionExportFieldsBodySchema) },
     responses: {
-      200: answer('The field list.', SubmissionExportFieldsResponseSchema),
+      200: answer('The field list and submission count.', SubmissionExportFieldsResponseSchema),
       ...accessResponses,
     },
   });

@@ -16,6 +16,9 @@ import { ConflictError } from '../errors';
  * writes state itself.
  *
  * Flow: opened --saved--> draft --saved--> draft --submitted--> submitted.
+ * A reviewer sends a submitted submission back to revise (submitted -> revising); a save keeps it
+ * revising, and a resubmit returns it to submitted. Reviewers move it in and out of revising
+ * (submissionReviewRepo); it never passes through here.
  * Terminal states (submitted, deleted) accept no further edits or submits. Staff delete from any live
  * state; a submitter deletes only from SUBMISSION_IN_PROGRESS_STATES (@soba/lib). Neither passes
  * through resolveSubmissionTransition.
@@ -35,6 +38,15 @@ const TARGET_STATE: Record<SubmissionWriteEventCode, SubmissionWorkflowStateCode
   [SubmissionEventType.submitted]: SubmissionWorkflowState.submitted,
 };
 
+/** A save while revising keeps it revising; it never falls back to a draft. */
+const targetStateOf = (
+  current: string,
+  event: SubmissionWriteEventCode,
+): SubmissionWorkflowStateCode =>
+  current === SubmissionWorkflowState.revising && event === SubmissionEventType.saved
+    ? SubmissionWorkflowState.revising
+    : TARGET_STATE[event];
+
 /**
  * Resolve the workflow state a `saved`/`submitted` event moves the submission into. Throws
  * ConflictError (409) when the submission is already terminal, so an expected denial never surfaces
@@ -47,5 +59,5 @@ export const resolveSubmissionTransition = (
   if (TERMINAL_STATES.has(current)) {
     throw new ConflictError(`Submission is ${current} and can no longer be changed`);
   }
-  return TARGET_STATE[event];
+  return targetStateOf(current, event);
 };

@@ -2,9 +2,11 @@ import {
   SUBMISSION_IN_PROGRESS_STATES,
   ApiErrorCodes,
   type SortLocale,
-  type SubmissionListSort,
+  type StaffSubmissionListSort,
+  type SubmissionReviewStatus,
 } from '@soba/lib';
 import {
+  appendStaffEdit,
   appendSubmissionRevision,
   clearSubmissionProvisioning,
   failSubmissionProvisioning,
@@ -34,6 +36,7 @@ import {
   RevisionReason,
   RevisionStatus,
   SubmissionEventType,
+  SubmissionWorkflowState,
   type SubmissionWriteEventCode,
   type SubmissionWorkflowStateCode,
 } from '../db/codes';
@@ -111,9 +114,13 @@ interface ListInput {
   formVersionId?: string;
   submissionId?: string;
   workflowState?: string;
+  /** Only submissions with a review status, leaving out those not yet submitted. */
+  inReviewOnly?: boolean;
+  reviewStatus?: SubmissionReviewStatus;
+  assigneeId?: string;
   createdBy?: string;
   q?: string;
-  sort: SubmissionListSort;
+  sort: StaffSubmissionListSort;
   locale: SortLocale;
 }
 
@@ -138,6 +145,33 @@ const appendWithJobs = async (
   if (queueJob && result.outcome === 'appended') nudgeJobs(JobType.submission_submitted);
   return result;
 };
+
+const submissionNotFound = () =>
+  new NotFoundError('Submission not found', ApiErrorCodes.submission_not_found);
+
+const revisionIdTaken = () =>
+  new ConflictError('Revision id already used by another write', ApiErrorCodes.revision_id_taken);
+
+/**
+ * Staff change the answers of a submitted submission only, and only the answers the editor loaded:
+ * one in progress or sent back to revise is its submitters' to change.
+ */
+const assertEditable = (
+  submission: { workflowState: string; headRevisionId: string | null },
+  baseRevisionId: string,
+): void => {
+  if (submission.workflowState !== SubmissionWorkflowState.submitted) throw editClosed();
+  if (submission.headRevisionId !== baseRevisionId) throw dataChanged();
+};
+
+const editClosed = () =>
+  new ConflictError(
+    'Only a submitted submission can be changed by staff',
+    ApiErrorCodes.edit_closed,
+  );
+
+const dataChanged = () =>
+  new ConflictError('The answers changed since they were loaded', ApiErrorCodes.data_changed);
 
 export class SubmissionService {
   /**
@@ -210,7 +244,7 @@ export class SubmissionService {
   ): Promise<RecordedWrite> {
     const submission = await getSubmissionRecordById(input.workspaceId, input.submissionId);
     if (!submission) {
-      throw new NotFoundError('Submission not found', ApiErrorCodes.submission_not_found);
+      throw submissionNotFound();
     }
 
     // The replay guard answers most repeats before access; this catches one that lands after it.
@@ -345,7 +379,7 @@ export class SubmissionService {
       });
 
       if (result.outcome === 'not_found') {
-        throw new NotFoundError('Submission not found', ApiErrorCodes.submission_not_found);
+        throw submissionNotFound();
       }
 
       return {
@@ -379,6 +413,64 @@ export class SubmissionService {
         err instanceof Error ? err.message : String(err),
       );
       throw err;
+    }
+  }
+
+  /**
+   * Staff change the answers of a submitted submission. The form engine validates them as a submit
+   * does. The checks run before the engine write too, so a refused edit leaves no engine document;
+   * the append checks again under the lock. A retry of the same edit by the same person is answered
+   * as made.
+   */
+  async editAsStaff(input: SaveInput): Promise<LabelledSubmissionRecord> {
+    const submission = await getSubmissionRecordById(input.workspaceId, input.submissionId);
+    if (!submission) {
+      throw submissionNotFound();
+    }
+    const recorded = await getSubmissionRevisionById(input.revisionId);
+    if (recorded) {
+      const sameEdit =
+        recorded.submissionId === input.submissionId &&
+        recorded.eventType === SubmissionEventType.edited &&
+        recorded.changedBy === input.actorId;
+      if (!sameEdit) throw revisionIdTaken();
+      return this.labelled(submission);
+    }
+    assertEditable(submission, input.baseRevisionId);
+
+    const { engineSchemaRef, createSubmission } = await this.resolveSubmissionEngine(submission);
+    const { engineRef } = await createSubmission({
+      engineFormRef: engineSchemaRef,
+      submissionId: input.submissionId,
+      revisionId: input.revisionId,
+      workspaceId: input.workspaceId,
+      data: input.data,
+      validate: true,
+    });
+    const result = await appendStaffEdit({
+      workspaceId: input.workspaceId,
+      submissionId: input.submissionId,
+      revisionId: input.revisionId,
+      baseRevisionId: input.baseRevisionId,
+      actorId: input.actorId,
+      actorDisplayLabel: input.actorDisplayLabel,
+      afterEngineSubmissionRef: engineRef,
+    }).catch((err: unknown) => {
+      if (isUniqueViolationOn(err, SUBMISSION_REVISION_PKEY)) throw revisionIdTaken();
+      throw err;
+    });
+    switch (result.outcome) {
+      case 'missing':
+        throw submissionNotFound();
+      case 'taken':
+        throw revisionIdTaken();
+      // Moved under the lock after the checks above.
+      case 'closed':
+        throw editClosed();
+      case 'stale':
+        throw dataChanged();
+      default:
+        return this.labelled(result.record);
     }
   }
 

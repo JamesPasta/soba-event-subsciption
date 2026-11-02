@@ -33,3 +33,6 @@ integration/.cache/
 deployments/helm/*/charts/
 
 lib/dist
+
+# JetBrains IDE settings
+.idea/

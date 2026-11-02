@@ -75,15 +75,17 @@ purge clears its tables itself.
 | `ui/InheritCheckbox.tsx`, `ui/useInheritableEdit.ts` | a shared group's "Use the workspace setting" choice, and the edit layered over its loaded view                                                                                                                 |
 | `<group>/`                                           | the section components and `index.ts` (the section descriptors; a shared group has a form section and a workspace section)                                                                                     |
 
-Form Settings (10) and Form Profile (20) save through the form update; Form Audience (25) and
-Submitter Settings (30) use their group endpoints. The audience's login providers come from
+Form Settings (10) and Form Profile (20) save through the form update; Form Audience (25),
+Submitter Settings (30) and Review Settings (35) use their group endpoints. The audience's login providers come from
 `GET /meta/login-providers` through `useLoginProviders`.
 
-A workspace's Form Settings tab holds Form Audience (10), Submitter Settings (20) and API Keys
-(30); a form's Settings tab holds API Keys at 50. API Keys is a collection of keys rather than one
-set of values, so its drawers use the credential feature's own table and add/edit form instead of
-the settings GET/PUT and the Save/Cancel footer. Both drawers show only while the `api-keys`
-feature is on. See [credential issuer](credential-issuer.md).
+A workspace's Form Settings tab holds one section per shared group: Form Audience (10), Submitter
+Settings (20) and Review Settings (30). Only workspace owners and admins reach the page, so the sections are editable there.
+
+API Keys sits at 40 on a workspace's Form Settings tab and at 50 on a form's Settings tab. It is a
+collection of keys rather than one set of values, so its drawers use the credential feature's own
+table and add/edit form instead of the settings GET/PUT and the Save/Cancel footer. Both drawers
+show only while the `api-keys` feature is on. See [credential issuer](credential-issuer.md).
 
 A section's `weight` orders the Settings tab. A module's `weight` orders mounting. The two are
 unrelated, and one group's numbers need not match.

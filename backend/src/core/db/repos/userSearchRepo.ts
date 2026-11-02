@@ -1,6 +1,7 @@
 import { and, asc, eq, ilike, sql, type SQL } from 'drizzle-orm';
 import type { UserSearchField } from '@soba/lib';
 import { db } from '../client';
+import { AppUserStatus } from '../codes';
 import { appUsers, userIdentities } from '../schema';
 import { prefixPattern } from '../listSort';
 
@@ -39,7 +40,7 @@ export async function searchSobaUsers(input: SobaUserSearchInput): Promise<SobaU
   const { identityProvider, filters, limit } = input;
   const conditions: SQL[] = [
     eq(userIdentities.identityProviderCode, identityProvider),
-    eq(appUsers.status, 'active'),
+    eq(appUsers.status, AppUserStatus.active),
   ];
   if (filters.email) conditions.push(ilike(profileText('email'), prefixPattern(filters.email)));
   if (filters.firstName) conditions.push(nameMatches('firstName', filters.firstName));

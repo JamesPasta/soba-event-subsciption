@@ -39,7 +39,11 @@ import { setAuthenticated, setToken } from '@/lib/slices/keycloakSlice';
 import { ApiError } from '@/src/shared/api/sobaHelpers';
 import { PageLayout } from '@/src/components/PageLayout';
 import { SubmissionExport } from '@/src/features/designer/ui/SubmissionExport';
-import type { SubmissionExport as SubmissionExportRecord } from '@/src/types/submissionExport';
+import {
+  SUBMISSION_EXPORT_MAX_FIELD_LENGTH,
+  SUBMISSION_EXPORT_MAX_FIELDS,
+  type SubmissionExport as SubmissionExportRecord,
+} from '@/src/types/submissionExport';
 
 const FIELDS = ['form.confirmationId', 'applicantName', 'applicantEmail'];
 const FIRST_LAYOUT = 'multiRowEmptySpacesCSVExport';
@@ -143,12 +147,12 @@ describe('SubmissionExport', () => {
         { id: 'v2', versionNo: 2, state: 'published' },
       ],
     });
-    getSobaExportFields.mockResolvedValue({ fields: FIELDS });
+    getSobaExportFields.mockResolvedValue({ fields: FIELDS, count: 12 });
     listSobaSubmissionExports.mockResolvedValue(listPage([]));
     startSobaSubmissionExport.mockResolvedValue(QUEUED);
   });
 
-  it('starts as CSV, all versions and all dates, and says the page shows sample data', async () => {
+  it('starts as CSV, all versions and all dates, and says the CSV formats are not applied', async () => {
     await openExport();
 
     expect(radio('CSV').checked).toBe(true);
@@ -157,8 +161,31 @@ describe('SubmissionExport', () => {
     expect(screen.queryByTestId('export-range')).toBeNull();
     expect(lastFieldsFilters()).toEqual({ layout: FIRST_LAYOUT });
     expect(screen.getByTestId('page-notice-submission-export-sample')).toHaveTextContent(
-      'sample data',
+      'The CSV formats are not applied yet.',
     );
+  });
+
+  it.each([
+    [12, '12 submissions match these filters.'],
+    [1, '1 submission matches these filters.'],
+    [0, 'No submissions match these filters.'],
+  ])('says how many submissions the filters cover (%i)', async (count, said) => {
+    getSobaExportFields.mockResolvedValue({ fields: FIELDS, count });
+    await openExport();
+
+    expect(screen.getByTestId('export-submission-count')).toHaveTextContent(said);
+  });
+
+  it('shows the count for JSON too, and none while the field list reloads', async () => {
+    await openExport();
+    await click(radio('JSON'));
+    expect(await screen.findByTestId('export-submission-count')).toBeInTheDocument();
+    await click(radio('CSV'));
+    getSobaExportFields.mockReturnValue(new Promise(() => {}));
+
+    await click(radio('2 - Multiple rows per submission'));
+
+    expect(screen.queryByTestId('export-submission-count')).toBeNull();
   });
 
   it('hides the layout and field list for JSON, and sends neither', async () => {
@@ -183,6 +210,16 @@ describe('SubmissionExport', () => {
     expect(screen.queryByTestId('export-fields')).toBeNull();
     await click(exportButton());
     expect(startBody()).toEqual({ format: 'csv', layout: 'unFormattedCSVExport' });
+  });
+
+  it('does not start an export on Enter in the field search', async () => {
+    await openExport();
+    const search = screen.getByRole('textbox', { name: 'Search fields' });
+
+    await userEvent.type(search, 'email{Enter}');
+
+    expect(search).toHaveValue('email');
+    expect(startSobaSubmissionExport).not.toHaveBeenCalled();
   });
 
   it('sends only the ticked fields', async () => {
@@ -234,6 +271,85 @@ describe('SubmissionExport', () => {
     await waitFor(() => expect(exportButton()).not.toBeDisabled());
     await click(exportButton());
     expect(startBody()).toEqual({ format: 'csv', layout: FIRST_LAYOUT, fields: FIELDS, ...RANGE });
+  });
+
+  it('offers published and archived versions, not a draft', async () => {
+    lookupFormVersions.mockResolvedValue({
+      items: [
+        { id: 'v1', versionNo: 1, state: 'archived' },
+        { id: 'v2', versionNo: 2, state: 'published' },
+        { id: 'v3', versionNo: 3, state: 'draft' },
+      ],
+    });
+    await openExport();
+
+    await userEvent.setup().click(within(screen.getByTestId('export-version')).getByRole('button'));
+
+    const options = await screen.findAllByRole('option');
+    expect(options.map((option) => option.textContent)).toEqual([
+      'All versions',
+      'Version 2',
+      'Version 1',
+    ]);
+  });
+
+  it('names every field shown when all are ticked', async () => {
+    await openExport();
+    expect(screen.getByTestId('export-fields-count')).toHaveTextContent('3 of 3 fields selected');
+
+    await click(exportButton());
+
+    expect(startBody()).toEqual({ format: 'csv', layout: FIRST_LAYOUT, fields: FIELDS });
+  });
+
+  it.each([
+    [
+      'more fields than the start route accepts',
+      Array.from({ length: SUBMISSION_EXPORT_MAX_FIELDS + 1 }, (_, index) => `field${index}`),
+    ],
+    [
+      'a name longer than the start route accepts',
+      ['name', 'x'.repeat(SUBMISSION_EXPORT_MAX_FIELD_LENGTH + 1)],
+    ],
+  ])(
+    'sends no names when all are ticked, with %s',
+    async (_why, fields) => {
+      getSobaExportFields.mockResolvedValue({ fields, count: 1 });
+      await openExport();
+
+      await click(exportButton());
+
+      expect(startBody()).toEqual({ format: 'csv', layout: FIRST_LAYOUT });
+    },
+    // A thousand checkboxes take a while to render on a slow runner.
+    20_000,
+  );
+
+  it('cannot export on returning to earlier filters until the new read answers', async () => {
+    await openExport();
+    await click(radio('2 - Multiple rows per submission'));
+    await screen.findByTestId('export-fields');
+    getSobaExportFields.mockReturnValue(new Promise(() => {}));
+
+    await click(radio('1 - Multiple rows per submission with indentation spaces'));
+
+    expect(exportButton()).toBeDisabled();
+    expect(screen.queryByTestId('export-submission-count')).toBeNull();
+  });
+
+  it('reads the count and fields again on returning to the same filters', async () => {
+    await openExport();
+    expect(screen.getByTestId('export-submission-count')).toHaveTextContent('12 submissions');
+    await click(radio('2 - Multiple rows per submission'));
+    await screen.findByTestId('export-fields');
+    getSobaExportFields.mockResolvedValue({ fields: [...FIELDS, 'added'], count: 13 });
+
+    await click(radio('1 - Multiple rows per submission with indentation spaces'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('export-submission-count')).toHaveTextContent('13 submissions'),
+    );
+    expect(screen.getByTestId('export-fields-count')).toHaveTextContent('4 of 4 fields selected');
   });
 
   it('cannot export while the field list reloads after a filter change', async () => {

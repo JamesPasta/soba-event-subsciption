@@ -26,7 +26,11 @@ vi.mock('@/app/[lang]/Providers', () => ({
       noContent: 'No submitted answers to display.',
       submittedOn: 'Submitted',
     },
-    mySubmissions: { viewAll: 'View my submissions' },
+    mySubmissions: {
+      viewAll: 'View my submissions',
+      continue: 'Continue',
+      reviewStatuses: { completed: 'Completed', revisionRequested: 'Revision requested' },
+    },
   }),
 }));
 
@@ -122,6 +126,50 @@ describe('SubmissionView', () => {
       'Confirmation ID: K7M2Q9XA',
     );
     expect(screen.queryByTestId('submission-view-submitter')).not.toBeInTheDocument();
+  });
+
+  it('shows the review as its submitter is told it, with nothing to continue', async () => {
+    initAnswered();
+    getSubmitSubmission.mockResolvedValue({
+      ...(await getSubmitSubmission()),
+      reviewLabel: 'completed',
+    });
+    await renderView();
+
+    expect(await screen.findByTestId('submission-view-status')).toHaveTextContent('Completed');
+    expect(screen.queryByTestId('submission-view-continue')).not.toBeInTheDocument();
+  });
+
+  it('links a submitter asked to revise back to the form', async () => {
+    initAnswered();
+    getSubmitSubmission.mockResolvedValue({
+      ...(await getSubmitSubmission()),
+      workflowState: 'revising',
+      reviewLabel: 'revisionRequested',
+      canContinue: true,
+    });
+    await renderView();
+
+    expect(await screen.findByTestId('submission-view-status')).toHaveTextContent(
+      'Revision requested',
+    );
+    await act(async () => screen.getByTestId('submission-view-continue').click());
+
+    expect(push).toHaveBeenCalledWith('/en/submit/sub-1');
+  });
+
+  it('offers no way to continue to someone who may no longer write it', async () => {
+    initAnswered();
+    getSubmitSubmission.mockResolvedValue({
+      ...(await getSubmitSubmission()),
+      workflowState: 'revising',
+      reviewLabel: 'revisionRequested',
+      canContinue: false,
+    });
+    await renderView();
+
+    await screen.findByTestId('submission-view-status');
+    expect(screen.queryByTestId('submission-view-continue')).not.toBeInTheDocument();
   });
 
   it('shows no confirmation line for a submission without a code', async () => {

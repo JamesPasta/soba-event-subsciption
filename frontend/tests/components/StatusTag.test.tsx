@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import {
   StatusTag,
+  submitterReviewToVariant,
   workspaceRoleToVariant,
   workflowStateToVariant,
 } from '@/src/components/StatusTag';
@@ -44,5 +45,17 @@ describe('StatusTag', () => {
   it('maps workflow states to variants', () => {
     expect(workflowStateToVariant('submitted')).toBe('success');
     expect(workflowStateToVariant('draft')).toBe('neutral');
+    expect(workflowStateToVariant('revising')).toBe('warning');
+    // A review status reads the same as its workflow state.
+    expect(workflowStateToVariant('REVISING')).toBe('warning');
+  });
+
+  it.each([
+    ['submitted', 'success'],
+    ['inReview', 'info'],
+    ['completed', 'success'],
+    ['revisionRequested', 'warning'],
+  ] as const)('colours the review label %s as %s', (label, variant) => {
+    expect(submitterReviewToVariant(label)).toBe(variant);
   });
 });

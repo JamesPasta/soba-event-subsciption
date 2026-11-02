@@ -1,8 +1,19 @@
 import { and, eq } from 'drizzle-orm';
-import type { SubmissionAccessFacts } from '@soba/lib';
+import {
+  submitterReviewLabelOf,
+  type SubmissionReviewStatus,
+  type SubmissionReviseFacts,
+} from '@soba/lib';
 import { db, type DbOrTx } from '../client';
 import { PUBLIC_PROVIDER_CODE, SubmissionParticipantStatus } from '../codes';
-import { formVersions, forms, submissionParticipants, submissions, workspaces } from '../schema';
+import {
+  formVersions,
+  forms,
+  submissionParticipants,
+  submissions,
+  submissionStatuses,
+  workspaces,
+} from '../schema';
 import { liveSubmission } from './liveRows';
 import type { SubmissionDetailRow } from './submissionRepo';
 import { formFacts, type SubmitterFormListRow } from './submitterFormRepo';
@@ -14,12 +25,17 @@ export interface SubmitterSubmissionRow extends SubmissionDetailRow {
   /** The submission's own form version in the engine. */
   engineSchemaRef: string | null;
   formEngineCode: string;
+  /** The current review status change; null before it is submitted. */
+  statusId: string | null;
 }
 
-/** A submission, the caller's standing on it, and its form with its facts for the caller. */
+/**
+ * A submission, the caller's standing on it and where its review stands, and its form with its
+ * facts for the caller.
+ */
 export interface SubmitterSubmission {
   submission: SubmitterSubmissionRow;
-  access: SubmissionAccessFacts;
+  access: SubmissionReviseFacts;
   form: SubmitterFormListRow;
 }
 
@@ -63,6 +79,8 @@ export const findSubmitterSubmission = async (
           engineSubmissionRef: submissions.engineSubmissionRef,
           engineSchemaRef: formVersions.engineSchemaRef,
           formEngineCode: forms.formEngineCode,
+          statusId: submissions.statusId,
+          reviewStatus: submissionStatuses.status,
           workspaceName: workspaces.name,
           role: submissionParticipants.role,
           ...facts.columns,
@@ -71,6 +89,7 @@ export const findSubmitterSubmission = async (
         .innerJoin(forms, eq(forms.id, submissions.formId))
         .innerJoin(workspaces, eq(workspaces.id, submissions.workspaceId))
         .innerJoin(formVersions, eq(formVersions.id, submissions.formVersionId))
+        .leftJoin(submissionStatuses, eq(submissionStatuses.id, submissions.statusId))
         .leftJoin(
           submissionParticipants,
           and(
@@ -93,11 +112,17 @@ export const findSubmitterSubmission = async (
     audienceMode,
     audienceIdps,
     allowSubmitterDrafts,
+    allowSubmitterRevision,
+    reviewStatus,
     ...submission
   } = row;
   return {
     submission,
-    access: { role, workflowState: submission.workflowState },
+    access: {
+      role,
+      workflowState: submission.workflowState,
+      reviewStatus: submitterReviewLabelOf(reviewStatus as SubmissionReviewStatus | null),
+    },
     form: {
       id: submission.formId,
       name: submission.form.name,
@@ -108,6 +133,7 @@ export const findSubmitterSubmission = async (
       audienceMode,
       audienceIdps,
       allowSubmitterDrafts,
+      allowSubmitterRevision,
     },
   };
 };

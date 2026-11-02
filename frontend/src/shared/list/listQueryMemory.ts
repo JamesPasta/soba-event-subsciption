@@ -7,6 +7,7 @@ import {
   JOB_SORT_FIELDS,
   MY_FORM_SORT_FIELDS,
   SOBA_ADMIN_SORT_FIELDS,
+  STAFF_SUBMISSION_SORT_FIELDS,
   SUBMISSION_EXPORT_SORT_FIELDS,
   SUBMISSION_SORT_FIELDS,
   WORKSPACE_ACCESS_SORT_FIELDS,
@@ -75,8 +76,9 @@ export const WORKSPACES_LIST_QUERY: ListQuerySpec = {
 /** The submissions tab inside the designer. Same shape, its own remembered query. */
 export const FORM_SUBMISSIONS_LIST_QUERY: ListQuerySpec = {
   resource: 'formSubmissions',
-  filters: [],
-  sortOptions: sortTokensFor(SUBMISSION_SORT_FIELDS),
+  // The review status, and `mine` for the submissions assigned to the caller.
+  filters: ['reviewStatus', 'mine'],
+  sortOptions: sortTokensFor(STAFF_SUBMISSION_SORT_FIELDS),
   // A column carries this one, so the header can report the order and reverse it.
   defaultSort: 'submittedAt:desc',
 };

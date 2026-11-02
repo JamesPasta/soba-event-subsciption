@@ -2,7 +2,9 @@ import { Response } from 'express';
 import { z } from 'zod';
 import {
   ApiErrorCodes,
+  canContinueSubmission,
   type MySubmissionRole,
+  type ReviseSubmissionBody,
   type SubmitFillBundle,
   type SubmitFormVersionSchemaResponse,
 } from '@soba/lib';
@@ -10,9 +12,11 @@ import { asyncHandler } from '../shared/asyncHandler';
 import { NotFoundError } from '../../errors';
 import { formsApiService, formVersionService, submissionsApiService } from '../../container';
 import type { SubmitterSubmissionRow } from '../../db/repos/submitterSubmissionRepo';
+import { resolveCaller } from '../../middleware/actor';
 import { loadedForm, loadedFormVersion, loadedSubmission } from '../../middleware/formSubmitAccess';
 import { toSubmitterFormDto } from '../forms/serviceFactory';
 import { toSubmissionDto } from '../submissions/serviceFactory';
+import { submissionReviewService } from '../submissions/reviewService';
 import { workspacesApiService } from '../workspaces/service';
 import type { Request, RequestHandler } from 'express';
 import { ListMyFormsQuerySchema, ListMySubmissionsQuerySchema } from './schema';
@@ -42,8 +46,32 @@ const readContent = (submission: SubmitterSubmissionRow) =>
     engineSubmissionRef: submission.engineSubmissionRef,
   });
 
+/**
+ * The owner sends their own submission back to revise; answers with the submission as it now
+ * stands. Runs after requireSubmissionRevise.
+ */
+export const reviseOwnSubmission = asyncHandler(
+  async (req: Request<{ id: string }, unknown, ReviseSubmissionBody>, res: Response) => {
+    const { submission } = loadedSubmission(req);
+    const ctx = req.coreContext!;
+    await submissionReviewService.reviseOwn(
+      { ...ctx, submissionId: submission.id, fromStatusId: submission.statusId },
+      req.body,
+    );
+    const revised = await submissionsApiService.get(ctx, submission.id);
+    if (!revised)
+      throw new NotFoundError('Submission not found', ApiErrorCodes.submission_not_found);
+    res.json(revised);
+  },
+);
+
 export const getSubmitSubmission: RequestHandler = (req, res) => {
-  res.json(toSubmissionDto(loadedSubmission(req).submission));
+  const { submission, access, form } = loadedSubmission(req);
+  res.json({
+    ...toSubmissionDto(submission),
+    reviewLabel: access.reviewStatus,
+    canContinue: canContinueSubmission(access, form, resolveCaller(req)),
+  });
 };
 
 export const getSubmitSubmissionData = asyncHandler(async (req: Request, res: Response) => {

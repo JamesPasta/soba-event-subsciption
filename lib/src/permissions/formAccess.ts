@@ -42,6 +42,8 @@ export interface DraftSaveFacts {
 export interface SubmitterFormFacts extends FormAccessFacts, DraftSaveFacts {
   /** Null when the form has no published version. */
   publishedVersionId: string | null;
+  /** The form's own review setting letting submitters revise, or its workspace's. */
+  allowSubmitterRevision: boolean;
 }
 
 const isCodeList = (codes: readonly string[] | ReadonlySet<string>): codes is readonly string[] =>

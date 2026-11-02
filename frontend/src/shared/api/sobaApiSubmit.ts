@@ -21,10 +21,11 @@ import type {
   SubmissionDataBody,
   SubmissionResponse,
   SubmissionWriteResponse,
-  SubmissionListItem,
   SubmitSubmissionBody,
+  SubmitSubmissionResponse,
   ListMySubmissionsResponse,
   MySubmissionState,
+  ReviseSubmissionBody,
 } from '@/src/types/submissions';
 
 /**
@@ -171,11 +172,25 @@ export async function deleteSubmitSubmission(token: string, submissionId: string
   if (!response.ok && response.status !== 404) await parseJson(response);
 }
 
+/** The owner sends their own submitted submission back to revise; a retry of `body.id` answers the same. */
+export async function reviseSubmitSubmission(
+  token: string,
+  submissionId: string,
+  body: ReviseSubmissionBody,
+): Promise<SubmissionResponse> {
+  const response = await sobaFetch(`/submit/submissions/${submissionId}/revise`, {
+    token,
+    method: 'POST',
+    json: body,
+  });
+  return parseJson<SubmissionResponse>(response);
+}
+
 /** Read a submission's metadata for the confirmation view. */
 export async function getSubmitSubmission(
   token: string | undefined,
   id: string,
-): Promise<SubmissionListItem> {
+): Promise<SubmitSubmissionResponse> {
   const response = await sobaFetch(`/submit/submissions/${id}`, { token });
   return parseJson(response);
 }

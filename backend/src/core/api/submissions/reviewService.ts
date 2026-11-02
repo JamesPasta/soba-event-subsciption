@@ -1,66 +1,227 @@
-import { randomUUID } from 'node:crypto';
 import {
-  SubmissionReviewSchema,
+  ApiErrorCodes,
+  hasAllPermissions,
+  Permissions,
+  SubmissionReviewStatuses,
+  type AddSubmissionNoteBody,
+  type ReviseSubmissionBody,
   type SubmissionReview,
+  type SubmissionReviewers,
   type UpdateSubmissionStatusBody,
 } from '@soba/lib';
-import reviewData from './reviewData.json';
+import { findEffectiveReviewSettings } from '../../../features/form-settings/review/repo';
+import { listFormUserIdsHolding, resolveFormPermissions } from '../../db/repos/formAccessRepo';
+import {
+  addNote,
+  changeStatus,
+  listEdits,
+  listNotes,
+  listReviewUsers,
+  listStatusHistory,
+} from '../../db/repos/submissionReviewRepo';
+import { getSubmissionRecordById } from '../../db/repos/submissionRepo';
+import { getPublicUser } from '../../services/publicUser';
+import { sendStatusEmail } from '../../../features/submission-review/statusEmails';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../errors';
 import type { SubmissionsContextInput } from './serviceFactory';
 
-// Placeholder methods, still to be replaced by a real service. Data comes from static
-// reviewData.json; changes stay in memory until restart.
-const sampleReview = SubmissionReviewSchema.parse(reviewData);
-const reviews = new Map<string, SubmissionReview>();
+/** The review routes resolve the submission's form before they run. */
+export type SubmissionReviewContext = SubmissionsContextInput & { formId?: string };
 
-const read = (submissionId: string): SubmissionReview => reviews.get(submissionId) ?? sampleReview;
+const formIdOf = (ctx: SubmissionReviewContext): string => {
+  if (!ctx.formId) throw new Error('The submission review routes must resolve the form first');
+  return ctx.formId;
+};
 
-const actorOf = (ctx: SubmissionsContextInput): string => ctx.actorDisplayLabel ?? ctx.actorId;
+const notFound = () =>
+  new NotFoundError('Submission not found', ApiErrorCodes.submission_not_found);
 
-// Answers with a promise, as the real storage will.
-function writeAsync(
-  submissionId: string,
-  change: Partial<SubmissionReview>,
-): Promise<SubmissionReview> {
-  const next = { ...read(submissionId), ...change };
-  reviews.set(submissionId, next);
-  return Promise.resolve(next);
-}
+/**
+ * A revision is asked of the person who submitted; an anonymous submission has no one to ask, and
+ * every anonymous caller would hold its grant.
+ */
+const assertRevisable = async (workspaceId: string, submissionId: string): Promise<void> => {
+  const [record, publicUser] = await Promise.all([
+    getSubmissionRecordById(workspaceId, submissionId),
+    getPublicUser(),
+  ]);
+  if (!record) throw notFound();
+  if (!record.submittedBy || record.submittedBy === publicUser?.id) {
+    throw new ConflictError(
+      'An anonymous submission cannot be sent back to revise',
+      ApiErrorCodes.revision_needs_submitter,
+    );
+  }
+};
 
+/** An assignee is an active user holding submission_review on the form, as the picker lists them. */
+const assertAssignable = async (
+  workspaceId: string,
+  formId: string,
+  assigneeId: string,
+): Promise<void> => {
+  const [permissions, activeUsers] = await Promise.all([
+    resolveFormPermissions(assigneeId, workspaceId, formId),
+    listReviewUsers([assigneeId]),
+  ]);
+  if (
+    activeUsers.length === 0 ||
+    !hasAllPermissions(permissions, [Permissions.submission_review])
+  ) {
+    throw new ValidationError(
+      'The assignee cannot review submissions of this form',
+      ApiErrorCodes.assignee_invalid,
+    );
+  }
+};
+
+const read = async (ctx: SubmissionReviewContext, submissionId: string) => {
+  const [settings, statusHistory, notes, editHistory] = await Promise.all([
+    findEffectiveReviewSettings(ctx.workspaceId, formIdOf(ctx)),
+    listStatusHistory(ctx.workspaceId, submissionId),
+    listNotes(ctx.workspaceId, submissionId),
+    listEdits(ctx.workspaceId, submissionId),
+  ]);
+  return {
+    allowStatusUpdates: settings.allowStatusUpdates,
+    statusHistory,
+    notes,
+    editHistory,
+  } satisfies SubmissionReview;
+};
+
+/** A submission's review: its status history, staff notes and edit history. */
 export const submissionReviewService = {
-  get: (_ctx: SubmissionsContextInput, submissionId: string) => Promise.resolve(read(submissionId)),
+  get: (ctx: SubmissionReviewContext, submissionId: string): Promise<SubmissionReview> =>
+    read(ctx, submissionId),
 
-  updateStatus: (
-    ctx: SubmissionsContextInput,
+  /** Adds a note under the client's id; a retry of the same note adds nothing more. */
+  async addNote(
+    ctx: SubmissionReviewContext,
+    submissionId: string,
+    body: AddSubmissionNoteBody,
+  ): Promise<SubmissionReview> {
+    const outcome = await addNote({
+      id: body.id,
+      workspaceId: ctx.workspaceId,
+      submissionId,
+      text: body.text,
+      actorId: ctx.actorId,
+      actorDisplayLabel: ctx.actorDisplayLabel,
+    });
+    if (outcome === 'missing') throw notFound();
+    if (outcome === 'taken') {
+      throw new ConflictError('Note id is already used', ApiErrorCodes.note_id_taken);
+    }
+    return read(ctx, submissionId);
+  },
+
+  /** Who the submission can be assigned to: everyone holding submission_review on its form. */
+  async listReviewers(ctx: SubmissionReviewContext): Promise<SubmissionReviewers> {
+    const userIds = await listFormUserIdsHolding(
+      ctx.workspaceId,
+      formIdOf(ctx),
+      Permissions.submission_review,
+    );
+    return { items: await listReviewUsers(userIds) };
+  },
+
+  /**
+   * Moves the submission to a new status when the form's review settings allow it or the move ends a
+   * revision, the move is allowed from the current status, and the status has not moved on since the
+   * reviewer saw it. An assignee must hold submission_review on the form. A retry of the same change
+   * makes it once.
+   */
+  async updateStatus(
+    ctx: SubmissionReviewContext,
     submissionId: string,
     body: UpdateSubmissionStatusBody,
-  ) =>
-    writeAsync(submissionId, {
-      statusHistory: [
-        {
-          id: randomUUID(),
-          status: body.status,
-          assignee: body.assignee,
-          changedAt: new Date().toISOString(),
-          updatedBy: actorOf(ctx),
-        },
-        ...read(submissionId).statusHistory,
-      ],
-    }),
+  ): Promise<SubmissionReview> {
+    const formId = formIdOf(ctx);
+    const settings = await findEffectiveReviewSettings(ctx.workspaceId, formId);
+    if (body.assigneeId) await assertAssignable(ctx.workspaceId, formId, body.assigneeId);
+    if (body.status === SubmissionReviewStatuses.revising) {
+      await assertRevisable(ctx.workspaceId, submissionId);
+    }
 
-  addNote: (ctx: SubmissionsContextInput, submissionId: string, text: string) =>
-    writeAsync(submissionId, {
-      notes: [
-        { id: randomUUID(), text, createdAt: new Date().toISOString(), createdBy: actorOf(ctx) },
-        ...read(submissionId).notes,
-      ],
-    }),
+    const outcome = await changeStatus({
+      id: body.id,
+      workspaceId: ctx.workspaceId,
+      submissionId,
+      fromStatusId: body.fromStatusId,
+      status: body.status,
+      assigneeId: body.assigneeId,
+      actorId: ctx.actorId,
+      actorDisplayLabel: ctx.actorDisplayLabel,
+      allowStatusUpdates: settings.allowStatusUpdates,
+      comment: body.comment || undefined,
+    });
+    // After the commit, and only for a change this request made: a retry sends nothing again.
+    if (outcome === 'changed') {
+      await sendStatusEmail({
+        workspaceId: ctx.workspaceId,
+        submissionId,
+        actorId: ctx.actorId,
+        status: body.status,
+        assigneeId: body.assigneeId,
+        comment: body.attachCommentToEmail ? body.comment : undefined,
+      });
+    }
+    switch (outcome) {
+      case 'missing':
+        throw notFound();
+      case 'taken':
+        throw new ConflictError('Status change id is already used', ApiErrorCodes.status_id_taken);
+      case 'stale':
+        throw new ConflictError(
+          'The status changed since it was read',
+          ApiErrorCodes.status_changed,
+        );
+      case 'updates_off':
+        throw new ForbiddenError(
+          'Status updates are turned off for this form',
+          ApiErrorCodes.status_updates_disabled,
+        );
+      case 'not_allowed':
+        throw new ConflictError(
+          'This move is not allowed from the current status',
+          ApiErrorCodes.status_move_not_allowed,
+        );
+      default:
+        return read(ctx, submissionId);
+    }
+  },
 
-  /** Records that the answers were changed. The answers themselves are not written here. */
-  recordEdit: (ctx: SubmissionsContextInput, submissionId: string) =>
-    writeAsync(submissionId, {
-      editHistory: [
-        { id: randomUUID(), editedAt: new Date().toISOString(), editedBy: actorOf(ctx) },
-        ...read(submissionId).editHistory,
-      ],
-    }),
+  /**
+   * The owner sends their own submission back to revise: Submitted to Revising, under the id the
+   * client chose, from the status the route read. The route has applied reviseStatusOf to the caller.
+   */
+  async reviseOwn(
+    input: SubmissionsContextInput & { submissionId: string; fromStatusId: string | null },
+    body: ReviseSubmissionBody,
+  ): Promise<void> {
+    const outcome = input.fromStatusId
+      ? await changeStatus({
+          id: body.id,
+          workspaceId: input.workspaceId,
+          submissionId: input.submissionId,
+          fromStatusId: input.fromStatusId,
+          status: SubmissionReviewStatuses.revising,
+          assigneeId: null,
+          actorId: input.actorId,
+          actorDisplayLabel: input.actorDisplayLabel,
+          onlyFrom: SubmissionReviewStatuses.submitted,
+        })
+      : 'not_allowed';
+    if (outcome === 'missing') throw notFound();
+    if (outcome === 'taken') {
+      throw new ConflictError('Status change id is already used', ApiErrorCodes.status_id_taken);
+    }
+    if (outcome === 'stale' || outcome === 'not_allowed') {
+      throw new ConflictError(
+        'The submission can no longer be revised by its submitter',
+        ApiErrorCodes.revise_closed,
+      );
+    }
+  },
 };

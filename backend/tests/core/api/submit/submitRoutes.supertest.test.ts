@@ -84,6 +84,7 @@ const submitterForm = (overrides: Record<string, unknown> = {}) => ({
   audienceMode: 'members' as const,
   audienceIdps: [],
   allowSubmitterDrafts: true,
+  allowSubmitterRevision: false,
   ...overrides,
 });
 
@@ -154,6 +155,7 @@ describe('submit routes over one read', () => {
         audienceMode: 'members',
         audienceIdps: [],
         allowSubmitterDrafts: true,
+        allowSubmitterRevision: false,
       },
       schema: { components: [] },
       content: { data: { a: 1 } },

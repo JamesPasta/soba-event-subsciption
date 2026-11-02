@@ -82,6 +82,7 @@ describe('ListMySubmissionsResponseSchema', () => {
     createdAt: '2026-10-13T00:00:00.000Z',
     updatedAt: '2026-10-13T00:00:00.000Z',
     confirmationCode: null,
+    reviewStatus: null,
   };
   const form = {
     id: 'f1',
@@ -93,6 +94,7 @@ describe('ListMySubmissionsResponseSchema', () => {
     audienceMode: 'members',
     audienceIdps: [],
     allowSubmitterDrafts: true,
+    allowSubmitterRevision: false,
   };
   const page = { offset: 0, limit: 10, total: 1 };
   const response = (over: Record<string, unknown> = {}) => ({
@@ -115,6 +117,19 @@ describe('ListMySubmissionsResponseSchema', () => {
     [
       'a row without its revision number',
       response({ items: [{ ...row, currentRevisionNo: undefined }] }),
+      false,
+    ],
+    [
+      'a row sent back to revise, in the label its submitter sees',
+      response({
+        items: [{ ...row, workflowState: 'revising', reviewStatus: 'revisionRequested' }],
+      }),
+      true,
+    ],
+    // The submitter is told the review in its own labels, never its statuses.
+    [
+      'a row with a review status code',
+      response({ items: [{ ...row, reviewStatus: 'ASSIGNED' }] }),
       false,
     ],
   ])('%s', (_label, body, ok) => {

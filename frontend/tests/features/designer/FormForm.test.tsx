@@ -52,6 +52,7 @@ vi.mock('@/app/[lang]/Providers', () => ({
     },
     submission: {
       error: 'Error',
+      review: { listAllStatuses: 'All', statuses: {} },
       export: { button: 'Export submissions' },
     },
     team: {

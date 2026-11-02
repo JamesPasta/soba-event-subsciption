@@ -17,6 +17,7 @@ const bundle = {
     audienceMode: 'members',
     audienceIdps: [],
     allowSubmitterDrafts: true,
+    allowSubmitterRevision: false,
   },
   schema: { components: [] },
   content: null,

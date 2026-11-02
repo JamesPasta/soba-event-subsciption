@@ -12,6 +12,7 @@ import { useSubmitterPrint } from '@/src/features/templates/data/useSubmissionPr
 import { printBaseName } from '@/src/features/templates/printFileName';
 import { PrintSubmissionButton } from '@/src/features/templates/ui/PrintSubmissionButton';
 import { getLocaleFromPath } from '@/src/shared/util/locale';
+import { SubmissionWorkflowState, SubmitterReviewLabels } from '@/src/types/submissions';
 
 /** A submitter's view of one submission; `success` is the confirmation shown right after submit. */
 export function SubmissionView({ success = false }: Readonly<{ success?: boolean }>) {
@@ -36,6 +37,7 @@ export function SubmissionView({ success = false }: Readonly<{ success?: boolean
           submission={data.submission}
           schema={data.schema}
           content={data.content}
+          reviewLabel={data.submission.reviewLabel}
         />
       );
       const actions = (link: React.ReactNode) => (
@@ -49,12 +51,22 @@ export function SubmissionView({ success = false }: Readonly<{ success?: boolean
       if (!success) {
         return (
           <>
-            {actions(null)}
+            {actions(
+              data.submission.canContinue &&
+                data.submission.reviewLabel === SubmitterReviewLabels.revisionRequested ? (
+                <Link
+                  data-testid="submission-view-continue"
+                  onPress={() => router.push(`/${locale}/submit/${submissionId}`)}
+                >
+                  {dict.mySubmissions.continue}
+                </Link>
+              ) : null,
+            )}
             {detail}
           </>
         );
       }
-      if (data.submission.workflowState !== 'submitted') {
+      if (data.submission.workflowState !== SubmissionWorkflowState.submitted) {
         return (
           <InlineAlert
             variant="info"

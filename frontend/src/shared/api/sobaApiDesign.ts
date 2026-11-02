@@ -15,8 +15,20 @@ import type {
   FormVersionLookupResponse,
   SubmissionDataDocument,
 } from '../../types/forms';
-import type { ListSubmissionsResponse, SubmissionListItem } from '@/src/types/submissions';
-import type { SubmissionReview, UpdateSubmissionStatusBody } from '@/src/types/submissionReview';
+import type {
+  ListSubmissionsResponse,
+  SubmissionDataBody,
+  SubmissionResponse,
+} from '@/src/types/submissions';
+import {
+  SUBMISSION_DATA_SUBPATH,
+  SubmissionReviewSubpaths,
+  type AddSubmissionNoteBody,
+  type SubmissionReview,
+  type SubmissionReviewers,
+  type SubmissionReviewStatus,
+  type UpdateSubmissionStatusBody,
+} from '@/src/types/submissionReview';
 import type {
   StartSubmissionExportBody,
   SubmissionExport,
@@ -93,7 +105,13 @@ export async function getSobaForms(
 /** One page of submissions. Search, sort and paging are resolved by the server. */
 export async function getSobaSubmissions(
   token: string,
-  args: ListQueryArgs & { formId?: string; workspaceId?: string; workflowState?: string },
+  args: ListQueryArgs & {
+    formId?: string;
+    workspaceId?: string;
+    workflowState?: string;
+    reviewStatus?: SubmissionReviewStatus;
+    assigneeId?: string;
+  },
 ): Promise<ListSubmissionsResponse> {
   const response = await sobaFetch('/design/submissions', {
     token,
@@ -102,6 +120,8 @@ export async function getSobaSubmissions(
       formId: args.formId,
       workspaceId: args.workspaceId,
       workflowState: args.workflowState,
+      reviewStatus: args.reviewStatus,
+      assigneeId: args.assigneeId,
     },
     headers: sortLocaleHeaders(args.locale),
   });
@@ -109,7 +129,7 @@ export async function getSobaSubmissions(
 }
 
 /** Staff read of a single submission's metadata (management/review). */
-export async function getSobaSubmission(token: string, id: string): Promise<SubmissionListItem> {
+export async function getSobaSubmission(token: string, id: string): Promise<SubmissionResponse> {
   const response = await sobaFetch(`/design/submissions/${id}`, { token });
   return parseJson(response);
 }
@@ -119,14 +139,39 @@ export async function getSobaSubmissionData(
   token: string,
   submissionId: string,
 ): Promise<SubmissionDataDocument | null> {
-  const response = await sobaFetch(`/design/submissions/${submissionId}/data`, { token });
+  const response = await sobaFetch(
+    `/design/submissions/${submissionId}${SUBMISSION_DATA_SUBPATH}`,
+    {
+      token,
+    },
+  );
   if (response.status === 404) return null;
   return parseJson<SubmissionDataDocument>(response);
 }
 
+/**
+ * Staff change a submitted submission's answers, based on the revision they loaded. A retry of
+ * `body.revisionId` answers the same.
+ */
+export async function updateSobaSubmissionData(
+  token: string,
+  submissionId: string,
+  body: SubmissionDataBody,
+): Promise<SubmissionResponse> {
+  const response = await sobaFetch(
+    `/design/submissions/${submissionId}${SUBMISSION_DATA_SUBPATH}`,
+    {
+      token,
+      method: 'PUT',
+      json: body,
+    },
+  );
+  return parseJson<SubmissionResponse>(response);
+}
+
 const reviewPath = (submissionId: string) => `/design/submissions/${submissionId}/review`;
 
-/** Status history, notes and edit history of a submission. The backend serves sample data for now. */
+/** Status history, staff notes and edit history of a submission, each newest first. */
 export async function getSobaSubmissionReview(
   token: string,
   submissionId: string,
@@ -135,12 +180,13 @@ export async function getSobaSubmissionReview(
   return parseJson(response);
 }
 
-export async function updateSobaSubmissionStatus(
+/** Adds a staff note under the id the caller chose; a retry with the same id adds it once. */
+export async function addSobaSubmissionNote(
   token: string,
   submissionId: string,
-  body: UpdateSubmissionStatusBody,
+  body: AddSubmissionNoteBody,
 ): Promise<SubmissionReview> {
-  const response = await sobaFetch(`${reviewPath(submissionId)}/status`, {
+  const response = await sobaFetch(`${reviewPath(submissionId)}${SubmissionReviewSubpaths.notes}`, {
     token,
     method: 'POST',
     json: body,
@@ -148,28 +194,35 @@ export async function updateSobaSubmissionStatus(
   return parseJson(response);
 }
 
-export async function addSobaSubmissionNote(
+/**
+ * Moves a submission to a new status, from the status the caller saw, under the id the caller
+ * chose; a retry with the same id makes the change once.
+ */
+export async function updateSobaSubmissionStatus(
   token: string,
   submissionId: string,
-  text: string,
+  body: UpdateSubmissionStatusBody,
 ): Promise<SubmissionReview> {
-  const response = await sobaFetch(`${reviewPath(submissionId)}/notes`, {
-    token,
-    method: 'POST',
-    json: { text },
-  });
+  const response = await sobaFetch(
+    `${reviewPath(submissionId)}${SubmissionReviewSubpaths.status}`,
+    {
+      token,
+      method: 'POST',
+      json: body,
+    },
+  );
   return parseJson(response);
 }
 
-/** Records that staff changed the answers. The answers themselves are not written yet. */
-export async function recordSobaSubmissionEdit(
+/** Who a submission can be assigned to: everyone holding submission_review on its form. */
+export async function getSobaSubmissionReviewers(
   token: string,
   submissionId: string,
-): Promise<SubmissionReview> {
-  const response = await sobaFetch(`${reviewPath(submissionId)}/edits`, {
-    token,
-    method: 'POST',
-  });
+): Promise<SubmissionReviewers> {
+  const response = await sobaFetch(
+    `${reviewPath(submissionId)}${SubmissionReviewSubpaths.reviewers}`,
+    { token },
+  );
   return parseJson(response);
 }
 

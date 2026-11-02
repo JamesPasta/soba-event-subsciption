@@ -5,7 +5,7 @@ import WorkspaceApiKeyDrawer from './WorkspaceApiKeyDrawer';
 
 export const workspaceApiKeySection: WorkspaceSettingsSection = {
   id: 'workspace-api-keys',
-  weight: 30,
+  weight: 40,
   featureCode: FEATURE_CODES.API_KEYS,
   Drawer: WorkspaceApiKeyDrawer,
 };

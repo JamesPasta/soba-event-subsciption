@@ -3,7 +3,12 @@
  * save, delete and design what, and who reads a workspace's members and groups. No DB, no engine,
  * no clock.
  */
-import type { Audience } from '@soba/lib';
+import {
+  SubmissionReviewStatuses,
+  type Audience,
+  type ReviewSettings,
+  type SubmissionReviewStatus,
+} from '@soba/lib';
 import type { IdpAttributes, NormalizedProfile } from '../../../core/auth/jwtClaims';
 import {
   Roles,
@@ -121,6 +126,8 @@ export interface PlannedCoverageForm {
   audience?: Audience;
   /** The form's own drafts setting; absent inherits the workspace's. */
   allowSubmitterDrafts?: boolean;
+  /** The form's own review settings; absent inherits the workspace's. */
+  review?: ReviewSettings;
   /** Replaces the group's members on this form; cleared leaves the override inactive. */
   groupOverride?: PlannedGroupOverride;
   afterSubmissions?: PlannedChange;
@@ -134,6 +141,7 @@ export interface PlannedCoverageWorkspace {
   disclaimerAccepted: boolean;
   audience: Audience;
   allowSubmitterDrafts: boolean;
+  review: ReviewSettings;
   /** The admin persona owns every coverage workspace; these are everyone else's memberships. */
   seats: PlannedSeat[];
   forms: PlannedCoverageForm[];
@@ -148,6 +156,7 @@ export const COVERAGE_SUBMISSION_KEYS = [
   'submitterOnDeletedForm',
   'ownerDraft',
   'submitterDraft',
+  'submitterRevising',
   'submitterOnReplacedVersion',
   'anonymousSubmitted',
   'anonymousOpened',
@@ -165,6 +174,10 @@ export interface PlannedCoverageSubmission {
   collaborators?: Array<{ persona: PersonaKey; status: 'active' | 'inactive' }>;
   /** Deleted by its submitter after the events. */
   deleted?: boolean;
+  /** Staff notes added after the events, oldest first. */
+  notes?: Array<{ by: PersonaKey; text: string }>;
+  /** Review status changes made after the notes, oldest first; Assigned names its assignee. */
+  statusChanges?: Array<{ by: PersonaKey; status: SubmissionReviewStatus; assignee?: PersonaKey }>;
 }
 
 export interface CoveragePlan {
@@ -255,6 +268,7 @@ const ROLES_WORKSPACE: PlannedCoverageWorkspace = {
   ...WORKSPACE_DEFAULTS,
   audience: { mode: 'members', idps: [] },
   allowSubmitterDrafts: true,
+  review: { allowStatusUpdates: true, allowSubmitterRevision: true },
   seats: [
     submitters(OWNER),
     submitters('submitter'),
@@ -337,8 +351,9 @@ const ROLES_WORKSPACE: PlannedCoverageWorkspace = {
       'A new version was published after a draft was saved.',
       { afterSubmissions: 'publishNewVersion' },
     ),
-    form('rolesDraftsOff', 'Roles drafts off', 'Turns drafts off for itself.', {
+    form('rolesDraftsOff', 'Roles drafts off', 'Turns drafts and review off for itself.', {
       allowSubmitterDrafts: false,
+      review: { allowStatusUpdates: false, allowSubmitterRevision: false },
     }),
   ],
 };
@@ -349,6 +364,7 @@ const AUDIENCE_WORKSPACE: PlannedCoverageWorkspace = {
   ...WORKSPACE_DEFAULTS,
   audience: { mode: 'protected', idps: ['azureidir'] },
   allowSubmitterDrafts: false,
+  review: { allowStatusUpdates: false, allowSubmitterRevision: false },
   seats: [
     {
       persona: OWNER,
@@ -370,10 +386,16 @@ const AUDIENCE_WORKSPACE: PlannedCoverageWorkspace = {
       audience: { mode: 'protected', idps: ['bceidbusiness'] },
       allowSubmitterDrafts: true,
     }),
-    form('membersOwn', 'Audience members own', 'Its own members-only audience, drafts on.', {
-      audience: { mode: 'members', idps: [] },
-      allowSubmitterDrafts: true,
-    }),
+    form(
+      'membersOwn',
+      'Audience members own',
+      'Its own members-only audience, drafts and review on.',
+      {
+        audience: { mode: 'members', idps: [] },
+        allowSubmitterDrafts: true,
+        review: { allowStatusUpdates: true, allowSubmitterRevision: true },
+      },
+    ),
   ],
 };
 
@@ -383,6 +405,7 @@ const PUBLIC_WORKSPACE: PlannedCoverageWorkspace = {
   ...WORKSPACE_DEFAULTS,
   audience: { mode: 'public', idps: [] },
   allowSubmitterDrafts: true,
+  review: { allowStatusUpdates: true, allowSubmitterRevision: false },
   seats: [],
   forms: [
     form('publicInherit', 'Public inherit', 'Public audience and drafts on, inherited.'),
@@ -410,6 +433,9 @@ const SUBMISSIONS: PlannedCoverageSubmission[] = [
     by: 'outsider',
     events: ['submitted'],
     collaborators: [{ persona: 'collaborator', status: 'inactive' }],
+    notes: [{ by: 'admin', text: 'Checked the mailing address against the postal code.' }],
+    // The reviewer has no seat in Audience, so the admin takes it.
+    statusChanges: [{ by: ADMIN, status: SubmissionReviewStatuses.assigned, assignee: ADMIN }],
   },
   { key: 'outsiderOpened', form: 'publicInherit', by: 'outsider', events: [] },
   { key: 'bceidDeleted', form: 'bceidOwn', by: 'bceidOutsider', events: ['saved'], deleted: true },
@@ -418,11 +444,28 @@ const SUBMISSIONS: PlannedCoverageSubmission[] = [
     form: 'rolesVersionDeleted',
     by: 'submitter',
     events: ['submitted'],
+    notes: [
+      { by: 'reviewer', text: 'Budget figure needs a second look.' },
+      { by: 'admin', text: 'Confirmed with the regional office.' },
+    ],
+    statusChanges: [
+      { by: ADMIN, status: SubmissionReviewStatuses.assigned, assignee: 'reviewer' },
+      { by: 'reviewer', status: SubmissionReviewStatuses.completed },
+    ],
   },
   { key: 'submitterOnDeletedForm', form: 'rolesFormDeleted', by: 'submitter', events: ['saved'] },
   { key: 'ownerDraft', form: 'protectedOwn', by: OWNER, events: ['saved'] },
   // Listed submissions whose access comes from the form's roles, not its audience.
   { key: 'submitterDraft', form: 'rolesInherit', by: 'submitter', events: ['saved'] },
+  // Sent back to its submitter, who edits it again; it is no longer theirs to delete.
+  {
+    key: 'submitterRevising',
+    form: 'rolesInherit',
+    by: 'submitter',
+    events: ['submitted'],
+    notes: [{ by: 'reviewer', text: 'Please attach the signed declaration and resubmit.' }],
+    statusChanges: [{ by: 'reviewer', status: SubmissionReviewStatuses.revising }],
+  },
   {
     key: 'submitterOnReplacedVersion',
     form: 'rolesVersionReplaced',

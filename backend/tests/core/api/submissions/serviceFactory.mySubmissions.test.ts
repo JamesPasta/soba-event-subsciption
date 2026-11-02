@@ -1,7 +1,17 @@
+import {
+  SubmissionReviewStatuses,
+  SubmissionWorkflowState,
+  SubmitterReviewLabels,
+} from '@soba/lib';
 import { createSubmissionsApiService } from '../../../../src/core/api/submissions/serviceFactory';
 import type { SubmissionService } from '../../../../src/core/services/submissionService';
 
-const row = (id: string, workflowState: string, role = 'owner') => ({
+const row = (
+  id: string,
+  workflowState: string,
+  role = 'owner',
+  reviewStatus: string | null = null,
+) => ({
   id,
   formId: 'f1',
   formName: 'Form One',
@@ -10,10 +20,11 @@ const row = (id: string, workflowState: string, role = 'owner') => ({
   role,
   headRevisionId: 'r3',
   currentRevisionNo: 3,
-  submittedAt: workflowState === 'submitted' ? new Date('2026-01-02T00:00:00Z') : null,
+  submittedAt: workflowState === 'draft' ? null : new Date('2026-01-02T00:00:00Z'),
   createdAt: new Date('2026-01-01T00:00:00Z'),
   updatedAt: new Date('2026-01-03T00:00:00Z'),
   confirmationCode: 'K7M2Q9XA',
+  reviewStatus,
 });
 
 // A forms row as the repo returns it; the response carries it through toSubmitterFormDto.
@@ -73,6 +84,7 @@ describe("listMine: the caller's own submissions", () => {
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-03T00:00:00.000Z',
         confirmationCode: null,
+        reviewStatus: null,
       },
       expect.objectContaining({
         id: 's2',
@@ -97,5 +109,32 @@ describe("listMine: the caller's own submissions", () => {
     expect(result.page).toEqual({ offset: 10, limit: 5, total: 12 });
     expect(result.filters).toEqual({ workflowState: 'draft', q: 'tax' });
     expect(result.sort).toBe('updatedAt:desc');
+  });
+
+  // The submitter is told the review in its own labels, never who it is assigned to.
+  it.each([
+    [
+      SubmissionWorkflowState.submitted,
+      SubmissionReviewStatuses.assigned,
+      SubmitterReviewLabels.inReview,
+    ],
+    [
+      SubmissionWorkflowState.revising,
+      SubmissionReviewStatuses.revising,
+      SubmitterReviewLabels.revisionRequested,
+    ],
+  ])('shows a %s submission at %s as %s, with its code', async (state, status, label) => {
+    const api = createSubmissionsApiService({
+      listForParticipant: jest.fn().mockResolvedValue({
+        items: [row('s1', state, 'owner', status)],
+        total: 1,
+        forms: [form],
+      }),
+    } as unknown as SubmissionService);
+
+    const [item] = (await api.listMine('u1', query)).items;
+
+    expect(item).toMatchObject({ reviewStatus: label, confirmationCode: 'K7M2Q9XA' });
+    expect(item).not.toHaveProperty('assignee');
   });
 });

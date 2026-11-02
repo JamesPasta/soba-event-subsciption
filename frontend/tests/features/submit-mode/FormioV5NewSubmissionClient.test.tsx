@@ -143,6 +143,7 @@ const form = {
   audienceMode: 'members',
   audienceIdps: [],
   allowSubmitterDrafts: true,
+  allowSubmitterRevision: false,
 };
 const schema = { components: [{ key: 'name', type: 'textfield' }] };
 const version = (formVersionId: string, schemaHash: string, components = schema) => ({

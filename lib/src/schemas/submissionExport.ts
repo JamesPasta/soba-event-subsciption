@@ -74,6 +74,8 @@ export const SubmissionExportFieldsBodySchema = FiltersSchema.refine(rangeIsVali
 
 export const SubmissionExportFieldsResponseSchema = z.object({
   fields: z.array(z.string()),
+  /** How many submissions the filters cover. */
+  count: z.number().int(),
 });
 
 const StartFieldsSchema = FiltersSchema.extend({

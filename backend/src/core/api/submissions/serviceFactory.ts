@@ -1,22 +1,27 @@
 import { SubmissionService, type SubmissionContentRefs } from '../../services/submissionService';
 import type { WriteLanding } from '../../services/submissionWriteGate';
-import { SubmissionWorkflowState } from '../../db/codes';
 import type { FormAccessGrant } from '../../db/repos/formAccessRepo';
 import { toSubmitterFormDto } from '../forms/serviceFactory';
 import type {
   ParticipantSubmissionListRow,
-  SubmissionListRow,
+  StaffSubmissionListRow,
   SubmissionDetailRow,
 } from '../../db/repos/submissionRepo';
-import type {
-  ListMySubmissionsResponse,
-  MySubmissionRole,
-  MySubmissionState,
-  OpenSubmissionBody,
-  SubmissionDataBody,
-  SortLocale,
-  SubmissionListSort,
-  SubmitSubmissionBody,
+import { reviewUserOf } from '../../db/repos/submissionReviewRepo';
+import { findEffectiveReviewSettingsOfForm } from '../../../features/form-settings/review/repo';
+import {
+  SUBMISSION_CONFIRMED_STATES,
+  submitterReviewLabelOf,
+  type ListMySubmissionsResponse,
+  type MySubmissionRole,
+  type MySubmissionState,
+  type OpenSubmissionBody,
+  type SubmissionDataBody,
+  type SortLocale,
+  type SubmissionListSort,
+  type SubmissionReviewStatus,
+  type StaffSubmissionListSort,
+  type SubmitSubmissionBody,
 } from '@soba/lib';
 
 export interface SubmissionsContextInput {
@@ -40,9 +45,11 @@ export interface ListSubmissionsQueryInput {
   offset: number;
   limit: number;
   workflowState?: string;
+  reviewStatus?: SubmissionReviewStatus;
+  assigneeId?: string;
   createdBy?: string;
   q?: string;
-  sort: SubmissionListSort;
+  sort: StaffSubmissionListSort;
   locale: SortLocale;
 }
 
@@ -55,9 +62,11 @@ export interface ListMySubmissionsQueryInput {
   locale: SortLocale;
 }
 
-// The code exists from open but is shown only once the submission is submitted.
+// The code exists from open but is shown only once the submission is confirmed.
 const confirmationCodeOf = (item: { workflowState: string; confirmationCode: string }) =>
-  item.workflowState === SubmissionWorkflowState.submitted ? item.confirmationCode : null;
+  (SUBMISSION_CONFIRMED_STATES as readonly string[]).includes(item.workflowState)
+    ? item.confirmationCode
+    : null;
 
 export const toSubmissionDto = (item: SubmissionDetailRow) => ({
   id: item.id,
@@ -85,7 +94,7 @@ export const toSubmissionWriteDto = (outcome: {
   revision: outcome.revision,
 });
 
-const toSubmissionListItemDto = (item: SubmissionListRow) => ({
+const toSubmissionListItemDto = (item: StaffSubmissionListRow) => ({
   id: item.id,
   formId: item.formId,
   formName: item.form.name ?? 'Untitled Form',
@@ -99,6 +108,10 @@ const toSubmissionListItemDto = (item: SubmissionListRow) => ({
   createdBy: item.createdBy,
   submittedBy: item.submittedBy,
   confirmationCode: confirmationCodeOf(item),
+  reviewStatus: item.reviewStatus as SubmissionReviewStatus | null,
+  assignee: item.assignee
+    ? reviewUserOf(item.assignee.id, item.assignee.profile, item.assignee.label)
+    : null,
 });
 
 const toMySubmissionListItemDto = (item: ParticipantSubmissionListRow) => ({
@@ -114,6 +127,7 @@ const toMySubmissionListItemDto = (item: ParticipantSubmissionListRow) => ({
   createdAt: item.createdAt.toISOString(),
   updatedAt: item.updatedAt.toISOString(),
   confirmationCode: confirmationCodeOf(item),
+  reviewStatus: submitterReviewLabelOf(item.reviewStatus as SubmissionReviewStatus | null),
 });
 
 export function createSubmissionsApiService(submissionService: SubmissionService) {
@@ -129,7 +143,11 @@ export function createSubmissionsApiService(submissionService: SubmissionService
     readContent: (refs: SubmissionContentRefs) => submissionService.readContent(refs),
 
     list: async (scope: SubmissionsListScopeInput, query: ListSubmissionsQueryInput) => {
+      // One form's review settings decide its list: with status changes on, it holds the submissions
+      // in review and shows their status and assignee.
+      const review = query.formId ? await findEffectiveReviewSettingsOfForm(query.formId) : null;
       const result = await submissionService.list({
+        inReviewOnly: review?.allowStatusUpdates === true,
         workspaceIds: scope.workspaceIds,
         actorId: scope.actorId,
         formAccess: scope.formAccess,
@@ -139,6 +157,8 @@ export function createSubmissionsApiService(submissionService: SubmissionService
         formVersionId: query.formVersionId,
         submissionId: query.submissionId,
         workflowState: query.workflowState,
+        reviewStatus: query.reviewStatus,
+        assigneeId: query.assigneeId,
         createdBy: query.createdBy,
         q: query.q,
         sort: query.sort,
@@ -158,10 +178,13 @@ export function createSubmissionsApiService(submissionService: SubmissionService
           formVersionId: query.formVersionId,
           submissionId: query.submissionId,
           workflowState: query.workflowState,
+          reviewStatus: query.reviewStatus,
+          assigneeId: query.assigneeId,
           createdBy: query.createdBy,
           q: query.q,
         },
         sort: query.sort,
+        ...(review ? { allowStatusUpdates: review.allowStatusUpdates } : {}),
       };
     },
 
@@ -201,6 +224,10 @@ export function createSubmissionsApiService(submissionService: SubmissionService
       submissionService
         .submit({ ...ctx, submissionId, ...body })
         .then((outcome) => toSubmissionWriteDto(outcome)),
+
+    /** Staff change a submitted submission's answers; answers with the submission after it. */
+    editData: (ctx: SubmissionsContextInput, submissionId: string, body: SubmissionDataBody) =>
+      submissionService.editAsStaff({ ...ctx, submissionId, ...body }).then(toSubmissionDto),
 
     delete: (ctx: SubmissionsContextInput, submissionId: string) =>
       submissionService.delete({ ...ctx, submissionId }),

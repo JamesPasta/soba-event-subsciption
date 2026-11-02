@@ -3,6 +3,8 @@ import {
   type StartSubmissionExportBody,
   type SubmissionExport,
   type SubmissionExportEndReason,
+  type SubmissionExportFieldsBody,
+  type SubmissionExportFieldsResponse,
   type SubmissionExportList,
   type SubmissionExportStatus,
 } from '@soba/lib';
@@ -11,6 +13,7 @@ import { quietDb } from '../../core/db/client';
 import { JobStatus, JobType, SubmissionExportAuditAction } from '../../core/db/codes';
 import { cancelJob } from '../../core/db/repos/jobRepo';
 import {
+  countExportSubmissions,
   getExportJob,
   insertExportAudit,
   isVersionOfForm,
@@ -29,6 +32,7 @@ import {
 import { nudgeJobs } from '../../core/jobs';
 import { openJobResult, resultFacts, toJobResult } from '../../core/jobs/outputs';
 import { getCorrelationId, log } from '../../core/logging';
+import { exportSchemas } from './engineSource';
 import {
   EXPORT_ACCESS_LOST,
   EXPORT_TOO_LARGE,
@@ -36,7 +40,8 @@ import {
   SUBMISSION_EXPORT_MAX_ATTEMPTS,
   type ExportParams,
 } from './job';
-import { sampleExportFields } from './source';
+import { exportFieldNames } from './schemaFields';
+import { exportBoundsOf } from './source';
 
 /** Who is asking, about which form. */
 export type ExportContext = { actorId: string; workspaceId: string; formId: string };
@@ -112,7 +117,7 @@ const requireOwnExport = async (ctx: ExportContext, exportId: string): Promise<E
 
 /** The submitted-in bounds: `to` no later than now, so a retry exports the same submissions. */
 export const exportBounds = (
-  body: StartSubmissionExportBody,
+  body: SubmissionExportFieldsBody,
   now: Date,
 ): { from?: string; to: string } => {
   const requestedTo = body.to ? new Date(body.to) : now;
@@ -130,8 +135,19 @@ export const exportBounds = (
 };
 
 export const submissionExportService = {
-  // Placeholder: the sample fields for every form and filter, and no row count.
-  fields: () => Promise.resolve({ fields: sampleExportFields() }),
+  /** The fields of the versions the filters cover, and how many submissions they cover. */
+  async fields(
+    ctx: ExportContext,
+    body: SubmissionExportFieldsBody,
+  ): Promise<SubmissionExportFieldsResponse> {
+    const bounds = exportBoundsOf(ctx.workspaceId, ctx.formId, {
+      formVersionId: body.formVersionId,
+      ...exportBounds(body, new Date()),
+    });
+    const count = await countExportSubmissions(bounds);
+    const schemas = await exportSchemas(ctx.workspaceId, ctx.formId, body.formVersionId);
+    return { fields: exportFieldNames(schemas), count };
+  },
 
   async list(ctx: ExportContext, query: ExportListQuery): Promise<SubmissionExportList> {
     const { items, total } = await listExportJobs(ctx.formId, ctx.actorId, query);

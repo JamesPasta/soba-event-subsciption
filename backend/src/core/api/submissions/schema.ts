@@ -9,6 +9,8 @@ import {
   SubmissionRevisionInfoSchema as SobaSubmissionRevisionInfoSchema,
   ListSubmissionsResponseSchema as SobaListSubmissionsResponseSchema,
   SubmissionSortSchema as SobaSubmissionSortSchema,
+  StaffSubmissionSortSchema as SobaStaffSubmissionSortSchema,
+  SubmissionReviewStatusSchema,
 } from '@soba/lib';
 
 import {
@@ -61,6 +63,14 @@ export const SubmissionSortSchema = SobaSubmissionSortSchema.clone().openapi(
   { description: 'Valid submission sort tokens: `field:asc` or `field:desc`.' },
 );
 
+export const StaffSubmissionSortSchema = SobaStaffSubmissionSortSchema.clone().openapi(
+  'Submissions_StaffSubmissionSort',
+  {
+    description:
+      'Valid staff submission sort tokens: `field:asc` or `field:desc`; also by review status and assignee.',
+  },
+);
+
 export const ListSubmissionsQuerySchema = requireAtLeastOneQueryField(
   z.object({
     workspaceId: workspaceIdQueryField.optional(),
@@ -71,12 +81,18 @@ export const ListSubmissionsQuerySchema = requireAtLeastOneQueryField(
     cursor: rejectedCursorField,
     // Workflow state orders by code, not by where the workflow has reached, so it is a filter only.
     workflowState: z.string().trim().min(1).optional(),
+    reviewStatus: SubmissionReviewStatusSchema.optional().openapi({
+      description: 'Only submissions whose review is at this status.',
+    }),
+    assigneeId: z.uuid().optional().openapi({
+      description: 'Only submissions assigned to this user.',
+    }),
     createdBy: z.string().trim().min(1).optional(),
     q: searchQueryField.openapi({
       description:
         'Matches anywhere in the form name, the submission id, or a submitted confirmation code.',
     }),
-    sort: SubmissionSortSchema.default('updatedAt:desc'),
+    sort: StaffSubmissionSortSchema.default('updatedAt:desc'),
     locale: sortLocaleQueryField,
   }),
   ['workspaceId', 'formId', 'formVersionId', 'submissionId'],
@@ -103,7 +119,7 @@ export const SubmissionWriteResponseSchema = SobaSubmissionResponseSchema.extend
 export const ListSubmissionsResponseSchema = SobaListSubmissionsResponseSchema.extend({
   items: z.array(SubmissionListItemSchema),
   page: OffsetPageSchema,
-  sort: SubmissionSortSchema,
+  sort: StaffSubmissionSortSchema,
 }).openapi('Submissions_ListSubmissionsResponse');
 
 const TAG = 'core.submissions';
@@ -170,6 +186,34 @@ export const registerSubmissionsOpenApi = (registry: OpenAPIRegistry) => {
       },
       404: {
         description: 'Submission or its engine content not found',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'put',
+    path: '/design/submissions/{id}/data',
+    tags: [TAG],
+    security: [{ bearerAuth: [] }],
+    request: {
+      params: SubmissionIdParamsSchema,
+      body: {
+        required: true,
+        content: { 'application/json': { schema: SubmissionDataBodySchema } },
+      },
+    },
+    responses: {
+      200: {
+        description:
+          'The submission after staff changed its answers, which the form engine validated; a retry of the same revision id answers the same',
+        content: { 'application/json': { schema: SubmissionResponseSchema } },
+      },
+      400: { description: 'Invalid body, or answers the form engine rejects' },
+      403: { description: 'Not authorized: needs submission_update on the form' },
+      404: { description: SUBMISSION_NOT_FOUND },
+      409: {
+        description:
+          'Not submitted (edit_closed), the answers changed since they were loaded (data_changed), or the revision id is used by another write (revision_id_taken)',
       },
     },
   });

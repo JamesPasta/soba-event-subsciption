@@ -95,6 +95,7 @@ const OPEN = {
   audienceMode: 'members' as const,
   audienceIdps: [],
   allowSubmitterDrafts: true,
+  allowSubmitterRevision: false,
 };
 // Listed for the caller's earlier submission; nothing open to start.
 const HISTORY = {
@@ -107,6 +108,7 @@ const HISTORY = {
   audienceMode: 'public' as const,
   audienceIdps: [],
   allowSubmitterDrafts: false,
+  allowSubmitterRevision: false,
 };
 
 const page = (items: unknown[]) => ({

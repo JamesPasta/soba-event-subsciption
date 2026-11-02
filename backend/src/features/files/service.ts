@@ -1,3 +1,4 @@
+import { SubmissionWorkflowState } from '@soba/lib';
 import { env } from '../../core/config/env';
 import type { FileRecord } from '../../core/db/repos/fileRepo';
 import {
@@ -6,6 +7,7 @@ import {
   unlinkSubmissionFile,
 } from '../../core/db/repos/submissionFileRepo';
 import type { CallerIdentity } from '../../core/db/repos/formSubmitAccessRepo';
+import { findRevisionStartedAt } from '../../core/db/repos/submissionReviewRepo';
 import {
   allowsSubmitterOperation,
   findSubmissionForCaller,
@@ -38,6 +40,21 @@ async function findAttachment(id: string, caller: CallerIdentity) {
 }
 
 type OpenedFile = { record: FileRecord; file: GetFileResult };
+
+/**
+ * Whether a file stays stored when its submitters remove it: while revising, a file attached before
+ * the revision was asked for may be in the answers from before it, which ending the revision
+ * restores. Files are not versioned, so removing one then only takes it out of the answers.
+ */
+async function keptForRestore(
+  record: FileRecord,
+  submission: { id: string; workspaceId: string; workflowState: string },
+): Promise<boolean> {
+  if (submission.workflowState !== SubmissionWorkflowState.revising) return false;
+  const since = await findRevisionStartedAt(submission.workspaceId, submission.id);
+  // Null when the revision ended after the submission was read; the restored answers may hold it.
+  return !since || record.createdAt <= since;
+}
 
 /** The file's stored bytes, or 'unavailable'. */
 async function openRecord(record: FileRecord): Promise<OpenedFile | 'unavailable'> {
@@ -118,6 +135,7 @@ export const filesService = {
     if (!attachment) return 'notfound';
     const { record, loaded } = attachment;
     if (!allowsSubmitterOperation(SubmitterOperation.deleteFile, loaded, caller)) return 'denied';
+    if (await keptForRestore(record, loaded.submission)) return 'deleted';
     await fileStore.remove(record, (tx) => unlinkSubmissionFile(tx, record.id));
     return 'deleted';
   },

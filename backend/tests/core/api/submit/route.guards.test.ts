@@ -10,6 +10,7 @@ const GUARDS = [
   'requireSubmissionRead',
   'requireSubmissionWrite',
   'requireSubmissionDelete',
+  'requireSubmissionRevise',
   'requireSignedInSubmitter',
 ];
 
@@ -38,6 +39,7 @@ it.each([
   ['post', '/submissions/:id/save', 'requireSubmissionWrite'],
   ['post', '/submissions/:id/submit', 'requireSubmissionWrite'],
   ['delete', '/submissions/:id', 'requireSubmissionDelete'],
+  ['post', '/submissions/:id/revise', 'requireSubmissionRevise'],
 ])('%s %s loads the submission once, then decides with %s', (method, path, guard) => {
   const handlers = handlersFor(method, path);
   expect(handlers.filter((name) => name === 'loadSubmitterSubmission')).toHaveLength(1);

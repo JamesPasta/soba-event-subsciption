@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import type { WriteOutcome } from '@/src/shared/api/dataContracts';
-import type { SubmissionWriteResponse } from '@/src/types/submissions';
+import { SubmissionWorkflowState, type SubmissionWriteResponse } from '@/src/types/submissions';
 import { useSubmissionWriter } from './useSubmissionWriter';
 
 export type FillWrite = 'save' | 'submit';
@@ -168,7 +168,7 @@ export function useFillWriter(
       throw err;
     }
     // Stays busy: the caller leaves for the submitted record.
-    if (head.workflowState === 'submitted') return 'closed';
+    if (head.workflowState === SubmissionWorkflowState.submitted) return 'closed';
     setBusy(null);
     baseRef.current = head.headRevisionId;
     hold(null);

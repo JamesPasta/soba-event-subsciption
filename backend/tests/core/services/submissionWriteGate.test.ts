@@ -10,6 +10,7 @@ import { ConflictError } from '../../../src/core/errors';
 
 const draft = { id: 's1', workflowState: 'draft', headRevisionId: 'rev-2' };
 const submitted = { ...draft, workflowState: 'submitted' };
+const revising = { ...draft, workflowState: 'revising' };
 
 const decide = (over: Partial<SubmissionWriteRequest> = {}) =>
   decideSubmissionWrite({
@@ -153,6 +154,18 @@ describe('decideSubmissionWrite', () => {
     expect(decide()).toEqual({
       kind: 'current',
       workflowState: 'draft',
+      parentRevisionId: 'rev-2',
+    });
+  });
+
+  // A reviewer sent it back: its submitters edit it again, and it never falls back to a draft.
+  it.each([
+    ['saved', 'revising'],
+    ['submitted', 'submitted'],
+  ] as const)('writes a %s while revising as current, leaving it %s', (eventType, state) => {
+    expect(decide({ submission: revising, eventType })).toEqual({
+      kind: 'current',
+      workflowState: state,
       parentRevisionId: 'rev-2',
     });
   });
