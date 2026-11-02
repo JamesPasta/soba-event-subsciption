@@ -122,6 +122,7 @@ export const toSubmitterFormDto = (item: SubmitterFormListRow): SubmitterForm =>
   audienceMode: item.audienceMode,
   audienceIdps: [...item.audienceIdps],
   allowSubmitterDrafts: item.allowSubmitterDrafts,
+  allowSubmitterRevision: item.allowSubmitterRevision,
 });
 
 const toFormVersionDto = (item: FormVersionRecord) => ({

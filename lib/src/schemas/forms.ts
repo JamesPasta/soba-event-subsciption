@@ -146,6 +146,8 @@ export const SubmitterFormFactsSchema = z.object({
   audienceIdps: z.array(z.string()),
   // The form's own drafts setting, or its workspace's when it inherits.
   allowSubmitterDrafts: z.boolean(),
+  // The form's own review setting letting submitters revise, or its workspace's when it inherits.
+  allowSubmitterRevision: z.boolean(),
 });
 
 /** A form as a submitter sees it: what it is, and its facts. */

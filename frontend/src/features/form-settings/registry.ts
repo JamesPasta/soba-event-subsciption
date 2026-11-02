@@ -1,6 +1,7 @@
 import { audienceSection, workspaceAudienceSection } from './audience';
 import { formSection } from './form';
 import { profileSection } from './profile';
+import { reviewSection, workspaceReviewSection } from './review';
 import { submitterSection, workspaceSubmitterSection } from './submitter';
 import { templatesSection } from './templates';
 import type { FormSettingsSection, WorkspaceSettingsSection } from './types';
@@ -11,6 +12,7 @@ export const formSettingsSections: FormSettingsSection[] = [
   profileSection,
   audienceSection,
   submitterSection,
+  reviewSection,
   templatesSection,
 ].sort((a, b) => a.weight - b.weight);
 
@@ -18,4 +20,5 @@ export const formSettingsSections: FormSettingsSection[] = [
 export const workspaceSettingsSections: WorkspaceSettingsSection[] = [
   workspaceAudienceSection,
   workspaceSubmitterSection,
+  workspaceReviewSection,
 ].sort((a, b) => a.weight - b.weight);

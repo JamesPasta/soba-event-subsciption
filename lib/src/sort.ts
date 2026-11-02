@@ -20,6 +20,13 @@ export const SUBMISSION_SORT_FIELDS = [
   'updatedAt',
 ] as const;
 
+/** The staff submissions list also sorts by where each review stands and who has it. */
+export const STAFF_SUBMISSION_SORT_FIELDS = [
+  ...SUBMISSION_SORT_FIELDS,
+  'reviewStatus',
+  'assignee',
+] as const;
+
 export const WORKSPACE_SORT_FIELDS = ['name', 'kind', 'status', 'updatedAt'] as const;
 
 export const SOBA_ADMIN_SORT_FIELDS = ['displayLabel', 'source', 'syncedAt'] as const;

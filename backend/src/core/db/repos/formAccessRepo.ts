@@ -79,11 +79,14 @@ const activeGroup = (groupId: SQLWrapper) =>
 
 /**
  * The groups the user is an effective member of, per form: a form's active override of a group
- * replaces that group's workspace members with its own. User members only.
+ * replaces that group's workspace members with its own. User members only. With no user, every
+ * active member's groups, each row naming its member.
  */
-export const effectiveGroups = (userId: string, scope: GroupScope) => {
+export const effectiveGroups = (userId: string | null, scope: GroupScope) => {
   const activeMembership = and(
-    activeMembershipOf(userId),
+    userId
+      ? activeMembershipOf(userId)
+      : eq(workspaceMemberships.status, WorkspaceMembershipStatus.active),
     scope.workspaceId ? eq(workspaceMemberships.workspaceId, scope.workspaceId) : undefined,
   );
   const inScope = (formId: SQLWrapper) =>
@@ -107,9 +110,10 @@ export const effectiveGroups = (userId: string, scope: GroupScope) => {
   // Drizzle does not qualify a subquery's aliased columns, so the names must not match a table's.
   const formId = sql<string>`${forms.id}`.as('effective_form_id');
   const groupId = sql<string>`${workspaceGroups.id}`.as('effective_group_id');
+  const memberId = sql<string>`${workspaceMemberships.userId}`.as('effective_user_id');
 
   const inherited = db
-    .select({ formId, groupId })
+    .select({ formId, groupId, userId: memberId })
     .from(workspaceMemberships)
     .innerJoin(workspaceGroupMemberships, activeUserGroupMembership)
     .innerJoin(workspaceGroups, and(activeGroup(workspaceGroupMemberships.groupId), carriesRole))
@@ -136,7 +140,7 @@ export const effectiveGroups = (userId: string, scope: GroupScope) => {
     );
 
   const overridden = db
-    .select({ formId, groupId })
+    .select({ formId, groupId, userId: memberId })
     .from(workspaceMemberships)
     .innerJoin(
       formGroupOverrideMembers,
@@ -196,6 +200,26 @@ export const permissionsByForm = (userId: string, scope: GroupScope) => {
       .$dynamic(),
     groups.groupId,
   ).groupBy(groups.formId);
+};
+
+/**
+ * The users who hold `code`, or '*', on one live form, with the form's group overrides applied.
+ */
+export const listFormUserIdsHolding = async (
+  workspaceId: string,
+  formId: string,
+  code: PermissionCode,
+): Promise<string[]> => {
+  const groups = effectiveGroups(null, {
+    workspaceId,
+    formIds: [formId],
+    liveFormsOnly: true,
+  }).as('effective_group');
+  const rows = await withRolePermissions(
+    db.selectDistinct({ userId: groups.userId }).from(groups).$dynamic(),
+    groups.groupId,
+  ).where(inArray(rolePermissions.permissionCode, [code, Permissions.all]));
+  return rows.map((row) => row.userId);
 };
 
 /**

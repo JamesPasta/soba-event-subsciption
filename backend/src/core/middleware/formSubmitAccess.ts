@@ -3,6 +3,7 @@ import {
   canWriteSubmission,
   isIdentifiedCaller,
   ownDeleteStatusOf,
+  reviseStatusOf,
   startStatusOf,
   SubmissionChangeStatus,
   ApiErrorCodes,
@@ -42,6 +43,7 @@ const DENIAL_MESSAGES: Record<SubmitterOperationCode, string> = {
   deleteFile: CHANGE_DENIED,
   render: 'Not authorized to generate this document',
   delete: 'Not authorized to delete this submission',
+  revise: 'Not authorized to revise this submission',
 };
 
 /** Logs and throws the refusal: 401 for anonymous, 403 for an authenticated caller. */
@@ -187,6 +189,29 @@ export const requireSubmissionDelete: RequestHandler = (req, _res, next) => {
     if (change.status === SubmissionChangeStatus.closed) {
       throw new ConflictError(
         `Submission is ${submission.workflowState} and can no longer be deleted`,
+        change.code,
+      );
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Authorizes the owner's revise of their own submission. Only a refusal of the caller stops it
+ * here; whether the submission can still be revised is decided under its lock, so a retry of a
+ * revise already made is answered as made.
+ */
+export const requireSubmissionRevise: RequestHandler = (req, _res, next) => {
+  try {
+    const { submission, access, form } = loadedSubmission(req);
+    const change = reviseStatusOf(access, form, resolveCaller(req));
+    if (change.status === SubmissionChangeStatus.denied) {
+      refuseSubmitter(
+        req,
+        SubmitterOperation.revise,
+        { formId: submission.formId, submissionId: submission.id },
         change.code,
       );
     }

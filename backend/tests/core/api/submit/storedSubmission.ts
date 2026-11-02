@@ -1,3 +1,4 @@
+import type { SubmitterReviewLabel } from '@soba/lib';
 import type { SubmitterFormListRow } from '../../../../src/core/db/repos/submitterFormRepo';
 import type { SubmitterSubmission } from '../../../../src/core/db/repos/submitterSubmissionRepo';
 
@@ -9,6 +10,8 @@ export const storedSubmission = (
   overrides: {
     role?: string | null;
     workflowState?: string;
+    reviewStatus?: SubmitterReviewLabel | null;
+    statusId?: string | null;
     form?: Partial<SubmitterFormListRow>;
   } = {},
 ): SubmitterSubmission => {
@@ -34,8 +37,13 @@ export const storedSubmission = (
       engineSubmissionRef: 'engine-submission',
       engineSchemaRef: 'engine-form',
       formEngineCode: 'formio-v5',
+      statusId: overrides.statusId ?? null,
     },
-    access: { role: overrides.role === undefined ? 'owner' : overrides.role, workflowState },
+    access: {
+      role: overrides.role === undefined ? 'owner' : overrides.role,
+      workflowState,
+      reviewStatus: overrides.reviewStatus ?? null,
+    },
     form: {
       id: 'f1',
       name: 'Permit application',
@@ -46,6 +54,7 @@ export const storedSubmission = (
       audienceMode: 'members',
       audienceIdps: [],
       allowSubmitterDrafts: true,
+      allowSubmitterRevision: false,
       ...overrides.form,
     },
   };

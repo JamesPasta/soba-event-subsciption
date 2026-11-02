@@ -12,12 +12,20 @@ import {
 import { ListPageSearchField } from '@/src/components/ListPageSearchField';
 import { RowActionButton } from '@/src/components/RowActionButton';
 import { ConfirmModal } from '@/src/components/ConfirmModal';
-import { StatusTag, workflowStateToVariant } from '@/src/components/StatusTag';
+import {
+  StatusTag,
+  submitterReviewToVariant,
+  workflowStateToVariant,
+} from '@/src/components/StatusTag';
 import { useKeycloak } from '@/lib/hooks/useKeycloak';
 import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
 import { useDictionary } from '@/app/[lang]/Providers';
 import { getLocaleFromPath } from '@/src/shared/util/locale';
-import { canContinueSubmission, canDeleteOwnSubmission } from '@/src/shared/util/permissions';
+import {
+  canContinueSubmission,
+  canDeleteOwnSubmission,
+  canReviseSubmission,
+} from '@/src/shared/util/permissions';
 import { fillTemplate } from '@/src/shared/util/stringUtils';
 import { useFormatLongDateTime } from '@/src/shared/hooks/useFormatLongDate';
 import { isConflict, apiErrorMessage } from '@/src/shared/api/dataError';
@@ -28,6 +36,7 @@ import { useListQuery } from '@/src/shared/list/useListQuery';
 import { useDataTable } from '@/src/shared/list/useDataTable';
 import {
   useMySubmissionDeleter,
+  useMySubmissionReviser,
   useMySubmissions,
 } from '@/src/features/submit-mode/data/useMySubmissions';
 import {
@@ -69,9 +78,12 @@ export function MySubmissionsList() {
   );
   const { table } = useDataTable(listQuery, submissions, dictMine.loadError);
   const { remove } = useMySubmissionDeleter();
+  const { revise } = useMySubmissionReviser();
 
   const [confirmDelete, setConfirmDelete] = useState<MySubmissionRow | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [confirmRevise, setConfirmRevise] = useState<MySubmissionRow | null>(null);
+  const [revising, setRevising] = useState(false);
 
   const { setFilters } = listQuery;
   // A state the API would refuse reads as no filter; drop it so the URL and the Select agree.
@@ -142,6 +154,45 @@ export function MySubmissionsList() {
     dictMine.deleteError,
   ]);
 
+  // Revise, by the rule the server applies: the signed-in owner, the form's setting, and a
+  // submission no reviewer has taken up.
+  const revisable = useCallback(
+    (item: MySubmissionRow) => !!item.form && canReviseSubmission(item, item.form, caller),
+    [caller],
+  );
+
+  const handleRevise = useCallback(() => {
+    const item = confirmRevise;
+    if (!item) return;
+    setRevising(true);
+    revise(item.id)
+      .then(() => {
+        addNotification({ text: dictMine.reviseSuccess, type: 'success' });
+        router.push(`/${locale}/submit/${item.id}`);
+      })
+      .catch((cause: unknown) => {
+        const message = apiErrorMessage(cause, dict.apiErrors);
+        notifyError(
+          cause,
+          message ? { failed: message, forbidden: message } : { failed: dictMine.reviseError },
+        );
+      })
+      .finally(() => {
+        setRevising(false);
+        setConfirmRevise(null);
+      });
+  }, [
+    confirmRevise,
+    revise,
+    addNotification,
+    notifyError,
+    router,
+    locale,
+    dict.apiErrors,
+    dictMine.reviseSuccess,
+    dictMine.reviseError,
+  ]);
+
   const handleStateChange = useCallback(
     (key: string | number | null) =>
       setFilters(key && key !== ALL_STATES ? { state: String(key) } : {}),
@@ -176,10 +227,19 @@ export function MySubmissionsList() {
       {
         key: 'workflowState',
         label: dictMine.columns.status,
+        // Once submitted, the row says where the review stands, as the submitter is told it.
         render: (item) => (
           <StatusTag
-            label={dictMine.states[item.workflowState]}
-            variant={workflowStateToVariant(item.workflowState)}
+            label={
+              item.reviewStatus
+                ? dictMine.reviewStatuses[item.reviewStatus]
+                : dictMine.states[item.workflowState]
+            }
+            variant={
+              item.reviewStatus
+                ? submitterReviewToVariant(item.reviewStatus)
+                : workflowStateToVariant(item.workflowState)
+            }
             data-testid={`${item.id}-status`}
           />
         ),
@@ -228,6 +288,15 @@ export function MySubmissionsList() {
               >
                 {toFill ? dictMine.continue : dictMine.view}
               </RowActionButton>
+              {revisable(item) ? (
+                <RowActionButton
+                  aria-label={fillTemplate(dictMine.reviseLabel, values)}
+                  data-testid={`${item.id}-revise`}
+                  onPress={() => setConfirmRevise(item)}
+                >
+                  {dictMine.revise}
+                </RowActionButton>
+              ) : null}
               {canDeleteOwnSubmission(item, caller) ? (
                 <RowActionButton
                   aria-label={fillTemplate(dictMine.deleteLabel, values)}
@@ -242,7 +311,7 @@ export function MySubmissionsList() {
         },
       },
     ],
-    [dictMine, caller, continues, formatDateTime, labelValues, openSubmission],
+    [dictMine, caller, continues, revisable, formatDateTime, labelValues, openSubmission],
   );
 
   // Loading, including Keycloak init, shows inside the table so the heading stays put.
@@ -308,6 +377,20 @@ export function MySubmissionsList() {
         onCancel={() => {
           // The delete in flight closes the dialog when it settles.
           if (!deleting) setConfirmDelete(null);
+        }}
+      />
+
+      <ConfirmModal
+        show={confirmRevise !== null}
+        title={dictMine.reviseTitle}
+        message={
+          confirmRevise ? fillTemplate(dictMine.reviseMessage, labelValues(confirmRevise)) : ''
+        }
+        confirmLabel={dictMine.revise}
+        pending={revising}
+        onConfirm={handleRevise}
+        onCancel={() => {
+          if (!revising) setConfirmRevise(null);
         }}
       />
     </>

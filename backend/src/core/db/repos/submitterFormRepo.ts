@@ -22,12 +22,14 @@ import {
 import { db, type DbOrTx } from '../client';
 import {
   formAudienceSettings,
+  formReviewSettings,
   forms,
   formSubmitterSettings,
   formVersions,
   submissionParticipants,
   submissions,
   workspaceAudienceSettings,
+  workspaceReviewSettings,
   workspaceSubmitterSettings,
   workspaces,
 } from '../schema';
@@ -122,8 +124,8 @@ const submitterFormIds = (userId: string, workspaceId?: string) => {
 };
 
 /**
- * The effective audience and drafts setting: the form's own unless it inherits or leaves the value
- * unset, then the workspace's. A form without both rows of a pair has neither. The same rule as
+ * The effective audience, drafts and submitter revision settings: the form's own unless it inherits
+ * or leaves the value unset, then the workspace's. A form without both rows of a pair has neither. The same rule as
  * findFormAudience and toInheritableSettings, which the settings screens read.
  */
 const settingsColumns = {
@@ -142,6 +144,11 @@ const settingsColumns = {
     when ${formSubmitterSettings.inherit} or ${formSubmitterSettings.allowSubmitterDrafts} is null
       then ${workspaceSubmitterSettings.allowSubmitterDrafts}
     else ${formSubmitterSettings.allowSubmitterDrafts} end, false)`,
+  allowSubmitterRevision: sql<boolean>`coalesce(case
+    when ${workspaceReviewSettings.workspaceId} is null then null
+    when ${formReviewSettings.inherit} or ${formReviewSettings.allowSubmitterRevision} is null
+      then ${workspaceReviewSettings.allowSubmitterRevision}
+    else ${formReviewSettings.allowSubmitterRevision} end, false)`,
 };
 
 /** Joins the settings rows settingsColumns reads; each pair has one row per form and workspace. */
@@ -168,6 +175,17 @@ const withSettings = <T extends PgSelect>(query: T) =>
     .leftJoin(
       workspaceSubmitterSettings,
       eq(workspaceSubmitterSettings.workspaceId, formSubmitterSettings.workspaceId),
+    )
+    .leftJoin(
+      formReviewSettings,
+      and(
+        eq(formReviewSettings.formId, forms.id),
+        eq(formReviewSettings.workspaceId, forms.workspaceId),
+      ),
+    )
+    .leftJoin(
+      workspaceReviewSettings,
+      eq(workspaceReviewSettings.workspaceId, formReviewSettings.workspaceId),
     );
 
 const NO_PERMISSIONS = sql<string[]>`'{}'::text[]`;

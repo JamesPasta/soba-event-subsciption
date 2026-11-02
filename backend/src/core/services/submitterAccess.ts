@@ -5,6 +5,7 @@ import {
   canUploadSubmissionFile,
   canWriteSubmission,
   ownDeleteStatusOf,
+  reviseStatusOf,
   SubmissionChangeStatus,
 } from '@soba/lib';
 import { Permissions } from '../db/codes';
@@ -34,6 +35,8 @@ export const SubmitterOperation = {
   render: 'render',
   /** Delete the caller's own submission; the lifecycle limits it to one not yet submitted. */
   delete: 'delete',
+  /** Send the caller's own submitted submission back to revise. */
+  revise: 'revise',
 } as const;
 export type SubmitterOperationCode = (typeof SubmitterOperation)[keyof typeof SubmitterOperation];
 
@@ -57,6 +60,9 @@ const SUBMISSION_RULES: Record<
   // The signed-in owner, whatever the state; the delete itself refuses a submitted submission.
   delete: ({ access }, caller) =>
     ownDeleteStatusOf(access, caller).status !== SubmissionChangeStatus.denied,
+  // Refused only for the caller; the revise itself refuses a submission already taken up.
+  revise: ({ access, form }, caller) =>
+    reviseStatusOf(access, form, caller).status !== SubmissionChangeStatus.denied,
 };
 
 /** The one read of a submission for the caller; null when it is not live or there is no actor. */

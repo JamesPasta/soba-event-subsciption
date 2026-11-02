@@ -336,6 +336,8 @@ export const SUBMISSION_EXPECTATIONS: Record<CoverageSubmissionKey, SubmissionEx
   ownerDraft: { mine: ['owner'], ...inProgressFor('owner'), delete: ['owner'] },
   // The submitter role grants the write and the render; the members audience admits no one else.
   submitterDraft: { mine: ['submitter'], ...inProgressFor('submitter'), delete: ['submitter'] },
+  // A reviewer sent it back: its submitter edits it as in progress, but cannot delete it.
+  submitterRevising: { mine: ['submitter'], ...inProgressFor('submitter'), delete: [] },
   // A version published after it does not close it; it stays on its own version.
   submitterOnReplacedVersion: {
     mine: ['submitter'],

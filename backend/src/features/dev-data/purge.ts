@@ -31,8 +31,10 @@ import {
   settingsAudit,
   sobaAdmins,
   submissionFiles,
+  submissionNotes,
   submissionParticipants,
   submissionRevisions,
+  submissionStatuses,
   submissions,
   userIdentities,
   workspaceDisclaimerAcceptances,
@@ -221,8 +223,9 @@ async function purgePostgres(
 type RecordFn = (label: string, run: Promise<{ rowCount: number | null }>) => Promise<void>;
 
 /**
- * Memberships a dev user holds in a workspace that is not being deleted, plus invitations they
- * issued. Either would block the app_user delete and roll the whole purge back.
+ * Memberships a dev user holds in a workspace that is not being deleted, invitations they issued and
+ * submissions assigned to them there. Any of these would block the app_user delete and roll the
+ * whole purge back.
  */
 async function purgeUserScoped(tx: DbOrTx, userIds: string[], record: RecordFn): Promise<void> {
   const stranded = await tx
@@ -254,6 +257,11 @@ async function purgeUserScoped(tx: DbOrTx, userIds: string[], record: RecordFn):
     .update(workspaceMemberships)
     .set({ invitedByUserId: null })
     .where(inArray(workspaceMemberships.invitedByUserId, userIds));
+
+  await tx
+    .update(submissionStatuses)
+    .set({ assigneeId: null })
+    .where(inArray(submissionStatuses.assigneeId, userIds));
 }
 
 /**
@@ -267,6 +275,8 @@ export const WORKSPACE_SCOPED_TABLES: readonly string[] = [
   'notification_audit',
   'submission_export_audit',
   'submission_revision',
+  'submission_status',
+  'submission_note',
   'submission_participant',
   'submission_file',
   'submission',
@@ -343,14 +353,23 @@ async function purgeWorkspaceScoped(
     'submission_export_audit',
     tx.delete(submissionExportAudits).where(inArray(submissionExportAudits.workspaceId, ids)),
   );
-  // submission.head_revision_id references the revisions, so the pointer is cleared first.
+  // submission.head_revision_id and status_id reference the revisions and statuses, so the pointers
+  // are cleared first.
   await tx
     .update(submissions)
-    .set({ headRevisionId: null })
+    .set({ headRevisionId: null, statusId: null })
     .where(inArray(submissions.workspaceId, ids));
   await record(
     'submission_revision',
     tx.delete(submissionRevisions).where(inArray(submissionRevisions.workspaceId, ids)),
+  );
+  await record(
+    'submission_status',
+    tx.delete(submissionStatuses).where(inArray(submissionStatuses.workspaceId, ids)),
+  );
+  await record(
+    'submission_note',
+    tx.delete(submissionNotes).where(inArray(submissionNotes.workspaceId, ids)),
   );
   await record(
     'submission_participant',

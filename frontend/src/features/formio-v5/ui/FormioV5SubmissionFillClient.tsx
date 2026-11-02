@@ -18,6 +18,7 @@ import {
 import { useFillLabels } from '@/src/features/formio-v5/ui/useFillLabels';
 import { SubmissionLoadAlert } from '@/src/features/submissions/ui/SubmissionLoadAlert';
 import { useAccessCaller } from '@/src/shared/api/useAccessCaller';
+import { SubmissionWorkflowState } from '@/src/types/submissions';
 
 /**
  * Loads an already-opened submission for filling and decides, with the @soba/lib rules over the
@@ -41,7 +42,7 @@ function SubmissionFill({
   const [loadId, setLoadId] = useState(0);
 
   const bundle = fill.data;
-  const submitted = bundle?.workflowState === 'submitted';
+  const submitted = bundle?.workflowState === SubmissionWorkflowState.submitted;
   const submissionPath = `/${locale}/submission/${submissionId}`;
 
   useEffect(() => {

@@ -16,6 +16,7 @@ import {
   draftSaveStatusOf,
   hasAllPermissions,
   isIdentifiedCaller,
+  isSubmissionEditable,
   isSubmissionInProgress,
   Permissions,
   PUBLIC_PROVIDER_CODE,
@@ -917,7 +918,7 @@ function rowFactsIssues(
     issues.push(`${prefix}: My Submissions row's form differs from the My Forms row`);
   }
   const canContinue = canContinueSubmission(row, form, { idpCode: caller.identity.idpCode });
-  if (canContinue !== (answers.write && isSubmissionInProgress(row.workflowState))) {
+  if (canContinue !== (answers.write && isSubmissionEditable(row.workflowState))) {
     issues.push(`${prefix}: My Submissions row Continue differs from the write rule`);
   }
   return issues;

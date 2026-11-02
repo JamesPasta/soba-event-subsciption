@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
 import { SWRConfig } from 'swr';
 import type { Dictionary } from '@/src/types/dictionary';
-import type { Audience, SubmitterSettings } from '@/src/types/formSettings';
+import type { Audience, ReviewSettings, SubmitterSettings } from '@/src/types/formSettings';
 import { ApiError } from '@/src/shared/api/sobaHelpers';
 
 const {
@@ -53,6 +53,8 @@ const DRAFTS = 'Allow Submitters to Save and Edit Drafts';
 const PUBLIC_NOTE = 'Drafts are not available for Public forms.';
 const REQUIRED = 'Select at least one login.';
 const CONFLICT = 'Someone else changed these settings.';
+const STATUS_UPDATES = 'Reviewers can update the status of submissions';
+const REVISION = 'Submitters can revise their own submissions';
 
 const mockDict = {
   form: {
@@ -75,6 +77,10 @@ const mockDict = {
       allowSubmitterDraftsLabel: DRAFTS,
       allowSubmitterDraftsPublicNote: PUBLIC_NOTE,
       submitterSettingsLoadError: 'Could not load submitter settings.',
+      reviewSettingsDrawerLabel: 'Review Settings',
+      allowStatusUpdatesLabel: STATUS_UPDATES,
+      allowSubmitterRevisionLabel: REVISION,
+      reviewSettingsLoadError: 'Could not load review settings.',
       formSettingsDrawerSaveSuccessMessage: 'Changes saved.',
       formSettingsDrawerSaveErrorMessage: 'Save failed.',
       settingsConflictMessage: CONFLICT,
@@ -97,6 +103,7 @@ const IDIR: Audience = { mode: 'protected', idps: ['azureidir'] };
 
 let audience: Audience;
 let submitter: SubmitterSettings;
+let review: ReviewSettings;
 let store: ReturnType<typeof makeStore>;
 
 // One cache for everything rendered, as the app has.
@@ -121,6 +128,9 @@ const radio = (mode: string) => input(`audience-mode-${mode}`);
 const drafts = () => input('workspace-settings-allow-drafts');
 const audienceSave = () => screen.getByTestId('form-settings-workspace-audience-save');
 const submitterSave = () => screen.getByTestId('form-settings-workspace-submitter-save');
+const statusUpdates = () => input('workspace-settings-allow-status-updates');
+const revision = () => input('workspace-settings-allow-submitter-revision');
+const reviewSave = () => screen.getByTestId('form-settings-workspace-review-save');
 
 // A form's audience read, as a form drawer elsewhere in the app would hold it.
 function FormAudienceProbe() {
@@ -170,10 +180,11 @@ describe('WorkspaceFormSettings', () => {
     store.dispatch(setAuthenticated(true));
     audience = IDIR;
     submitter = { allowSubmitterDrafts: false };
+    review = { allowStatusUpdates: false, allowSubmitterRevision: false };
     mockGetProviders.mockResolvedValue({ items: PROVIDERS });
     mockGetInheriting.mockResolvedValue({ count: 3 });
     mockGetSettings.mockImplementation((_token: string, _ws: string, key: string) =>
-      Promise.resolve({ values: key === 'audience' ? audience : submitter, version: 1 }),
+      Promise.resolve({ values: { audience, submitter, review }[key], version: 1 }),
     );
     mockSetSettings.mockImplementation((_token: string, _ws: string, _key: string, body: unknown) =>
       Promise.resolve(body),
@@ -484,5 +495,48 @@ describe('WorkspaceFormSettings', () => {
 
     expect(await screen.findByText('members')).toBeInTheDocument();
     expect(mockGetForm).toHaveBeenCalledTimes(2);
+  });
+  it("shows the workspace's review settings", async () => {
+    review = { allowStatusUpdates: true, allowSubmitterRevision: false };
+    renderTab();
+    await waitFor(() => expect(statusUpdates()).toBeEnabled());
+
+    expect(statusUpdates()).toBeChecked();
+    expect(revision()).not.toBeChecked();
+    expect(reviewSave()).toBeDisabled();
+    expect(mockGetSettings).toHaveBeenCalledWith('token', 'ws1', 'review');
+  });
+
+  it('saves both review settings from the version read', async () => {
+    const user = userEvent.setup();
+    renderTab();
+    await waitFor(() => expect(statusUpdates()).toBeEnabled());
+
+    await user.click(screen.getByText(STATUS_UPDATES));
+    await user.click(screen.getByText(REVISION));
+    await user.click(reviewSave());
+
+    await waitFor(() =>
+      expect(mockSetSettings).toHaveBeenCalledWith('token', 'ws1', 'review', {
+        values: { allowStatusUpdates: true, allowSubmitterRevision: true },
+        version: 1,
+      }),
+    );
+    expect(mockAddNotification).toHaveBeenCalledWith({ type: 'success', text: 'Changes saved.' });
+  });
+
+  it('drops a stale review edit when someone else saved first', async () => {
+    const user = userEvent.setup();
+    mockSetSettings.mockRejectedValue(new ApiError('Changed', 409));
+    renderTab();
+    await waitFor(() => expect(statusUpdates()).toBeEnabled());
+
+    await user.click(screen.getByText(STATUS_UPDATES));
+    await user.click(reviewSave());
+
+    await waitFor(() =>
+      expect(mockAddNotification).toHaveBeenCalledWith({ type: 'error', text: CONFLICT }),
+    );
+    expect(statusUpdates()).not.toBeChecked();
   });
 });

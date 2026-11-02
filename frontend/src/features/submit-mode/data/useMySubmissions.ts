@@ -2,7 +2,12 @@
 
 import { useCallback, useMemo } from 'react';
 import { useSWRConfig } from 'swr';
-import { deleteSubmitSubmission, getMySubmissions } from '@/src/shared/api/sobaApi';
+import {
+  deleteSubmitSubmission,
+  getMySubmissions,
+  reviseSubmitSubmission,
+} from '@/src/shared/api/sobaApi';
+import { useUnsavedId } from '@/src/shared/hooks/useUnsavedId';
 import { useAuthedSWR } from '@/src/shared/api/useAuthedSWR';
 import { useCallToken } from '@/src/shared/api/callToken';
 import { listReadConfig } from '@/src/shared/api/swrConfig';
@@ -82,4 +87,29 @@ export function useMySubmissionDeleter() {
     [mutate, signedInToken],
   );
   return { remove };
+}
+
+/**
+ * Send one of the caller's own submitted submissions back to revise, then re-read the list. A retry
+ * of the same submission reuses its id until it is saved, so it is made once.
+ */
+export function useMySubmissionReviser() {
+  const { mutate } = useSWRConfig();
+  const { signedInToken } = useCallToken();
+  const unsaved = useUnsavedId();
+  const revise = useCallback(
+    async (submissionId: string): Promise<WriteOutcome<void>> => {
+      const token = signedInToken();
+      try {
+        await reviseSubmitSubmission(token, submissionId, { id: unsaved.idFor(submissionId) });
+        unsaved.saved();
+        return { status: 'applied', value: undefined };
+      } finally {
+        // A refused revise still re-reads: a reviewer may have taken it up.
+        await mutate((key) => Array.isArray(key) && key[0] === KEY);
+      }
+    },
+    [mutate, signedInToken, unsaved],
+  );
+  return { revise };
 }

@@ -1,6 +1,6 @@
+import { cleanName } from '../../../src/core/integrations/notification/emailText';
 import {
   buildNotice,
-  cleanName,
   designerLink,
 } from '../../../src/plugins/post-submission-email-addresses/notice';
 

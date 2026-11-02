@@ -16,6 +16,7 @@ const facts = (allowSubmitterDrafts: boolean, audienceMode: 'public' | 'protecte
   audienceMode,
   audienceIdps: [],
   allowSubmitterDrafts,
+  allowSubmitterRevision: false,
 });
 
 beforeEach(() => jest.resetAllMocks());

@@ -14,6 +14,7 @@ export const hasPermission = (
 export {
   canContinueSubmission,
   canDeleteOwnSubmission,
+  canReviseSubmission,
   canSaveDraftOnSubmission,
   canSaveSubmissionDraft,
   canStartSubmission,

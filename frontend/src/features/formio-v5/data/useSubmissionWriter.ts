@@ -11,7 +11,7 @@ import { ApiError } from '@/src/shared/api/sobaHelpers';
 import { useCallToken } from '@/src/shared/api/callToken';
 import type { WriteOutcome } from '@/src/shared/api/dataContracts';
 import type { SubmitFillBundle } from '@/src/types/forms';
-import type { SubmissionWriteResponse } from '@/src/types/submissions';
+import { SubmissionWorkflowState, type SubmissionWriteResponse } from '@/src/types/submissions';
 
 type WriteKind = 'save' | 'submit';
 
@@ -74,7 +74,8 @@ export function useSubmissionWriter(submissionId: string, signedIn: boolean) {
       if (outcome.status !== 'applied') return outcome;
       // A replayed save reports where it first landed; the record may have been submitted, or saved
       // again elsewhere, since.
-      if (value.workflowState === 'submitted') return { status: 'held', reason: 'closed' } as const;
+      if (value.workflowState === SubmissionWorkflowState.submitted)
+        return { status: 'held', reason: 'closed' } as const;
       if (value.headRevisionId !== value.revision.id) {
         return { status: 'held', reason: 'conflict' } as const;
       }

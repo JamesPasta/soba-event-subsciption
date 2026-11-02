@@ -53,6 +53,11 @@ jest.mock('../../../src/core/db/repos/submissionFileRepo', () => ({
 jest.mock('../../../src/core/db/repos/submitterSubmissionRepo', () => ({
   findSubmitterSubmission: jest.fn(),
 }));
+// When the current revision request was made; null when the submission is not revising.
+const mockFindRevisionStartedAt = jest.fn();
+jest.mock('../../../src/core/db/repos/submissionReviewRepo', () => ({
+  findRevisionStartedAt: (...args: unknown[]) => mockFindRevisionStartedAt(...args),
+}));
 // Antivirus off here: these cases predate scanning and cover storage + authorization.
 jest.mock('../../../src/core/db/repos/featureRepo', () => ({
   isFeatureEnabledCached: jest.fn().mockResolvedValue(false),
@@ -93,7 +98,10 @@ const readAsStored = async (input: { submissionId: string; actorId: string }) =>
     workflowState: live.workflowState,
     form: { permissions: held },
   });
-  return { ...stored, submission: { ...stored.submission, workspaceId: live.workspaceId } };
+  return {
+    ...stored,
+    submission: { ...stored.submission, id: input.submissionId, workspaceId: live.workspaceId },
+  };
 };
 
 // upload() returns a discriminated union once antivirus can reject; with the feature off here it is
@@ -326,6 +334,41 @@ describe('filesService', () => {
     (linkFileToSubmission as jest.Mock).mockRejectedValueOnce(new Error('link failed'));
     await expect(uploadFor('sub1', 'unlinked.txt')).rejects.toThrow('link failed');
     expect(listBlobs(tmp)).toEqual(before);
+  });
+
+  // Ending the revision restores the answers from before it, which may hold the file.
+  it('only takes a file attached before the revision out of the answers', async () => {
+    const record = await uploadFor('sub1', 'before.txt');
+    mockFindRevisionStartedAt.mockResolvedValue(new Date(record.createdAt.getTime() + 1000));
+    submissionMock.mockResolvedValue({ workspaceId: 'ws1', workflowState: 'revising' });
+    holding(['submission_create']);
+    const blobs = listBlobs(tmp);
+
+    expect(await filesService.deleteForCaller(record.id, owner)).toBe('deleted');
+    expect(mockLinks.get(record.id)).toBe('sub1');
+    expect(listBlobs(tmp)).toEqual(blobs);
+    expect(mockFindRevisionStartedAt).toHaveBeenCalledWith('ws1', 'sub1');
+  });
+
+  // The state was read as revising, and the revision ended before its start was read.
+  it('keeps the file when the revision has just ended', async () => {
+    const record = await uploadFor('sub1', 'ended.txt');
+    mockFindRevisionStartedAt.mockResolvedValue(null);
+    submissionMock.mockResolvedValue({ workspaceId: 'ws1', workflowState: 'revising' });
+    holding(['submission_create']);
+
+    expect(await filesService.deleteForCaller(record.id, owner)).toBe('deleted');
+    expect(mockLinks.get(record.id)).toBe('sub1');
+  });
+
+  it('deletes a file attached during the revision', async () => {
+    const record = await uploadFor('sub1', 'during.txt');
+    mockFindRevisionStartedAt.mockResolvedValue(new Date(record.createdAt.getTime() - 1000));
+    submissionMock.mockResolvedValue({ workspaceId: 'ws1', workflowState: 'revising' });
+    holding(['submission_create']);
+
+    expect(await filesService.deleteForCaller(record.id, owner)).toBe('deleted');
+    expect(mockLinks.has(record.id)).toBe(false);
   });
 
   it('leaves the blob intact when the row delete fails (row-first ordering)', async () => {

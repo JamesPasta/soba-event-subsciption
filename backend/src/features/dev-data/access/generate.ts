@@ -1,8 +1,10 @@
 /** Builds the coverage set and returns the ids its checks look each case up by. */
 import { and, asc, eq } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
 
 import { db } from '../../../core/db/client';
 import {
+  submissions,
   submissionParticipants,
   userIdentities,
   workspaceGroupMemberships,
@@ -38,10 +40,15 @@ import { FormService } from '../../../core/services/formService';
 import { FormVersionService } from '../../../core/services/formVersionService';
 import { SubmissionService } from '../../../core/services/submissionService';
 import { mapInOrder } from '../../../core/inOrder';
+import { addNote, changeStatus } from '../../../core/db/repos/submissionReviewRepo';
 import {
   updateSubmitterSettings,
   updateWorkspaceSubmitterSettings,
 } from '../../form-settings/submitter/repo';
+import {
+  updateReviewSettings,
+  updateWorkspaceReviewSettings,
+} from '../../form-settings/review/repo';
 import { getFixture } from '../fixtures';
 import { addMember } from '../members';
 import type { ResolvedUser } from '../resolveUser';
@@ -266,6 +273,12 @@ async function createForm(
     const settings = { allowSubmitterDrafts: planned.allowSubmitterDrafts };
     assertSaved(await updateSubmitterSettings({ ...formRef, settings }), 'drafts setting');
   }
+  if (planned.review) {
+    assertSaved(
+      await updateReviewSettings({ ...formRef, settings: planned.review }),
+      'review settings',
+    );
+  }
   if (planned.groupOverride) {
     await overrideGroup(ctx, workspace.key, workspaceId, form.id, planned.groupOverride);
   }
@@ -337,6 +350,10 @@ async function createWorkspace(
     }),
     'workspace drafts setting',
   );
+  assertSaved(
+    await updateWorkspaceReviewSettings({ ...settingsRef, settings: planned.review }),
+    'workspace review settings',
+  );
 
   const named = new Map<string, string>();
   ctx.groups.set(planned.key, named);
@@ -388,6 +405,43 @@ async function createSubmission(
       }),
     );
   }
+
+  // In order, so the notes keep the plan's oldest-first order.
+  await mapInOrder(planned.notes ?? [], async (note) => {
+    const author = persona(ctx, note.by);
+    const outcome = await addNote({
+      id: uuidv7(),
+      workspaceId,
+      submissionId,
+      text: note.text,
+      actorId: author.id,
+      actorDisplayLabel: author.displayLabel,
+    });
+    if (outcome !== 'added') throw new Error(`Note on ${planned.key} was not added: ${outcome}`);
+  });
+
+  // In order, as each change is made from the status before it.
+  await mapInOrder(planned.statusChanges ?? [], async (change) => {
+    const changer = persona(ctx, change.by);
+    const [head] = await db
+      .select({ statusId: submissions.statusId })
+      .from(submissions)
+      .where(eq(submissions.id, submissionId));
+    if (!head?.statusId) throw new Error(`${planned.key} has no status to change`);
+    const outcome = await changeStatus({
+      id: uuidv7(),
+      workspaceId,
+      submissionId,
+      fromStatusId: head.statusId,
+      status: change.status,
+      assigneeId: change.assignee ? persona(ctx, change.assignee).id : null,
+      actorId: changer.id,
+      actorDisplayLabel: changer.displayLabel,
+    });
+    if (outcome !== 'changed') {
+      throw new Error(`Status of ${planned.key} was not changed: ${outcome}`);
+    }
+  });
 
   if (planned.deleted) {
     await submissionService.deleteUnsubmitted({ workspaceId, submissionId, ...actor });

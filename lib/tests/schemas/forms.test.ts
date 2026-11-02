@@ -14,6 +14,7 @@ const facts = {
   audienceMode: 'members',
   audienceIdps: [],
   allowSubmitterDrafts: true,
+  allowSubmitterRevision: false,
 };
 
 describe('submitter form schemas', () => {
@@ -25,6 +26,7 @@ describe('submitter form schemas', () => {
   it.each([
     ['an unknown audience', { audienceMode: 'everyone' }],
     ['a missing drafts setting', { allowSubmitterDrafts: undefined }],
+    ['a missing revision setting', { allowSubmitterRevision: undefined }],
   ])('rejects facts with %s', (_label, overrides) => {
     expect(SubmitterFormFactsSchema.safeParse({ ...facts, ...overrides }).success).toBe(false);
   });

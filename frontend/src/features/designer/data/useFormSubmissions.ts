@@ -9,26 +9,46 @@ import { classifyDataError } from '@/src/shared/api/dataError';
 import type { ListResult, WriteOutcome } from '@/src/shared/api/dataContracts';
 import type { ListQueryArgs } from '@/src/types/list';
 import type { SubmissionListItem } from '@/src/types/submissions';
+import type { SubmissionReviewStatus } from '@/src/types/submissionReview';
 import { useSortLocale } from '@/src/shared/list/useSortLocale';
 import { designSubmissionKey } from './useDesignSubmission';
 import { submissionReviewKey } from './useSubmissionReview';
 import { clearJobLists } from '@/src/features/jobs/data/jobReads';
 
 const EMPTY: SubmissionListItem[] = [];
+const FORM_SUBMISSIONS_KEY = 'form-submissions';
+
+/** Narrows a form's submissions by their review. */
+export interface FormSubmissionFilters {
+  reviewStatus?: SubmissionReviewStatus;
+  assigneeId?: string;
+}
 
 /**
  * One page of submissions for one form, read once its tab has been opened. The endpoint requires
  * submission_read, which a designer need not hold, so the read waits to be asked for.
+ * `allowStatusUpdates` says whether the form's review shows, once the page is read.
  */
 export function useFormSubmissions(
   formId: string | undefined,
   opened: boolean,
   query: ListQueryArgs,
-): ListResult<SubmissionListItem> {
+  filters: FormSubmissionFilters = {},
+): ListResult<SubmissionListItem> & { allowStatusUpdates: boolean } {
   const locale = useSortLocale();
   const { data, isLoading, isValidating, error, mutate } = useAuthedSWR(
     formId && opened
-      ? ['form-submissions', formId, query.offset, query.limit, query.sort, query.q ?? '', locale]
+      ? [
+          FORM_SUBMISSIONS_KEY,
+          formId,
+          query.offset,
+          query.limit,
+          query.sort,
+          query.q ?? '',
+          filters.reviewStatus ?? '',
+          filters.assigneeId ?? '',
+          locale,
+        ]
       : null,
     (token) =>
       getSobaSubmissions(token, {
@@ -38,6 +58,8 @@ export function useFormSubmissions(
         q: query.q,
         locale,
         formId: formId as string,
+        reviewStatus: filters.reviewStatus,
+        assigneeId: filters.assigneeId,
       }),
     listReadConfig,
   );
@@ -57,7 +79,18 @@ export function useFormSubmissions(
     isRefreshing: isValidating && data !== undefined,
     error: error ? classifyDataError(error) : null,
     refresh,
+    allowStatusUpdates: data?.allowStatusUpdates === true,
   };
+}
+
+/** Reads a form's submission lists again; its review settings decide the columns and filters. */
+export function useFormSubmissionsRefresh(formId: string) {
+  const { mutate } = useSWRConfig();
+  return useCallback(
+    () =>
+      mutate((key) => Array.isArray(key) && key[0] === FORM_SUBMISSIONS_KEY && key[1] === formId),
+    [mutate, formId],
+  );
 }
 
 /** Delete a submission. */
@@ -67,7 +100,7 @@ export function useSubmissionDeleter() {
     async (token: string, submissionId: string): Promise<WriteOutcome<void>> => {
       await deleteSobaSubmission(token, submissionId);
       await Promise.all([
-        mutate((key) => Array.isArray(key) && key[0] === 'form-submissions'),
+        mutate((key) => Array.isArray(key) && key[0] === FORM_SUBMISSIONS_KEY),
         // Dropped, not re-read: an open review page would read a 404 before it navigates away.
         mutate(designSubmissionKey(submissionId), undefined, { revalidate: false }),
         mutate(submissionReviewKey(submissionId), undefined, { revalidate: false }),

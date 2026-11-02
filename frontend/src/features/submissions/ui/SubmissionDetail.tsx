@@ -3,10 +3,11 @@
 import type { FormType, Submission } from '@formio/react';
 import { InlineAlert } from '@bcgov/design-system-react-components';
 import { useDictionary } from '@/app/[lang]/Providers';
+import { StatusTag, submitterReviewToVariant } from '@/src/components/StatusTag';
 import { ReadOnlyFormView } from '@/src/features/formio-v5/ui/ReadOnlyFormView';
 import { useFormatLongDate } from '@/src/shared/hooks/useFormatLongDate';
 import type { SubmissionDataDocument } from '@/src/types/forms';
-import type { SubmissionListItem } from '@/src/types/submissions';
+import type { SubmissionListItem, SubmitterReviewLabel } from '@/src/types/submissions';
 import { WorkflowStateBadge } from './WorkflowStateBadge';
 
 const SEPARATOR = ' \u00B7 ';
@@ -17,6 +18,8 @@ type SubmissionDetailProps = {
   /** null = no engine document (no saved answers); `{}` data = empty answers on a real document. */
   content: SubmissionDataDocument | null;
   showSubmitter?: boolean;
+  /** The review as its submitter is told it, shown in place of the workflow state once there is one. */
+  reviewLabel?: SubmitterReviewLabel | null;
 };
 
 /** A loaded submission: its header and the answers rendered read-only against its schema. */
@@ -25,6 +28,7 @@ export function SubmissionDetail({
   schema,
   content,
   showSubmitter = false,
+  reviewLabel = null,
 }: Readonly<SubmissionDetailProps>) {
   const dict = useDictionary();
   const dictSub = dict.submission;
@@ -47,10 +51,18 @@ export function SubmissionDetail({
         <div className="small text-muted">
           <span data-testid="submission-view-version">v{submission.versionNo ?? 1}</span>
           {SEPARATOR}
-          <WorkflowStateBadge
-            state={submission.workflowState}
-            data-testid="submission-view-status"
-          />
+          {reviewLabel ? (
+            <StatusTag
+              label={dict.mySubmissions.reviewStatuses[reviewLabel]}
+              variant={submitterReviewToVariant(reviewLabel)}
+              data-testid="submission-view-status"
+            />
+          ) : (
+            <WorkflowStateBadge
+              state={submission.workflowState}
+              data-testid="submission-view-status"
+            />
+          )}
           {submission.submittedAt ? (
             <>
               {SEPARATOR}

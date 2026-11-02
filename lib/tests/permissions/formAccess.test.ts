@@ -21,6 +21,7 @@ const form = (overrides: Partial<SubmitterFormFacts> = {}): SubmitterFormFacts =
   audienceMode: 'members',
   audienceIdps: [],
   allowSubmitterDrafts: false,
+  allowSubmitterRevision: false,
   ...overrides,
 });
 

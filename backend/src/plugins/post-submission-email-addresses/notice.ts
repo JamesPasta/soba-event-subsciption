@@ -1,40 +1,11 @@
+import { cleanName, designerSubmissionLink } from '../../core/integrations/notification/emailText';
 import type { PostSubmissionActionSubmission } from '../../core/integrations/post-submission-action/PostSubmissionActionPluginDefinition';
-
-const MAX_NAME_LENGTH = 200;
-
-// A scheme and "://", or "www.", up to the next space: text a mail client would make a link of.
-const LINK = /\b(?:[a-z][a-z\d+.-]*:\/\/|www\.)\S*/giu;
-
-/**
- * A name fit for an email: no control or format characters, no links (only the designer link is
- * the notice's own), one line, at most 200 characters.
- */
-export const cleanName = (value: string): string =>
-  Array.from(
-    value
-      .replaceAll(/[\p{Cc}\p{Cf}]+/gu, ' ')
-      .replaceAll(LINK, '[link removed]')
-      .replaceAll(/\s+/g, ' ')
-      .trim(),
-  )
-    .slice(0, MAX_NAME_LENGTH)
-    .join('')
-    .trimEnd();
-
-const withoutTrailingSlashes = (url: string): string => {
-  let end = url.length;
-  while (end > 0 && url[end - 1] === '/') end -= 1;
-  return url.slice(0, end);
-};
 
 /** The submission in the designer; opening it needs sign-in and access to the submission. */
 export const designerLink = (
   designerAppUrl: string | undefined,
   submission: PostSubmissionActionSubmission,
-): string | null =>
-  designerAppUrl
-    ? `${withoutTrailingSlashes(designerAppUrl)}/en/build/${submission.formId}/submissions/${submission.id}`
-    : null;
+): string | null => designerSubmissionLink(designerAppUrl, submission.formId, submission.id);
 
 export interface Notice {
   subject: string;

@@ -8,6 +8,7 @@ import {
   requireSignedInSubmitter,
   requireSubmissionDelete,
   requireSubmissionRead,
+  requireSubmissionRevise,
   requireSubmissionStart,
   requireSubmissionWrite,
   requireVersionSchemaRead,
@@ -22,6 +23,7 @@ import {
   listMyForms,
   listMySubmissions,
   listMyWorkspaces,
+  reviseOwnSubmission,
 } from './controller';
 import { requireDraftSave } from './draftSave';
 import { replayRecordedOpen, replayRecordedSave, replayRecordedSubmit } from './replay';
@@ -41,6 +43,7 @@ import {
   ListMyFormsQuerySchema,
   ListMySubmissionsQuerySchema,
   MyWorkspaceLookupQuerySchema,
+  ReviseSubmissionBodySchema,
   SubmitFormIdParamsSchema,
   SubmitFormVersionIdParamsSchema,
 } from './schema';
@@ -77,6 +80,15 @@ router.post(
   replayRecordedSubmit,
   requireSubmissionWrite,
   submitSubmission,
+);
+// The owner sends their own submitted submission back to revise, when the form's review settings
+// allow it. A retry under the same id is answered as made.
+router.post(
+  '/submissions/:id/revise',
+  validateRequest({ params: SubmissionIdParamsSchema, body: ReviseSubmissionBodySchema }),
+  loadSubmitterSubmission,
+  requireSubmissionRevise,
+  reviseOwnSubmission,
 );
 
 router.get(

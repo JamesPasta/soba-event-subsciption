@@ -28,3 +28,13 @@ describe.each(['user-search', 'post-submission/settings', 'jobs'])(
     });
   },
 );
+
+describe('submissions review schema module', () => {
+  it('loads when it is the first module to require @soba/lib', async () => {
+    await jest.isolateModulesAsync(async () => {
+      await expect(
+        import('../../../../src/core/api/submissions/reviewSchema'),
+      ).resolves.toBeDefined();
+    });
+  });
+});

@@ -1,6 +1,13 @@
-import { compareTextForSort, SORT_LOCALES } from '@soba/lib';
+import {
+  compareTextForSort,
+  nextSubmissionStatuses,
+  SORT_LOCALES,
+  SubmissionReviewStatuses,
+  type SubmissionReviewStatus,
+} from '@soba/lib';
 import { buildPlan, DEV_SUBJECT_PREFIX } from '../../../src/features/dev-data/plan';
 import {
+  ADMIN,
   ANONYMOUS,
   buildCoveragePlan,
   COVERAGE_FORM_KEYS,
@@ -61,6 +68,47 @@ describe('dev data access coverage plan', () => {
     const published = new Set(forms.filter((f) => f.published).map((f) => f.key));
     for (const submission of plan.submissions) {
       expect(published.has(submission.form)).toBe(true);
+    }
+  });
+
+  // The generator writes status changes through the same rule the API applies.
+  it('only changes the status of a submitted submission, by moves the rule allows', () => {
+    for (const submission of plan.submissions) {
+      const changes = submission.statusChanges ?? [];
+      if (changes.length === 0) continue;
+      expect(submission.events).toContain('submitted');
+      let current: SubmissionReviewStatus = SubmissionReviewStatuses.submitted;
+      for (const change of changes) {
+        expect(nextSubmissionStatuses(current)).toContain(change.status);
+        expect(change.assignee !== undefined).toBe(
+          change.status === SubmissionReviewStatuses.assigned,
+        );
+        current = change.status;
+      }
+    }
+  });
+
+  // The server refuses a revision of an anonymous submission: no one could be asked to revise it.
+  it('only sends a signed-in submitter back to revise', () => {
+    const revised = plan.submissions.filter((submission) =>
+      submission.statusChanges?.some((c) => c.status === SubmissionReviewStatuses.revising),
+    );
+    expect(revised.length).toBeGreaterThan(0);
+    for (const submission of revised) expect(submission.by).not.toBe(ANONYMOUS);
+  });
+
+  // The admin owns every coverage workspace, so holds review in each without a seat.
+  it("only assigns to a persona seated in the submission's workspace", () => {
+    const workspaceOf = new Map(
+      plan.workspaces.flatMap((w) => w.forms.map((f) => [f.key, w] as const)),
+    );
+    for (const submission of plan.submissions) {
+      const seated = new Set<string>(workspaceOf.get(submission.form)!.seats.map((s) => s.persona));
+      for (const change of submission.statusChanges ?? []) {
+        if (change.assignee && change.assignee !== ADMIN) {
+          expect(seated.has(change.assignee)).toBe(true);
+        }
+      }
     }
   });
 

@@ -38,7 +38,13 @@ vi.mock('@/app/[lang]/Providers', () => ({
         updatedAt: 'Last updated',
         actions: 'Actions',
       },
-      states: { draft: 'Draft', submitted: 'Submitted' },
+      states: { draft: 'Draft', submitted: 'Submitted', revising: 'Revision requested' },
+      reviewStatuses: {
+        submitted: 'Submitted',
+        inReview: 'In review',
+        completed: 'Completed',
+        revisionRequested: 'Revision requested',
+      },
       statusFilter: 'Status',
       allStates: 'All',
       continue: 'Continue',
@@ -55,12 +61,19 @@ vi.mock('@/app/[lang]/Providers', () => ({
       deleteMessage: 'Your draft of {form}, last updated {updated}, will be deleted.',
       deleteSuccess: 'Draft deleted.',
       deleteError: 'Could not delete this draft.',
+      revise: 'Revise',
+      reviseLabel: 'Revise {form}, last updated {updated}',
+      reviseTitle: 'Revise your submission',
+      reviseMessage: 'Your submission of {form} will be reopened.',
+      reviseSuccess: 'Your submission is open to revise.',
+      reviseError: 'Could not open this submission to revise.',
       viewAll: 'View my submissions',
       noCode: 'No confirmation ID yet',
     },
     apiErrors: {
       delete_closed: 'Already submitted, so it stays.',
       delete_denied: 'Only its owner can delete it.',
+      revise_closed: 'A reviewer has already taken it up.',
     },
     dataTable: { itemName: 'items', pageOf: 'of {totalPages} page(s)' },
     modal: { dialogActions: 'Dialog actions' },
@@ -80,9 +93,11 @@ vi.mock('next/navigation', async () => {
 
 const getMySubmissions = vi.fn();
 const deleteSubmitSubmission = vi.fn();
+const reviseSubmitSubmission = vi.fn();
 vi.mock('@/src/shared/api/sobaApi', () => ({
   getMySubmissions: (...args: unknown[]) => getMySubmissions(...args),
   deleteSubmitSubmission: (...args: unknown[]) => deleteSubmitSubmission(...args),
+  reviseSubmitSubmission: (...args: unknown[]) => reviseSubmitSubmission(...args),
 }));
 
 const addNotification = vi.fn();
@@ -108,6 +123,7 @@ const DRAFT = {
   createdAt: '2026-09-01T18:00:00.000Z',
   updatedAt: '2026-09-02T18:30:00.000Z',
   confirmationCode: null,
+  reviewStatus: null,
 };
 const SUBMITTED = {
   id: 's2',
@@ -119,6 +135,14 @@ const SUBMITTED = {
   createdAt: '2026-09-01T18:00:00.000Z',
   updatedAt: '2026-09-03T18:00:00.000Z',
   confirmationCode: 'K7M2Q9XA',
+  reviewStatus: 'submitted',
+};
+const IN_REVIEW = { ...SUBMITTED, id: 's4', reviewStatus: 'inReview' };
+const REVISING = {
+  ...SUBMITTED,
+  id: 's5',
+  workflowState: 'revising',
+  reviewStatus: 'revisionRequested',
 };
 const SHARED_DRAFT = { ...DRAFT, id: 's3', role: 'collaborator' };
 
@@ -141,6 +165,7 @@ const writableForm = (id: string) => ({
   audienceMode: 'protected',
   audienceIdps: ['idir'],
   allowSubmitterDrafts: true,
+  allowSubmitterRevision: false,
 });
 // Members only and no role: a grant still reads, but nothing writes.
 const readOnlyForm = (id: string) => ({
@@ -235,6 +260,81 @@ describe('MySubmissionsList', () => {
     expect(screen.getByTestId('s2-status')).toHaveTextContent('Submitted');
     expect(screen.getByTestId('s1-confirmation-id')).toHaveTextContent('No confirmation ID yet');
     expect(screen.getByTestId('s2-confirmation-id')).toHaveTextContent('K7M2Q9XA');
+  });
+
+  // A submitter is told where the review stands, never who it is assigned to.
+  it('shows a submitted row by its review, in the words the submitter is told', async () => {
+    getMySubmissions.mockResolvedValue(page([IN_REVIEW, REVISING]));
+    await renderList();
+    expect(await screen.findByTestId('s4-status')).toHaveTextContent('In review');
+    expect(screen.getByTestId('s5-status')).toHaveTextContent('Revision requested');
+    expect(screen.getByTestId('s5-confirmation-id')).toHaveTextContent('K7M2Q9XA');
+  });
+
+  it('continues a submission sent back to revise, which its owner cannot delete', async () => {
+    getMySubmissions.mockResolvedValue(page([REVISING]));
+    await renderList();
+    await userEvent.click(await screen.findByTestId('s5-continue'));
+    expect(mockPush).toHaveBeenCalledWith('/en/submit/s5');
+    expect(screen.queryByTestId('s5-delete')).not.toBeInTheDocument();
+  });
+
+  // The same lib rule the server applies: the owner, the form's setting, nothing taken up yet.
+  it('offers Revise only on an owned submission no reviewer has taken up', async () => {
+    getMySubmissions.mockResolvedValue(
+      page(
+        [SUBMITTED, IN_REVIEW, { ...SUBMITTED, id: 's6', role: 'collaborator' }],
+        [{ ...writableForm('f2'), allowSubmitterRevision: true }],
+      ),
+    );
+    await renderList();
+    expect(await screen.findByTestId('s2-revise')).toHaveAccessibleName(
+      expect.stringMatching(/^Revise Grant report, last updated /),
+    );
+    expect(screen.queryByTestId('s4-revise')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('s6-revise')).not.toBeInTheDocument();
+  });
+
+  it("offers no Revise when the form's settings turn it off", async () => {
+    await renderList();
+    expect(await screen.findByTestId('s2-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('s2-revise')).not.toBeInTheDocument();
+  });
+
+  it('revises after confirmation and opens the fill page', async () => {
+    getMySubmissions.mockResolvedValue(
+      page([SUBMITTED], [{ ...writableForm('f2'), allowSubmitterRevision: true }]),
+    );
+    reviseSubmitSubmission.mockResolvedValue({ id: 's2', workflowState: 'revising' });
+    await renderList();
+    await userEvent.click(await screen.findByTestId('s2-revise'));
+    await userEvent.click(await screen.findByTestId('confirm-modal-confirm'));
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/en/submit/s2'));
+    expect(reviseSubmitSubmission).toHaveBeenCalledWith('token', 's2', {
+      id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    });
+    expect(addNotification).toHaveBeenCalledWith({
+      text: 'Your submission is open to revise.',
+      type: 'success',
+    });
+  });
+
+  it('says why when a reviewer took it up first, and stays on the list', async () => {
+    getMySubmissions.mockResolvedValue(
+      page([SUBMITTED], [{ ...writableForm('f2'), allowSubmitterRevision: true }]),
+    );
+    reviseSubmitSubmission.mockRejectedValue(new ApiError('conflict', 409, 'revise_closed'));
+    await renderList();
+    await userEvent.click(await screen.findByTestId('s2-revise'));
+    await userEvent.click(await screen.findByTestId('confirm-modal-confirm'));
+
+    await waitFor(() =>
+      expect(addNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'A reviewer has already taken it up.' }),
+      ),
+    );
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('shows the time of the last update, so same-day rows differ', async () => {

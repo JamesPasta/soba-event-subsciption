@@ -14,6 +14,7 @@ const facts = (overrides = {}) => ({
   audienceMode: 'members' as const,
   audienceIdps: [] as string[],
   allowSubmitterDrafts: false,
+  allowSubmitterRevision: false,
   ...overrides,
 });
 

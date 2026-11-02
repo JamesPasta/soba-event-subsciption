@@ -143,6 +143,7 @@ const facts = {
     audienceMode: 'members',
     audienceIdps: [],
     allowSubmitterDrafts: true,
+    allowSubmitterRevision: false,
   },
 };
 
@@ -290,6 +291,22 @@ describe('FormioV5SubmissionFillClient', () => {
     await renderSignedOut();
     await waitFor(() => expect(h.replace).toHaveBeenCalledWith('/en/submission/sub-1'));
     expect(screen.queryByTestId('fill-form')).not.toBeInTheDocument();
+  });
+
+  // A reviewer sent it back, so its submitters edit it again rather than view it.
+  it('mounts an editable form for a submission sent back to revise', async () => {
+    h.getSubmitFillBundle.mockResolvedValue({
+      workflowState: 'revising',
+      formVersionId: 'ver-1',
+      headRevisionId: 'rev-3',
+      schema: { components: [] },
+      content: { data: { a: 1 } },
+      ...facts,
+    });
+    await renderSignedOut();
+    await waitFor(() => expect(screen.getByTestId('fill-form')).toBeInTheDocument());
+    expect(h.options?.readOnly).toBe(false);
+    expect(h.replace).not.toHaveBeenCalled();
   });
 
   it('does not remount the form when the bundle refreshes in the background', async () => {

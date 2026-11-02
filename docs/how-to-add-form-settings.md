@@ -2,8 +2,8 @@
 
 A worked guide for a group a form owns alone, then the extra pieces for a group a workspace shares
 with its forms ([Shared groups](#shared-groups)). Replace `<group>` with your group's name
-throughout. Both groups that ship today, `audience` and `submitter`, are shared; the submitter files
-are the reference copy.
+throughout. The groups that ship today, `audience`, `submitter` and `review`, are shared; the
+submitter files are the reference copy, and `review` shows a group with more than one flag.
 
 For what the pieces are and how they fit, see [Form settings](form-settings.md).
 
@@ -165,8 +165,9 @@ export const <group>Section: FormSettingsSection = {
 ```
 
 Add it to `frontend/src/features/form-settings/registry.ts`. Weights run 10 (Form Settings), 20
-(Form Profile), 25 (Form Audience), 30 (Submitter Settings); leave gaps so a later section can slot
-between. This weight orders the tab and is unrelated to the module's, which orders mounting.
+(Form Profile), 25 (Form Audience), 30 (Submitter Settings), 35 (Review Settings); leave gaps so a
+later section can slot between. This weight orders the tab and is unrelated to the module's, which
+orders mounting.
 
 Add the section's text under `form.settings` in `frontend/dictionaries/en.json` and `fr.json`: the
 section label, each control's label, and any note or load-error message.

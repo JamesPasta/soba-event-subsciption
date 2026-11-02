@@ -13,7 +13,7 @@ import {
 import { profileHelpers } from '../../auth/jwtClaims';
 import { ForbiddenError } from '../../errors';
 import type { NormalizedProfile, IdpAttributes } from '../../auth/jwtClaims';
-import { WorkspaceMembershipRole, WorkspaceMembershipStatus } from '../codes';
+import { AppUserStatus, WorkspaceMembershipRole, WorkspaceMembershipStatus } from '../codes';
 import { likePattern, orderByForSort, type SortColumns } from '../listSort';
 import { readListPage } from '../listRead';
 import { membershipHoldsPermission } from './formAccessRepo';
@@ -92,7 +92,7 @@ const insertUserWithIdentity = async (
       id: uuidv7(),
       displayLabel,
       profile: args.profile ?? { displayName: args.subject },
-      status: 'active',
+      status: AppUserStatus.active,
       createdBy: stamp,
       updatedBy: stamp,
     })

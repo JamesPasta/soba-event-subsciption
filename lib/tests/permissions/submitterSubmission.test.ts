@@ -5,12 +5,15 @@ import {
   canReadSubmission,
   canReadVersionSchema,
   canRenderSubmission,
+  canReviseSubmission,
   canSaveDraftOnSubmission,
   canStartSubmission,
   canUploadSubmissionFile,
   canWriteSubmission,
+  isSubmissionEditable,
   isSubmissionInProgress,
   ownDeleteStatusOf,
+  reviseStatusOf,
   Permissions,
   saveDraftStatusOf,
   startStatusOf,
@@ -21,6 +24,7 @@ import {
   type SubmissionAccessFacts,
   type SubmitterFormFacts,
 } from '../../src/permissions';
+import type { SubmitterReviewLabel } from '../../src/schemas/submissionReview';
 
 const STATES = Object.values(SubmissionWorkflowState);
 
@@ -34,6 +38,7 @@ const form = (overrides: Partial<SubmitterFormFacts> = {}): SubmitterFormFacts =
   audienceMode: 'members',
   audienceIdps: [],
   allowSubmitterDrafts: true,
+  allowSubmitterRevision: false,
   ...overrides,
 });
 
@@ -84,6 +89,27 @@ const CASES: Array<[string, SubmissionAccessFacts, SubmitterFormFacts, AccessCal
     forms.roles,
     idir,
     { ...all(true), continue: false, upload: false, deleteFile: false, deleteOwn: false },
+  ],
+  [
+    'owner of a submission sent back to revise',
+    sub('owner', 'revising'),
+    forms.roles,
+    idir,
+    { ...all(true), deleteOwn: false },
+  ],
+  [
+    'collaborator on a submission sent back to revise',
+    sub('collaborator', 'revising'),
+    forms.roles,
+    idir,
+    { ...all(true), deleteOwn: false },
+  ],
+  [
+    'staff with update on a submission sent back to revise',
+    sub(null, 'revising'),
+    forms.staff,
+    idir,
+    all(false),
   ],
   [
     'collaborator on a draft',
@@ -200,6 +226,12 @@ describe('submission rules', () => {
     expect(isSubmissionInProgress('archived')).toBe(false);
   });
 
+  it.each(STATES)('isSubmissionEditable answers %s', (state) => {
+    expect(isSubmissionEditable(state)).toBe(
+      state === 'opened' || state === 'draft' || state === 'revising',
+    );
+  });
+
   it.each([
     ['allowed', sub('owner', 'draft'), forms.roles, idir, { status: 'allowed' }],
     [
@@ -241,6 +273,7 @@ describe('submission rules', () => {
       idir,
       { status: 'closed', code: 'upload_closed' },
     ],
+    ['a submission sent back to revise', sub('owner', 'revising'), idir, { status: 'allowed' }],
   ])('uploadStatusOf: %s', (_label, submission, caller, expected) => {
     expect(uploadStatusOf(submission, forms.roles, caller)).toEqual(expected);
   });
@@ -268,6 +301,12 @@ describe('submission rules', () => {
     [
       'a submitted submission',
       sub('owner', 'submitted'),
+      idir,
+      { status: 'closed', code: 'delete_closed' },
+    ],
+    [
+      'a submission sent back to revise',
+      sub('owner', 'revising'),
       idir,
       { status: 'closed', code: 'delete_closed' },
     ],
@@ -347,5 +386,69 @@ describe('versionSchemaStatusOf', () => {
   ])('%s', (_label, versionId, facts, caller, expected) => {
     expect(versionSchemaStatusOf(versionId, facts, caller)).toEqual(expected);
     expect(canReadVersionSchema(versionId, facts, caller)).toBe(expected.status === 'allowed');
+  });
+});
+
+describe('reviseStatusOf', () => {
+  const revisable = form({ permissions: SUBMITTER, allowSubmitterRevision: true });
+  const submittedBy = (role: string | null, reviewStatus: SubmitterReviewLabel | null) => ({
+    ...sub(role, 'submitted'),
+    reviewStatus,
+  });
+
+  it.each([
+    ['allowed', submittedBy('owner', 'submitted'), revisable, idir, { status: 'allowed' }],
+    [
+      'a collaborator',
+      submittedBy('collaborator', 'submitted'),
+      revisable,
+      idir,
+      { status: 'denied', code: 'revise_denied' },
+    ],
+    [
+      'the public user, never',
+      submittedBy('owner', 'submitted'),
+      form({ audienceMode: 'public', allowSubmitterRevision: true }),
+      anonymous,
+      { status: 'denied', code: 'revise_denied' },
+    ],
+    [
+      'an owner who may no longer write',
+      submittedBy('owner', 'submitted'),
+      form({ allowSubmitterRevision: true }),
+      idir,
+      { status: 'denied', code: 'revise_denied' },
+    ],
+    [
+      'the setting off',
+      submittedBy('owner', 'submitted'),
+      form({ permissions: SUBMITTER }),
+      idir,
+      { status: 'denied', code: 'revise_disabled' },
+    ],
+    [
+      'a reviewer took it up',
+      submittedBy('owner', 'inReview'),
+      revisable,
+      idir,
+      { status: 'closed', code: 'revise_closed' },
+    ],
+    [
+      'already sent back',
+      { ...sub('owner', 'revising'), reviewStatus: 'revisionRequested' as const },
+      revisable,
+      idir,
+      { status: 'closed', code: 'revise_closed' },
+    ],
+    [
+      'a draft',
+      { ...sub('owner', 'draft'), reviewStatus: null },
+      revisable,
+      idir,
+      { status: 'closed', code: 'revise_closed' },
+    ],
+  ])('%s', (_label, submission, facts, caller, expected) => {
+    expect(reviseStatusOf(submission, facts, caller)).toEqual(expected);
+    expect(canReviseSubmission(submission, facts, caller)).toBe(expected.status === 'allowed');
   });
 });

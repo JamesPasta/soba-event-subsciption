@@ -11,20 +11,20 @@ export const getSubmissionReview = asyncHandler(
   },
 );
 
+export const addSubmissionNote = asyncHandler(
+  async (req: Request<SubmissionIdParams, unknown, AddSubmissionNoteBody>, res: Response) => {
+    res.json(await submissionReviewService.addNote(req.coreContext!, req.params.id, req.body));
+  },
+);
+
 export const updateSubmissionStatus = asyncHandler(
   async (req: Request<SubmissionIdParams, unknown, UpdateSubmissionStatusBody>, res: Response) => {
     res.json(await submissionReviewService.updateStatus(req.coreContext!, req.params.id, req.body));
   },
 );
 
-export const addSubmissionNote = asyncHandler(
-  async (req: Request<SubmissionIdParams, unknown, AddSubmissionNoteBody>, res: Response) => {
-    res.json(await submissionReviewService.addNote(req.coreContext!, req.params.id, req.body.text));
-  },
-);
-
-export const recordSubmissionEdit = asyncHandler(
+export const listSubmissionReviewers = asyncHandler(
   async (req: Request<SubmissionIdParams>, res: Response) => {
-    res.json(await submissionReviewService.recordEdit(req.coreContext!, req.params.id));
+    res.json(await submissionReviewService.listReviewers(req.coreContext!));
   },
 );

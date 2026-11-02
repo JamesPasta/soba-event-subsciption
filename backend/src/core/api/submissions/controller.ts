@@ -42,6 +42,14 @@ export const getSubmissionData = asyncHandler(
   },
 );
 
+/** Staff change a submitted submission's answers. Runs after requireFormPermissions(update). */
+export const updateSubmissionData = asyncHandler(
+  async (req: Request<SubmissionIdParams, unknown, SubmissionDataBody>, res: Response) => {
+    const ctx = req.coreContext!;
+    res.json(await submissionsApiService.editData(ctx, req.params.id, req.body));
+  },
+);
+
 export const listSubmissions = asyncHandler(async (req: Request, res: Response) => {
   const scope = req.listScope!;
   const result = await submissionsApiService.list(
