@@ -131,16 +131,22 @@ export function SubmissionAnswersPanel({
       ) : (
         <>
           <ReadOnlyFormView schema={schema} submission={answers} testId="submission-view-form" />
-          {hasHistory ? (
+          {canEdit || hasHistory ? (
             <div className="d-flex gap-2 mt-3 d-print-none">
               {canEdit ? (
                 <Button onPress={onEdit} data-testid="submission-edit">
                   {dictReview.editData}
                 </Button>
               ) : null}
-              <Button variant="secondary" onPress={onHistory} data-testid="submission-data-history">
-                {dictReview.viewHistory}
-              </Button>
+              {hasHistory ? (
+                <Button
+                  variant="secondary"
+                  onPress={onHistory}
+                  data-testid="submission-data-history"
+                >
+                  {dictReview.viewHistory}
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </>

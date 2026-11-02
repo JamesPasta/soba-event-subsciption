@@ -143,9 +143,7 @@ export default function FormSubmissionTab({
                   label={dictReview.statuses[sub.reviewStatus]}
                   variant={workflowStateToVariant(sub.reviewStatus)}
                 />
-              ) : (
-                <span data-testid={`${sub.id}-review-status`}>{dictReview.notSubmitted}</span>
-              ),
+              ) : null,
           }
         : {
             key: 'workflowState',

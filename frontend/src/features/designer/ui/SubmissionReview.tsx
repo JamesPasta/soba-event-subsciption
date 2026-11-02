@@ -45,6 +45,8 @@ type SubmissionReviewProps = {
   schema: FormType | null;
   /** null = no engine document (no saved answers); `{}` data = empty answers on a real document. */
   content: SubmissionDataDocument | null;
+  /** Told whether there are changed answers a move away from the page would lose. */
+  onUnsavedEditChange?: (unsaved: boolean) => void;
 };
 
 /** The panels the user has open, and every panel while the page prints, so none prints collapsed. */
@@ -93,7 +95,12 @@ function MetaLine({
 }
 
 /** Staff review of one submission: its details, status, notes and answers. */
-export function SubmissionReview({ submission, schema, content }: Readonly<SubmissionReviewProps>) {
+export function SubmissionReview({
+  submission,
+  schema,
+  content,
+  onUnsavedEditChange,
+}: Readonly<SubmissionReviewProps>) {
   const dict = useDictionary();
   const dictSub = dict.submission;
   const dictReview = dictSub.review;
@@ -124,6 +131,10 @@ export function SubmissionReview({ submission, schema, content }: Readonly<Submi
     !!headRevisionId;
   // Once the answers are no longer staff's to change, the edit is over and does not come back.
   if (edit && !canEditData) setEdit(null);
+  const unsavedEdit = !!edit?.changed;
+  useEffect(() => {
+    onUnsavedEditChange?.(unsavedEdit);
+  }, [onUnsavedEditChange, unsavedEdit]);
   const panels = usePanelsOpenForPrint(PANELS);
   // A count, so one write settling does not clear pending while another is still running.
   const [inFlight, setInFlight] = useState(0);
@@ -328,7 +339,7 @@ export function SubmissionReview({ submission, schema, content }: Readonly<Submi
             answers={answers}
             versionNo={submission.versionNo ?? 1}
             editAnswers={edit?.answers ?? null}
-            changed={!!edit?.changed}
+            changed={unsavedEdit}
             pending={pending}
             canEdit={canEditData}
             hasHistory={!!submission.submittedAt && !!review.data}

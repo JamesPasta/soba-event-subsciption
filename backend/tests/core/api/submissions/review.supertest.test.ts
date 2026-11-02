@@ -274,6 +274,15 @@ describe('submission review routes', () => {
     expect(mockRepo.changeStatus).not.toHaveBeenCalled();
   });
 
+  it('refuses an assignee who is not an active user, as the picker leaves them out', async () => {
+    mockRepo.listReviewUsers.mockResolvedValue([]);
+    const response = await request(app).post(STATUS_PATH).send(ASSIGN);
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe(ApiErrorCodes.assignee_invalid);
+    expect(mockRepo.changeStatus).not.toHaveBeenCalled();
+  });
+
   // A retry after a lost response must not fail: the change is already made.
   it('answers a retried change as saved', async () => {
     mockRepo.changeStatus.mockResolvedValue('replayed');

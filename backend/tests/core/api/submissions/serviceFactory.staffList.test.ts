@@ -90,7 +90,23 @@ it('says nothing of the review for a list across forms', async () => {
   expect(result).not.toHaveProperty('allowStatusUpdates');
 });
 
+it("lists only the submissions in review when the form's status updates are on", async () => {
+  await api.list(scope as never, query);
+
+  expect(list).toHaveBeenCalledWith(expect.objectContaining({ inReviewOnly: true }));
+});
+
+it('lists every real submission when status updates are off, or across forms', async () => {
+  mockFindReview.mockResolvedValue({ allowStatusUpdates: false, allowSubmitterRevision: false });
+  await api.list(scope as never, query);
+  await api.list(scope as never, { ...query, formId: undefined });
+
+  expect(list).toHaveBeenCalledTimes(2);
+  for (const [input] of list.mock.calls) expect(input.inReviewOnly).toBe(false);
+});
+
 it('lists an unsubmitted row with no review', async () => {
+  mockFindReview.mockResolvedValue({ allowStatusUpdates: false, allowSubmitterRevision: false });
   list.mockResolvedValue({
     items: [
       {

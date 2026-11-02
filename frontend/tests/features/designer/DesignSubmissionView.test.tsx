@@ -9,7 +9,12 @@ import { ApiErrorCodes } from '@soba/lib';
 import { navLink } from '@/src/shared/list/listQueryMemory';
 import { SubmissionReviewStatuses } from '@/src/types/submissionReview';
 
-const { mockPush } = vi.hoisted(() => ({ mockPush: vi.fn() }));
+const { mockPush, leaveWarning } = vi.hoisted(() => ({
+  mockPush: vi.fn(),
+  leaveWarning: vi.fn(),
+}));
+
+vi.mock('@/src/shared/hooks/useLeaveWarning', () => ({ useLeaveWarning: leaveWarning }));
 
 vi.mock('@/app/[lang]/Providers', async () => {
   const dict = { ...(await import('@/dictionaries/en.json')).default, locale: 'en' };
@@ -878,6 +883,71 @@ describe('DesignSubmissionView staff edits', () => {
 
     expect(await screen.findByTestId('submission-edit')).toBeInTheDocument();
     expect(screen.queryByTestId('submission-edit-form')).toBeNull();
+  });
+
+  it('still offers Edit when the review cannot be read, but no history', async () => {
+    getSobaSubmissionReview.mockRejectedValue(new ApiError('Request failed (500)', 500));
+    await renderView({ submissionId: SUBMISSION_ID });
+
+    expect(await screen.findByTestId('submission-review-loaderror')).toBeInTheDocument();
+    expect(await screen.findByTestId('submission-edit')).toBeInTheDocument();
+    expect(screen.queryByTestId('submission-data-history')).toBeNull();
+  });
+
+  describe('leaving an edit', () => {
+    it('leaves without asking when nothing has changed', async () => {
+      const user = userEvent.setup();
+      await renderView({ submissionId: SUBMISSION_ID });
+
+      await user.click(await screen.findByTestId('submission-edit'));
+      await user.click(screen.getByTestId('design-submission-back'));
+
+      expect(screen.queryByTestId('confirm-modal-confirm')).toBeNull();
+      expect(mockPush).toHaveBeenCalledWith(navLink('/en/build/f1?tab=submissions'));
+      expect(leaveWarning).toHaveBeenLastCalledWith(false);
+    });
+
+    it('asks before Back or a refresh loses changed answers, and keeps them on staying', async () => {
+      const user = userEvent.setup();
+      await renderView({ submissionId: SUBMISSION_ID });
+
+      await user.click(await screen.findByTestId('submission-edit'));
+      await user.click(screen.getByTestId('submission-edit-form'));
+      expect(leaveWarning).toHaveBeenLastCalledWith(true);
+
+      await user.click(screen.getByTestId('design-submission-back'));
+      expect(mockPush).not.toHaveBeenCalled();
+      await user.click(await screen.findByTestId('confirm-modal-cancel'));
+
+      expect(mockPush).not.toHaveBeenCalled();
+      expect(screen.getByTestId('submission-edit-update')).toBeEnabled();
+    });
+
+    it('goes back once the loss is confirmed', async () => {
+      const user = userEvent.setup();
+      await renderView({ submissionId: SUBMISSION_ID });
+
+      await user.click(await screen.findByTestId('submission-edit'));
+      await user.click(screen.getByTestId('submission-edit-form'));
+      await user.click(screen.getByTestId('design-submission-back'));
+      await user.click(await screen.findByTestId('confirm-modal-confirm'));
+
+      expect(mockPush).toHaveBeenCalledWith(navLink('/en/build/f1?tab=submissions'));
+    });
+
+    it('stops asking once the edit is over', async () => {
+      const user = userEvent.setup();
+      await renderView({ submissionId: SUBMISSION_ID });
+
+      await user.click(await screen.findByTestId('submission-edit'));
+      await user.click(screen.getByTestId('submission-edit-form'));
+      await user.click(screen.getByTestId('submission-edit-cancel'));
+
+      expect(leaveWarning).toHaveBeenLastCalledWith(false);
+      await user.click(screen.getByTestId('design-submission-back'));
+      expect(screen.queryByTestId('confirm-modal-confirm')).toBeNull();
+      expect(mockPush).toHaveBeenCalled();
+    });
   });
 
   it('holds Update until an answer changes', async () => {

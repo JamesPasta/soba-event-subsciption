@@ -1,4 +1,16 @@
-import { and, count, eq, getTableColumns, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import {
+  and,
+  count,
+  eq,
+  getTableColumns,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { v7 as uuidv7 } from 'uuid';
 import {
@@ -204,6 +216,8 @@ export interface ListSubmissionsInput {
   formVersionId?: string;
   submissionId?: string;
   workflowState?: string;
+  /** Only submissions with a review status, leaving out those not yet submitted. */
+  inReviewOnly?: boolean;
   reviewStatus?: SubmissionReviewStatus;
   assigneeId?: string;
   createdBy?: string;
@@ -478,6 +492,10 @@ export const listSubmissionsForWorkspace = async (
 
   if (input.workflowState) {
     whereClauses.push(eq(submissions.workflowState, input.workflowState));
+  }
+
+  if (input.inReviewOnly) {
+    whereClauses.push(isNotNull(submissions.statusId));
   }
 
   if (input.reviewStatus) {

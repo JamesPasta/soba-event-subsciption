@@ -45,7 +45,6 @@ const { mockGetSubmissions, mockDelete, mockPush, search, dict } = vi.hoisted(()
         listStatusFilter: 'Review status',
         listAllStatuses: 'All',
         assignedToMeFilter: 'Assigned to me',
-        notSubmitted: 'Not submitted',
         statuses: {
           SUBMITTED: 'Submitted',
           ASSIGNED: 'Assigned',
@@ -275,7 +274,6 @@ describe('FormSubmissionTab', () => {
     expect(screen.getByTestId('sub-1-assignee')).toHaveTextContent(
       'Grace Hopper (grace@example.com)',
     );
-    expect(screen.getByTestId('sub-2-review-status')).toHaveTextContent('Not submitted');
     expect(screen.getByTestId('form-submissions-review-status-select')).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: /Assigned To/ })).toBeInTheDocument();
   });

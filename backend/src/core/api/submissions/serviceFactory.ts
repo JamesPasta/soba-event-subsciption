@@ -143,7 +143,11 @@ export function createSubmissionsApiService(submissionService: SubmissionService
     readContent: (refs: SubmissionContentRefs) => submissionService.readContent(refs),
 
     list: async (scope: SubmissionsListScopeInput, query: ListSubmissionsQueryInput) => {
+      // One form's review settings decide its list: with status changes on, it holds the submissions
+      // in review and shows their status and assignee.
+      const review = query.formId ? await findEffectiveReviewSettingsOfForm(query.formId) : null;
       const result = await submissionService.list({
+        inReviewOnly: review?.allowStatusUpdates === true,
         workspaceIds: scope.workspaceIds,
         actorId: scope.actorId,
         formAccess: scope.formAccess,
@@ -160,9 +164,6 @@ export function createSubmissionsApiService(submissionService: SubmissionService
         sort: query.sort,
         locale: query.locale,
       });
-      // One form's list says whether its review shows: the status and assignee columns hide when
-      // the form's settings turn status changes off.
-      const review = query.formId ? await findEffectiveReviewSettingsOfForm(query.formId) : null;
 
       return {
         items: result.items.map((item) => toSubmissionListItemDto(item)),

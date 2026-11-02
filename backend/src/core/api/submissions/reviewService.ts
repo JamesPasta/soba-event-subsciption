@@ -54,6 +54,27 @@ const assertRevisable = async (workspaceId: string, submissionId: string): Promi
   }
 };
 
+/** An assignee is an active user holding submission_review on the form, as the picker lists them. */
+const assertAssignable = async (
+  workspaceId: string,
+  formId: string,
+  assigneeId: string,
+): Promise<void> => {
+  const [permissions, activeUsers] = await Promise.all([
+    resolveFormPermissions(assigneeId, workspaceId, formId),
+    listReviewUsers([assigneeId]),
+  ]);
+  if (
+    activeUsers.length === 0 ||
+    !hasAllPermissions(permissions, [Permissions.submission_review])
+  ) {
+    throw new ValidationError(
+      'The assignee cannot review submissions of this form',
+      ApiErrorCodes.assignee_invalid,
+    );
+  }
+};
+
 const read = async (ctx: SubmissionReviewContext, submissionId: string) => {
   const [settings, statusHistory, notes, editHistory] = await Promise.all([
     findEffectiveReviewSettings(ctx.workspaceId, formIdOf(ctx)),
@@ -118,15 +139,7 @@ export const submissionReviewService = {
   ): Promise<SubmissionReview> {
     const formId = formIdOf(ctx);
     const settings = await findEffectiveReviewSettings(ctx.workspaceId, formId);
-    if (body.assigneeId) {
-      const permissions = await resolveFormPermissions(body.assigneeId, ctx.workspaceId, formId);
-      if (!hasAllPermissions(permissions, [Permissions.submission_review])) {
-        throw new ValidationError(
-          'The assignee cannot review submissions of this form',
-          ApiErrorCodes.assignee_invalid,
-        );
-      }
-    }
+    if (body.assigneeId) await assertAssignable(ctx.workspaceId, formId, body.assigneeId);
     if (body.status === SubmissionReviewStatuses.revising) {
       await assertRevisable(ctx.workspaceId, submissionId);
     }

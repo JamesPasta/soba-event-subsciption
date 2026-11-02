@@ -114,6 +114,8 @@ interface ListInput {
   formVersionId?: string;
   submissionId?: string;
   workflowState?: string;
+  /** Only submissions with a review status, leaving out those not yet submitted. */
+  inReviewOnly?: boolean;
   reviewStatus?: SubmissionReviewStatus;
   assigneeId?: string;
   createdBy?: string;
