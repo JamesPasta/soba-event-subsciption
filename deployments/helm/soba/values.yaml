@@ -100,6 +100,7 @@ backend:
   # feature_status code (enabled, disabled, experimental, deprecated), quoted. Anything else fails
   # the render. dev-data must stay off in production.
   features:
+    api-keys: ""
     dev-data: ""
     notifications: ""
     post-submission: ""
@@ -145,6 +146,7 @@ backend:
     virusScanDefaultCode: virusscan-clamav
     # Tenant engine behind GET /me/tenants. tenant-noop returns no tenants and calls nothing.
     tenantEngineDefaultCode: tenant-noop
+    credentialIssuerDefaultCode: credential-issuer-noop
     # Workflow engine. workflow-noop starts nothing and calls nothing.
     workflowEngineDefaultCode: workflow-noop
     # Notification plugin. notification-noop sends nothing and calls nothing.
@@ -296,6 +298,15 @@ backend:
       # -- outbound deadline in ms; empty uses the backend default (30000)
       timeoutMs: ""
 
+  # -- Credential issuer; URLs and the gateway ID are configured per deployment. Credentials and the
+  # product environment appId come from Vault.
+  credentialIssuer:
+    apsCredentialIssuerV3:
+      apiBaseUrl: ""
+      gatewayId: ""
+      tokenUrl: ""
+      timeoutMs: "5000"
+
   # -- configmap-tenant-engine: PLUGIN_CSTAR_V1_* + default engine code
   tenantEngine:
     cstarV1:
@@ -394,7 +405,7 @@ frontend:
   apps:
     designer:
       enabled: true
-      featuresAllowed: "design-mode,files,meta,marketing,templates,user-search,submission-export"
+      featuresAllowed: "design-mode,files,meta,marketing,templates,user-search,submission-export,api-keys"
       routePath: /designer
     forms:
       enabled: true

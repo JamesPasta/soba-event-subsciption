@@ -17,6 +17,7 @@ spec:
         checksum/config-app: {{ include (print .Template.BasePath "/backend/configmap-app.yaml") . | sha256sum }}
         checksum/config-formio: {{ include (print .Template.BasePath "/backend/configmap-formio.yaml") . | sha256sum }}
         checksum/config-document-generation: {{ include (print .Template.BasePath "/backend/configmap-document-generation.yaml") . | sha256sum }}
+        checksum/config-credential-issuer: {{ include (print .Template.BasePath "/backend/configmap-credential-issuer.yaml") . | sha256sum }}
         checksum/config-tenant-engine: {{ include (print .Template.BasePath "/backend/configmap-tenant-engine.yaml") . | sha256sum }}
         checksum/config-workflow-engine: {{ include (print .Template.BasePath "/backend/configmap-workflow-engine.yaml") . | sha256sum }}
         checksum/config-notification: {{ include (print .Template.BasePath "/backend/configmap-notification.yaml") . | sha256sum }}
@@ -65,6 +66,16 @@ spec:
           {{`{{- with secret "`}}{{ .Values.vault.secretPath }}{{`" }}`}}
           {{`export PLUGIN_NOTIFY_V1_API_KEY="{{ .Data.data.PLUGIN_NOTIFY_V1_API_KEY }}"`}}
           {{`{{- end }}`}}
+        {{- if eq .Values.backend.config.credentialIssuerDefaultCode "aps-credential-issuer-v3" }}
+        vault.hashicorp.com/error-on-missing-key-soba-aps-credential-issuer: 'true'
+        vault.hashicorp.com/agent-inject-secret-soba-aps-credential-issuer: {{ .Values.vault.secretPath | quote }}
+        vault.hashicorp.com/agent-inject-template-soba-aps-credential-issuer: |
+          {{`{{- with secret "`}}{{ .Values.vault.secretPath }}{{`" }}`}}
+          {{`export PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_ID="{{ .Data.data.PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_ID }}"`}}
+          {{`export PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_SECRET="{{ .Data.data.PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_SECRET }}"`}}
+          {{`export PLUGIN_APS_CREDENTIAL_ISSUER_V3_ENVIRONMENT_APP_ID="{{ .Data.data.PLUGIN_APS_CREDENTIAL_ISSUER_V3_ENVIRONMENT_APP_ID }}"`}}
+          {{`{{- end }}`}}
+        {{- end }}
         {{- if include "soba.userSearchUsesCss" . }}
         vault.hashicorp.com/error-on-missing-key-soba-css: 'true'
         vault.hashicorp.com/agent-inject-secret-soba-css: {{ .Values.vault.secretPath | quote }}
@@ -109,6 +120,9 @@ spec:
               . /vault/secrets/soba-cdogs
               . /vault/secrets/soba-workflow
               . /vault/secrets/soba-notify
+              {{- if eq .Values.backend.config.credentialIssuerDefaultCode "aps-credential-issuer-v3" }}
+              . /vault/secrets/soba-aps-credential-issuer
+              {{- end }}
               {{- if include "soba.storageUsesS3Vault" . }}
               . /vault/secrets/soba-s3
               {{- end }}
@@ -118,6 +132,8 @@ spec:
               exec node backend/dist/src/app.js
           {{- end }}
           envFrom:
+            - configMapRef:
+                name: {{ include "soba.fullname" . }}-backend-credential-issuer
             - configMapRef:
                 name: {{ include "soba.fullname" . }}-backend-app
             - configMapRef:

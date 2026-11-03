@@ -123,3 +123,5 @@ Start the backend with the "SOBA Backend" launch configuration. Under the API ba
 - A plugin that fails to load, or exports a definition Zod rejects, is logged and skipped. Startup continues. Search the log for `[PluginRegistry]`.
 - Readiness for a registry kind runs every installed plugin of that kind, not only the selected one. A plugin with no config is reported not ready in the startup log and on `/health/ready`.
 - Renaming a code means renaming env keys and the Helm template. A form engine code is also stored on the form (`form_engine_code`).
+
+Credential issuance follows the dedicated-registry model: `CREDENTIAL_ISSUER_DEFAULT_CODE` selects the implementation, falling back to `credential-issuer-noop`. See [Credential issuer](credential-issuer.md).

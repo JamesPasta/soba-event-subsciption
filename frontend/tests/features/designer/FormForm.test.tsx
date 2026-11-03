@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import en from '@/dictionaries/en.json';
 
 // Set per test: whether the user is signed in, and the query string the page was opened with.
 const session = vi.hoisted(() => ({ authenticated: true, search: '', path: '' }));
@@ -16,6 +17,7 @@ vi.mock('@/lib/hooks/useKeycloak', () => ({
 
 vi.mock('@/app/[lang]/Providers', () => ({
   useDictionary: () => ({
+    ...en,
     form: {
       loading: 'Loading',
       apiKey: 'API Key',

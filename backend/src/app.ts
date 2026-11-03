@@ -17,6 +17,7 @@ import {
   logEventStreamSelfTest,
   logDocumentGenerationReadiness,
   logTenantEngineReadiness,
+  logCredentialIssuerReadiness,
   logWorkflowEngineReadiness,
   logNotificationReadiness,
   logUserSearchReadiness,
@@ -187,6 +188,7 @@ const server = app.listen(port, () => {
     .then(logEventStreamSelfTest)
     .then(logDocumentGenerationReadiness)
     .then(logTenantEngineReadiness)
+    .then(logCredentialIssuerReadiness)
     .then(logWorkflowEngineReadiness)
     .then(logNotificationReadiness)
     .then(logUserSearchReadiness)

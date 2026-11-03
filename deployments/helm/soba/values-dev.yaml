@@ -1,7 +1,9 @@
 # Dev environment — single replica, moderate resources
 backend:
-  # Development data generator: on in dev. Notifications send through notify-v1 below.
+  # Development data generator: on in dev. Notifications send through notify-v1 below. API keys
+  # issue through the APS issuer below.
   features:
+    api-keys: "enabled"
     dev-data: "enabled"
     notifications: "enabled"
     post-submission: "enabled"
@@ -29,11 +31,17 @@ backend:
     eventStreamDefaultCode: eventstream-redis
     documentGenerationDefaultCode: cdogs-v2
     tenantEngineDefaultCode: cstar-v1
+    credentialIssuerDefaultCode: aps-credential-issuer-v3
     workflowEngineDefaultCode: cs-workflow-v1
     notificationDefaultCode: notify-v1
     userSearchPlugins: css-v1,user-search-soba
     # Emails go through Notify test, which only delivers to its safelist.
     postSubmissionActionPlugins: post-submission-email-addresses
+  credentialIssuer:
+    apsCredentialIssuerV3:
+      apiBaseUrl: https://api.gov.bc.ca/ds/api/v3
+      gatewayId: "gw-93f93"
+      tokenUrl: https://authz.apps.gov.bc.ca/auth/realms/aps/protocol/openid-connect/token
   documentGeneration:
     cdogsV2:
       endpoint: https://cdogs-dev.api.gov.bc.ca/api

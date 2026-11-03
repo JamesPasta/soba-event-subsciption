@@ -50,7 +50,7 @@ function resolveGitSha(): string {
 export class MetaApiService {
   async getPlugins(): Promise<PluginsMetaResponse> {
     const plugins = getPluginCatalog();
-    // Selectable adapter codes come from the registry; form, tenant and workflow engines have their own.
+    // Selectable adapter codes come from the registry; other kinds resolve their own defaults.
     const activeFormEngineCode =
       env.getFormEngineDefaultCode() ?? getFormEnginePlugins()[0]?.code ?? 'formio-v5';
     const activeCodes = new Set([

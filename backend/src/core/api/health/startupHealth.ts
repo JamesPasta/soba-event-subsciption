@@ -1,3 +1,4 @@
+import { checkCredentialIssuerReadiness } from '../../integrations/credential-issuer/CredentialIssuerRegistry';
 import { pool } from '../../db/client';
 import { log } from '../../logging';
 import {
@@ -319,5 +320,15 @@ export async function logUserSearchReadiness(): Promise<void> {
     );
   } else {
     log.info({ userSearchPlugins: results }, 'User search readiness: all plugins ready');
+  }
+}
+
+/** Report all installed credential issuers; non-gating, like tenant engines. */
+export async function logCredentialIssuerReadiness(): Promise<void> {
+  const credentialIssuers = await checkCredentialIssuerReadiness();
+  if (Object.values(credentialIssuers).every((result) => result.ok)) {
+    log.info({ credentialIssuers }, 'Credential issuer readiness: ready');
+  } else {
+    log.warn({ credentialIssuers }, 'Credential issuer readiness: not ready');
   }
 }

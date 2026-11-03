@@ -1,8 +1,9 @@
+/* Bottom-aligned, so a button lines up with a labelled field's input rather than its label. */
 .toolbar {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-end;
   gap: var(--layout-margin-medium);
   margin-bottom: var(--layout-margin-medium);
 }
@@ -11,7 +12,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  align-items: center;
+  align-items: flex-end;
   gap: var(--layout-margin-medium);
   margin-bottom: var(--layout-margin-medium);
 }

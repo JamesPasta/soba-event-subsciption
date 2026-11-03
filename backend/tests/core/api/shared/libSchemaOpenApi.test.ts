@@ -48,6 +48,7 @@ describe('OpenAPI components for lib-backed schemas', () => {
   const schemas = componentSchemas();
 
   it.each([
+    ['Credentials_CredentialState', 'Credentials_CredentialMetadata', 'Credentials_CredentialSort'],
     ['Forms_ListFormsResponse', 'Forms_FormListItem', 'Forms_FormSort'],
     ['Forms_ListFormVersionsResponse', 'Forms_FormVersionListItem', 'Forms_FormVersionSort'],
     [
@@ -101,6 +102,7 @@ describe('OpenAPI components for lib-backed schemas', () => {
   });
 
   it.each([
+    ['Credentials_CredentialSecret', 'credential', 'Credentials_CredentialMetadata'],
     ['Me_Response', 'actor', 'Me_Actor'],
     ['Me_Response', 'profile', 'Me_Profile'],
     ['Me_Response', 'preferences', 'Me_Preferences'],

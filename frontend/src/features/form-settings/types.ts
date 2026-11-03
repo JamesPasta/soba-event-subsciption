@@ -26,11 +26,13 @@ export type WorkspaceSettingsSectionProps = Readonly<{
   workspaceId: string;
 }>;
 
-/** One section of a workspace's Form Settings tab: a group the workspace shares with its forms. */
+/** One section of a workspace's Form Settings tab. */
 export type WorkspaceSettingsSection = {
   /** Accordion key and test id prefix. */
   id: string;
   /** Display order; lower first. */
   weight: number;
+  /** When set, the section shows only where this fixed feature is on. */
+  featureCode?: string;
   Drawer: ComponentType<WorkspaceSettingsSectionProps>;
 };

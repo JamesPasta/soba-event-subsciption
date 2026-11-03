@@ -165,9 +165,11 @@ export function DataTable<T>({
     if (error || data.length === 0) {
       return (
         <tr>
+          {/* No divider under the only row: the container clips it on a page, but not under a
+              taller inherited line height such as a design-system accordion's. */}
           <td
             colSpan={columns.length}
-            className="text-center py-5 text-muted"
+            className="text-center py-5 text-muted border-bottom-0"
             data-testid={error ? 'datatable-error' : 'datatable-empty'}
           >
             {/* Callers pass a sentence the reader can act on. Prefixing it turns "Your session has

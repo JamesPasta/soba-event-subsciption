@@ -23,6 +23,7 @@ export {
   logEventStreamSelfTest,
   logDocumentGenerationReadiness,
   logTenantEngineReadiness,
+  logCredentialIssuerReadiness,
   logWorkflowEngineReadiness,
   logNotificationReadiness,
   logUserSearchReadiness,

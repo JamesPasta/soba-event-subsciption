@@ -1,5 +1,6 @@
 import {
   DOCGEN_AUDIT_SORT_FIELDS,
+  CREDENTIAL_SORT_FIELDS,
   FEATURE_SCOPE_SORT_FIELDS,
   FORM_SORT_FIELDS,
   FORM_VERSION_SORT_FIELDS,
@@ -163,6 +164,14 @@ export const SUBMISSION_EXPORTS_LIST_QUERY: ListQuerySpec = {
   resource: 'submissionExports',
   filters: [],
   sortOptions: sortTokensFor(SUBMISSION_EXPORT_SORT_FIELDS),
+  defaultSort: CREATED_DESC,
+};
+
+/** A workspace's or form's API keys. Scope it to the owner with `scopedListQuery`. */
+export const CREDENTIALS_LIST_QUERY: ListQuerySpec = {
+  resource: 'credentials',
+  filters: [],
+  sortOptions: sortTokensFor(CREDENTIAL_SORT_FIELDS),
   defaultSort: CREATED_DESC,
 };
 

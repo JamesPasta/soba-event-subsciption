@@ -463,6 +463,13 @@
       "when": 1773136444000,
       "tag": "0066_submission_review",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1773222844000,
+      "tag": "0067_workspace_credentials",
+      "breakpoints": true
     }
   ]
 }

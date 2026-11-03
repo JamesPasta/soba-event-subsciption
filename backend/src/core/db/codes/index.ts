@@ -164,6 +164,8 @@ export const Features = {
   post_submission_email: 'post-submission-email',
   /** Exporting a form's submissions to a file, run as a background job. */
   submission_export: 'submission-export',
+  /** Generating and managing gateway API keys for a workspace and its forms. */
+  api_keys: 'api-keys',
 } as const;
 export type FeatureCode = (typeof Features)[keyof typeof Features];
 

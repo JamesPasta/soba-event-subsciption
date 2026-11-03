@@ -31,6 +31,8 @@ backend:
     logLevel: warn
     documentGenerationDefaultCode: cdogs-v2
     tenantEngineDefaultCode: cstar-v1
+    # Switch to aps-credential-issuer-v3 after adding the Vault keys.
+    credentialIssuerDefaultCode: credential-issuer-noop
     # Email jobs end cancelled while notifications are disabled. Sending needs the notifications
     # feature enabled, notificationDefaultCode notify-v1, notification.notifyV1.endpoint, and
     # PLUGIN_NOTIFY_V1_API_KEY in the Vault secret.
@@ -39,6 +41,11 @@ backend:
     notifyV1:
       # Keeps one slow send well inside an email job's lease and timeout.
       timeoutMs: "10000"
+  credentialIssuer:
+    apsCredentialIssuerV3:
+      apiBaseUrl: https://api.gov.bc.ca/ds/api/v3
+      gatewayId: "gw-6cd63"
+      tokenUrl: https://authz.apps.gov.bc.ca/auth/realms/aps/protocol/openid-connect/token
   documentGeneration:
     cdogsV2:
       endpoint: https://cdogs.api.gov.bc.ca/api

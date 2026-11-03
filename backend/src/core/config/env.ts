@@ -334,6 +334,8 @@ export function createEnvReader(source: EnvSource) {
     getFormEngineDefaultCode: () => getOptionalEnvFrom(source, 'FORM_ENGINE_DEFAULT_CODE'),
     /** User search plugin codes, in merge order. Unset enables none. */
     getUserSearchPlugins: () => getCsvEnvFrom(source, 'USER_SEARCH_PLUGINS') ?? [],
+    getCredentialIssuerDefaultCode: () =>
+      getOptionalEnvFrom(source, 'CREDENTIAL_ISSUER_DEFAULT_CODE'),
     getPostSubmissionActionPlugins: () =>
       getCsvEnvFrom(source, 'POST_SUBMISSION_ACTION_PLUGINS') ?? [],
     getTenantEngineDefaultCode: () => getOptionalEnvFrom(source, 'TENANT_ENGINE_DEFAULT_CODE'),
@@ -427,6 +429,7 @@ export const env = {
   getFormEngineDefaultCode: () => getOptionalEnv('FORM_ENGINE_DEFAULT_CODE'),
   /** User search plugin codes, in merge order. Unset enables none. */
   getUserSearchPlugins: () => getCsvEnv('USER_SEARCH_PLUGINS') ?? [],
+  getCredentialIssuerDefaultCode: () => getOptionalEnv('CREDENTIAL_ISSUER_DEFAULT_CODE'),
   /** Post-submission action plugins this environment runs, by code. Empty runs none. */
   getPostSubmissionActionPlugins: () => getCsvEnv('POST_SUBMISSION_ACTION_PLUGINS') ?? [],
   getTenantEngineDefaultCode: () => getOptionalEnv('TENANT_ENGINE_DEFAULT_CODE'),

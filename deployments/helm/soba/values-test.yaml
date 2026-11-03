@@ -1,7 +1,9 @@
 # Test / UAT environment — two replicas, moderate resources
 backend:
   # Development data generator: on in test, for integration runs. Notifications send through notify-v1.
+  # API keys issue through the APS issuer below.
   features:
+    api-keys: "enabled"
     dev-data: "enabled"
     notifications: "enabled"
     post-submission: "enabled"
@@ -29,10 +31,16 @@ backend:
     nodeEnv: production
     documentGenerationDefaultCode: cdogs-v2
     tenantEngineDefaultCode: cstar-v1
+    credentialIssuerDefaultCode: aps-credential-issuer-v3
     notificationDefaultCode: notify-v1
     userSearchPlugins: css-v1,user-search-soba
     # Emails go through Notify test, which only delivers to its safelist.
     postSubmissionActionPlugins: post-submission-email-addresses
+  credentialIssuer:
+    apsCredentialIssuerV3:
+      apiBaseUrl: https://api.gov.bc.ca/ds/api/v3
+      gatewayId: "gw-7f49d"
+      tokenUrl: https://authz.apps.gov.bc.ca/auth/realms/aps/protocol/openid-connect/token
   documentGeneration:
     cdogsV2:
       endpoint: https://cdogs-test.api.gov.bc.ca/api

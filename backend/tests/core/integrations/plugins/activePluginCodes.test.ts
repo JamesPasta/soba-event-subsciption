@@ -12,6 +12,8 @@ describe('active plugin code resolution', () => {
   });
 
   it('defaults match what the adapter getters instantiate', () => {
+    delete process.env.CREDENTIAL_ISSUER_DEFAULT_CODE;
+    expect(resolveActivePluginCode('credentialIssuer')).toBe('credential-issuer-noop');
     delete process.env.CACHE_DEFAULT_CODE;
     delete process.env.MESSAGEBUS_DEFAULT_CODE;
     delete process.env.TEMPSTORAGE_DEFAULT_CODE;
@@ -22,6 +24,7 @@ describe('active plugin code resolution', () => {
     expect(resolveActivePluginCode('virusScan')).toBe('virusscan-noop');
 
     const active = getActivePluginCodes();
+    expect(active.has('credential-issuer-noop')).toBe(true);
     expect(active.has('cache-memory')).toBe(true);
     expect(active.has('messagebus-memory')).toBe(true);
     expect(active.has('tempstorage-os')).toBe(true);
@@ -29,6 +32,8 @@ describe('active plugin code resolution', () => {
   });
 
   it('reflects env overrides', () => {
+    process.env.CREDENTIAL_ISSUER_DEFAULT_CODE = 'aps-credential-issuer-v3';
+    expect(resolveActivePluginCode('credentialIssuer')).toBe('aps-credential-issuer-v3');
     process.env.CACHE_DEFAULT_CODE = 'cache-redis';
     process.env.MESSAGEBUS_DEFAULT_CODE = 'messagebus-redis';
     process.env.TEMPSTORAGE_DEFAULT_CODE = 'tempstorage-mount';
@@ -39,6 +44,8 @@ describe('active plugin code resolution', () => {
     expect(resolveActivePluginCode('virusScan')).toBe('virusscan-clamav');
 
     const active = getActivePluginCodes();
+    expect(active.has('aps-credential-issuer-v3')).toBe(true);
+    expect(active.has('credential-issuer-noop')).toBe(false);
     expect(active.has('cache-redis')).toBe(true);
     expect(active.has('messagebus-redis')).toBe(true);
     expect(active.has('tempstorage-mount')).toBe(true);

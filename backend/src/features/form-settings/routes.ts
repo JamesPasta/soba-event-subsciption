@@ -28,7 +28,9 @@ export type SettingsScope = 'form' | 'workspace';
  * readable by any member, which resolving the workspace has already checked, and writable by owners
  * and admins.
  */
-const scopeGates = (scope: SettingsScope): { read: RequestHandler[]; write: RequestHandler[] } =>
+export const scopeGates = (
+  scope: SettingsScope,
+): { read: RequestHandler[]; write: RequestHandler[] } =>
   scope === 'form'
     ? {
         read: [requireFormPermissions([Permissions.form_read])],

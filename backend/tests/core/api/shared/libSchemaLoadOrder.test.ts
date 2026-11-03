@@ -18,7 +18,7 @@ describe.each([
   });
 });
 
-describe.each(['user-search', 'post-submission/settings', 'jobs'])(
+describe.each(['user-search', 'post-submission/settings', 'jobs', 'credentials'])(
   '%s feature schema module',
   (name) => {
     it('loads when it is the first module to require @soba/lib', async () => {

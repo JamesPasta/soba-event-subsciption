@@ -158,6 +158,24 @@ export class HttpClient {
     return this.readBinary(path, res, deadline);
   }
 
+  /** PUT a JSON body and return the raw response bytes. */
+  async putJsonForBinary(
+    path: string,
+    body: unknown,
+    deadline: number = this.deadline(),
+  ): Promise<BinaryResponse> {
+    const res = await this.send(
+      path,
+      {
+        method: 'PUT',
+        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json' },
+      },
+      deadline,
+    );
+    return this.readBinary(path, res, deadline);
+  }
+
   /** GET a path and return the raw response bytes. */
   async getForBinary(path: string, deadline: number = this.deadline()): Promise<BinaryResponse> {
     const res = await this.send(path, { method: 'GET' }, deadline);

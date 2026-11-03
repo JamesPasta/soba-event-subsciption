@@ -7,6 +7,11 @@ submitter files are the reference copy, and `review` shows a group with more tha
 
 For what the pieces are and how they fit, see [Form settings](form-settings.md).
 
+A group that holds a collection, such as API Keys, is still a module, but its router serves the
+collection and it keeps no row per form or workspace. Its drawers have their own table and form
+instead of the settings GET/PUT and the Save/Cancel footer. See
+[the credential feature](credential-issuer.md).
+
 ## Before you start
 
 - **Adding a flag to an existing group?** See the [last section](#adding-a-flag-to-an-existing-group).

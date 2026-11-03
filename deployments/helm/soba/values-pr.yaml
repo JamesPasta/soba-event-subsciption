@@ -1,7 +1,9 @@
 # PR environment - minimal resources, single replica, the dev release's Form.io and MongoDB
 backend:
   # Development data generator: on for PR review environments. Notifications send through notify-v1.
+  # API keys issue through the APS issuer below.
   features:
+    api-keys: "enabled"
     dev-data: "enabled"
     notifications: "enabled"
     post-submission: "enabled"
@@ -22,6 +24,7 @@ backend:
   config:
     documentGenerationDefaultCode: cdogs-v2
     tenantEngineDefaultCode: cstar-v1
+    credentialIssuerDefaultCode: aps-credential-issuer-v3
     workflowEngineDefaultCode: cs-workflow-v1
     notificationDefaultCode: notify-v1
     userSearchPlugins: css-v1,user-search-soba
@@ -38,6 +41,12 @@ backend:
     cacheDefaultCode: cache-redis
     messagebusDefaultCode: messagebus-redis
     eventStreamDefaultCode: eventstream-redis
+  credentialIssuer:
+    apsCredentialIssuerV3:
+      apiBaseUrl: https://api.gov.bc.ca/ds/api/v3
+      # PRs read dev's Vault secret, so they use its issuer account, gateway and product environment.
+      gatewayId: "gw-93f93"
+      tokenUrl: https://authz.apps.gov.bc.ca/auth/realms/aps/protocol/openid-connect/token
   documentGeneration:
     cdogsV2:
       endpoint: https://cdogs-dev.api.gov.bc.ca/api

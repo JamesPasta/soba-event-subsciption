@@ -37,6 +37,7 @@ export const forms = sobaSchema.table(
     workspaceNameUnique: uniqueIndex(FORM_WORKSPACE_NAME_UNIQUE)
       .on(table.workspaceId, table.name)
       .where(sql`${table.deletedAt} is null`),
+    workspaceIdUnique: uniqueIndex('form_workspace_id_uq').on(table.workspaceId, table.id),
     workspaceIdx: index('form_workspace_idx').on(table.workspaceId),
   }),
 );
