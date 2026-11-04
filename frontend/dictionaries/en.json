@@ -104,6 +104,57 @@
     "unavailableFilter": "That workspace is not available to you. Showing all forms instead.",
     "clearFilter": "Clear filter",
     "listLoadError": "Failed to load workspaces.",
+    "rolesTab": "Roles",
+    "roles": {
+      "viewRole": "View",
+      "name": "Role Name",
+      "allPermissions": "All permissions",
+      "permissionCount": "{count} permissions",
+      "permissionCountOne": "1 permission",
+      "fixedRole": "Fixed Role",
+      "fixedRoleHelp": "Fixed roles are defined by the platform and cannot be changed.",
+      "loadError": "Failed to load workspace roles.",
+      "empty": "No roles found.",
+      "close": "Close",
+      "columns": {
+        "name": "Name",
+        "type": "Type",
+        "permissions": "Permissions",
+        "actions": "Actions"
+      },
+      "types": {
+        "fixed": "Fixed",
+        "custom": "Custom"
+      },
+      "areas": {
+        "forms": "Forms",
+        "designs": "Designs",
+        "submissions": "Submissions",
+        "team": "Team",
+        "documentTemplates": "Document templates"
+      },
+      "permissionNames": {
+        "form_create": "Create form",
+        "form_read": "Read form",
+        "form_update": "Update form",
+        "form_delete": "Delete form",
+        "design_create": "Create design",
+        "design_read": "Read design",
+        "design_update": "Update design",
+        "design_delete": "Delete design",
+        "submission_create": "Create submission",
+        "submission_read": "Read submission",
+        "submission_update": "Update submission",
+        "submission_delete": "Delete submission",
+        "submission_review": "Review submission",
+        "submission_print_upload": "Print with uploaded template",
+        "team_read": "Read team",
+        "team_update": "Update team",
+        "document_template_create": "Create document template",
+        "document_template_read": "Read document template",
+        "document_template_delete": "Delete document template"
+      }
+    },
     "groupsTab": "Groups",
     "groups": {
       "addGroup": "Add Group",

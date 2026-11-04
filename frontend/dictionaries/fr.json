@@ -105,6 +105,57 @@
     "unavailableFilter": "Cet espace de travail n'est pas disponible pour vous. Affichage de tous les formulaires.",
     "clearFilter": "Effacer le filtre",
     "listLoadError": "Échec du chargement des espaces de travail.",
+    "rolesTab": "Rôles",
+    "roles": {
+      "viewRole": "Afficher",
+      "name": "Nom du rôle",
+      "allPermissions": "Toutes les autorisations",
+      "permissionCount": "{count} autorisations",
+      "permissionCountOne": "1 autorisation",
+      "fixedRole": "Rôle fixe",
+      "fixedRoleHelp": "Les rôles fixes sont définis par la plateforme et ne peuvent pas être modifiés.",
+      "loadError": "Échec du chargement des rôles de l'espace de travail.",
+      "empty": "Aucun rôle trouvé.",
+      "close": "Fermer",
+      "columns": {
+        "name": "Nom",
+        "type": "Type",
+        "permissions": "Autorisations",
+        "actions": "Actions"
+      },
+      "types": {
+        "fixed": "Fixe",
+        "custom": "Personnalisé"
+      },
+      "areas": {
+        "forms": "Formulaires",
+        "designs": "Conceptions",
+        "submissions": "Soumissions",
+        "team": "Équipe",
+        "documentTemplates": "Modèles de documents"
+      },
+      "permissionNames": {
+        "form_create": "Créer un formulaire",
+        "form_read": "Consulter un formulaire",
+        "form_update": "Modifier un formulaire",
+        "form_delete": "Supprimer un formulaire",
+        "design_create": "Créer une conception",
+        "design_read": "Consulter une conception",
+        "design_update": "Modifier une conception",
+        "design_delete": "Supprimer une conception",
+        "submission_create": "Créer une soumission",
+        "submission_read": "Consulter une soumission",
+        "submission_update": "Modifier une soumission",
+        "submission_delete": "Supprimer une soumission",
+        "submission_review": "Réviser une soumission",
+        "submission_print_upload": "Imprimer avec un modèle téléversé",
+        "team_read": "Consulter l'équipe",
+        "team_update": "Modifier l'équipe",
+        "document_template_create": "Créer un modèle de document",
+        "document_template_read": "Consulter un modèle de document",
+        "document_template_delete": "Supprimer un modèle de document"
+      }
+    },
     "groupsTab": "Groupes",
     "groups": {
       "addGroup": "Ajouter un groupe",

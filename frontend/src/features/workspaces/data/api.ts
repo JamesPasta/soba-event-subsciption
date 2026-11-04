@@ -9,9 +9,19 @@ import type {
   UpdateWorkspaceGroupBody,
   WorkspaceGroup,
 } from '@/src/types/workspaceGroups';
+import type { ListWorkspaceRolesResponse } from '@/src/types/workspaceRoles';
 
 const groupsPath = (workspaceId: string) => `/workspaces/${workspaceId}/groups`;
 const groupPath = (workspaceId: string, groupId: string) => `${groupsPath(workspaceId)}/${groupId}`;
+
+/** Every role available in the workspace, with its permission codes. */
+export async function listWorkspaceRoles(
+  token: string,
+  workspaceId: string,
+): Promise<ListWorkspaceRolesResponse> {
+  const response = await sobaFetch(`/workspaces/${workspaceId}/roles`, { token });
+  return parseJson(response);
+}
 
 /** One page of the workspace's groups, searched and sorted by the server. */
 export async function listWorkspaceGroups(
