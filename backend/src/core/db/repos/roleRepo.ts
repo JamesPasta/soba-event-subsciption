@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, or, type InferSelectModel } from 'drizzle-orm';
 import { db } from '../client';
-import { roles, features } from '../schema';
+import { roles, features, rolePermissions } from '../schema';
 import { CODE_SOURCE_CORE } from '../schema/codes';
 
 export type RoleRow = InferSelectModel<typeof roles>;
@@ -83,4 +83,21 @@ export const listRoles = async (
       sourceDisplay: sourceDisplay(role),
     };
   });
+};
+
+/** Permission codes by role code, each list in code order. A role with none has no entry. */
+export const listPermissionCodesByRole = async (
+  roleCodes: string[],
+): Promise<Map<string, string[]>> => {
+  const byRole = new Map<string, string[]>();
+  if (!roleCodes.length) return byRole;
+  const rows = await db
+    .select({ roleCode: rolePermissions.roleCode, permissionCode: rolePermissions.permissionCode })
+    .from(rolePermissions)
+    .where(inArray(rolePermissions.roleCode, roleCodes))
+    .orderBy(asc(rolePermissions.permissionCode));
+  for (const { roleCode, permissionCode } of rows) {
+    byRole.set(roleCode, [...(byRole.get(roleCode) ?? []), permissionCode]);
+  }
+  return byRole;
 };
