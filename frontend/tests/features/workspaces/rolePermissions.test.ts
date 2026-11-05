@@ -76,20 +76,40 @@ describe('role permissions', () => {
     },
   );
 
-  it('adds what a newly ticked permission needs, through every step', () => {
-    expect(new Set(withNeededPermissions([], ['submission_update']))).toEqual(
-      new Set(['submission_update', 'submission_read', 'form_read']),
-    );
-    expect(new Set(withNeededPermissions([], ['form_create']))).toEqual(
-      new Set(['form_create', 'form_read', 'design_create', 'design_update']),
-    );
+  const TICKED_WITH: [string, string[]][] = [
+    ['form_create', ['form_read', 'design_create', 'design_update']],
+    ['form_read', []],
+    ['form_update', ['form_read', 'document_template_read']],
+    ['form_delete', ['form_read']],
+    ['design_create', ['form_read', 'design_update']],
+    ['design_read', ['form_read']],
+    ['design_update', ['form_read', 'design_create']],
+    ['design_delete', ['form_read']],
+    ['submission_create', []],
+    ['submission_read', ['form_read']],
+    ['submission_update', ['submission_read', 'form_read']],
+    ['submission_delete', ['submission_read', 'form_read']],
+    ['submission_review', ['submission_read', 'form_read']],
+    ['submission_print_upload', ['submission_read', 'form_read']],
+    ['team_read', ['form_read']],
+    ['team_update', ['team_read', 'form_read']],
+    ['document_template_create', ['form_update', 'form_read', 'document_template_read']],
+    ['document_template_read', []],
+    ['document_template_delete', ['form_update', 'form_read', 'document_template_read']],
+  ];
+
+  it.each(TICKED_WITH)('ticking %s also ticks what it needs', (code, needs) => {
+    expect(new Set(withNeededPermissions([], [code]))).toEqual(new Set([code, ...needs]));
   });
 
-  it('adds nothing for submitting, which does not go through form_read', () => {
-    expect(withNeededPermissions([], ['submission_create'])).toEqual(['submission_create']);
-    expect(withNeededPermissions([], ['document_template_read'])).toEqual([
-      'document_template_read',
-    ]);
+  it('has a row for every permission', () => {
+    expect(new Set(TICKED_WITH.map(([code]) => code))).toEqual(new Set(listed));
+  });
+
+  it('gives the same result whatever was ticked or unticked before', () => {
+    expect(
+      new Set(withNeededPermissions(['submission_read'], ['submission_read', 'submission_update'])),
+    ).toEqual(new Set(['submission_read', 'submission_update', 'form_read']));
   });
 
   it('touches nothing else when a permission is unticked', () => {

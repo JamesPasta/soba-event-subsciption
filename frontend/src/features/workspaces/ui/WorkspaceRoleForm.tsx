@@ -15,7 +15,7 @@ import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
 import { apiErrorMessage, messageForDataError } from '@/src/shared/api/dataError';
 import { useAuthErrorDefaults } from '@/src/shared/api/useDataErrorNotice';
 import type { Dictionary } from '@/src/types/dictionary';
-import type { WorkspaceRole } from '@/src/types/workspaceRoles';
+import { WORKSPACE_ROLE_NAME_MAX_LENGTH, type WorkspaceRole } from '@/src/types/workspaceRoles';
 import { useWorkspaceRole } from '../data/useWorkspaceRole';
 import { useWorkspaceRolesWriter } from '../data/useWorkspaceRolesWriter';
 import { groupRoleLabel } from '../groupRoleLabel';
@@ -51,7 +51,7 @@ export function WorkspaceRoleForm({
   const record = useWorkspaceRole(workspaceId, roleCode ?? null);
 
   let content: React.ReactNode;
-  if (record.error) {
+  if (record.error && !record.role) {
     // Editing without the record would post the empty fields as a new role.
     content = (
       <TabFormUnavailable
@@ -162,6 +162,7 @@ function RoleFields({ dict, workspaceId, role, onDone }: Readonly<RoleFieldsProp
         label={t.name}
         value={name}
         onChange={setName}
+        maxLength={WORKSPACE_ROLE_NAME_MAX_LENGTH}
         isRequired
         isDisabled={saving || isFixed}
         data-testid="role-name-input"

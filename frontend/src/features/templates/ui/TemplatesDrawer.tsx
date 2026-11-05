@@ -11,6 +11,8 @@ import { useFormatLongDate } from '@/src/shared/hooks/useFormatLongDate';
 import { useKeycloak } from '@/lib/hooks/useKeycloak';
 import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
 import { classifyDataError, messageForDataError } from '@/src/shared/api/dataError';
+import { hasPermission } from '@/src/shared/util/permissions';
+import { Permissions } from '@/src/types/permissions';
 import { useForm } from '@/src/features/designer/data/useForm';
 import type { FormSettingsSectionProps } from '@/src/features/form-settings/types';
 import { useTemplates } from '../data/useTemplates';
@@ -43,6 +45,9 @@ export default function TemplatesDrawer({
     formId,
     currentVersion?.id ?? null,
   );
+
+  const canUpload = hasPermission(form?.permissions, Permissions.document_template_create);
+  const canDelete = hasPermission(form?.permissions, Permissions.document_template_delete);
 
   const [deleting, setDeleting] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TemplateResponse | null>(null);
@@ -126,22 +131,26 @@ export default function TemplatesDrawer({
         label: text.updatedColumn,
         render: (template) => <span className="small">{formatLongDate(template.updatedAt)}</span>,
       },
-      {
-        key: 'actions',
-        label: text.actionsColumn,
-        align: 'end',
-        render: (template) => (
-          <RowActionButton
-            data-testid={`template-${template.id}-delete`}
-            aria-label={`${text.delete} ${template.name} ${versionLabel(template)}`}
-            onPress={() => setPendingDelete(template)}
-          >
-            {text.delete}
-          </RowActionButton>
-        ),
-      },
+      ...(canDelete
+        ? [
+            {
+              key: 'actions',
+              label: text.actionsColumn,
+              align: 'end' as const,
+              render: (template: TemplateResponse) => (
+                <RowActionButton
+                  data-testid={`template-${template.id}-delete`}
+                  aria-label={`${text.delete} ${template.name} ${versionLabel(template)}`}
+                  onPress={() => setPendingDelete(template)}
+                >
+                  {text.delete}
+                </RowActionButton>
+              ),
+            },
+          ]
+        : []),
     ],
-    [text, formatLongDate, startDownload],
+    [text, formatLongDate, startDownload, canDelete],
   );
 
   const loadError = error
@@ -155,10 +164,10 @@ export default function TemplatesDrawer({
   return (
     <Accordion id={drawerName} data-testid={`accordion-${drawerName}`} label={text.drawerLabel}>
       <div className="d-block w-100">
-        {types?.length === 0 && (
+        {canUpload && types?.length === 0 && (
           <InlineAlert variant="info" title={text.noTypes} data-testid="template-no-types" />
         )}
-        {types && types.length > 0 && (
+        {canUpload && types && types.length > 0 && (
           <TemplateUploadForm
             dict={dict}
             types={types}

@@ -425,6 +425,38 @@ describe('WorkspaceRoleTab', () => {
     expect(screen.queryByRole('button', { name: t.deleteRole })).not.toBeInTheDocument();
   });
 
+  it('re-reads the list after a refused edit, as the role may have gone', async () => {
+    const user = userEvent.setup();
+    mockApi.updateWorkspaceRole.mockRejectedValue(new ApiError('Role not found', 404));
+    renderTab();
+    await user.click(await screen.findByTestId('edit-role-button-custom-1'));
+    await screen.findByDisplayValue('Auditor');
+    await user.clear(nameInput());
+    await user.paste('Inspector');
+    const readsBefore = mockApi.listWorkspaceRoles.mock.calls.length;
+
+    await user.click(screen.getByTestId('role-submit-button'));
+
+    await waitFor(() =>
+      expect(mockApi.listWorkspaceRoles.mock.calls.length).toBeGreaterThan(readsBefore),
+    );
+  });
+
+  it('re-reads the list after a refused delete', async () => {
+    const user = userEvent.setup();
+    mockApi.deleteWorkspaceRole.mockRejectedValue(
+      new ApiError('This role is still assigned to a group', 409, 'role_in_use'),
+    );
+    renderTab();
+    await user.click(await screen.findByTestId('delete-role-button-custom-1'));
+    const readsBefore = mockApi.listWorkspaceRoles.mock.calls.length;
+    await user.click(screen.getByRole('button', { name: t.deleteRole }));
+
+    await waitFor(() =>
+      expect(mockApi.listWorkspaceRoles.mock.calls.length).toBeGreaterThan(readsBefore),
+    );
+  });
+
   it('shows no fields when the role cannot be read', async () => {
     const user = userEvent.setup();
     mockApi.getWorkspaceRole.mockRejectedValue(new ApiError('Request failed (500)', 500));

@@ -44,6 +44,7 @@ const t = dict.workspaces.groups;
 
 vi.mock('@/app/[lang]/Providers', () => ({ useDictionary: () => dict }));
 
+import { useWorkspaceRoles } from '@/src/features/workspaces/data/useWorkspaceRoles';
 import WorkspaceGroupForm from '@/src/features/workspaces/ui/WorkspaceGroupForm';
 
 const onDone = vi.fn();
@@ -263,6 +264,35 @@ describe('WorkspaceGroupForm', () => {
 
     expect(await screen.findByTestId('group-load-error')).toHaveTextContent(t.groupLoadError);
     expect(screen.queryByTestId('group-name-input')).not.toBeInTheDocument();
+  });
+
+  it('keeps what was typed when a later read of the roles fails', async () => {
+    const user = userEvent.setup();
+    let reread: () => Promise<void> = () => Promise.resolve();
+    function Reread() {
+      reread = useWorkspaceRoles(WORKSPACE_ID).refresh;
+      return null;
+    }
+    renderSignedIn(
+      <>
+        <Reread />
+        {editForm()}
+      </>,
+    );
+    await user.click(await screen.findByRole('textbox', { name: new RegExp(t.name) }));
+    await user.paste('Half typed');
+    const readsBefore = mockApi.listWorkspaceRoles.mock.calls.length;
+
+    mockApi.listWorkspaceRoles.mockRejectedValue(new ApiError('Request failed (500)', 500));
+    await act(async () => {
+      await reread().catch(() => undefined);
+    });
+
+    await waitFor(() =>
+      expect(mockApi.listWorkspaceRoles.mock.calls.length).toBeGreaterThan(readsBefore),
+    );
+    expect(nameInput()).toHaveValue('Half typed');
+    expect(screen.queryByTestId('group-roles-error')).not.toBeInTheDocument();
   });
 
   it('shows no fields when the roles cannot be read', async () => {

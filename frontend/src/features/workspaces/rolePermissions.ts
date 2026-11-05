@@ -55,7 +55,7 @@ export const PERMISSION_AREAS: readonly { area: PermissionArea; codes: Code[] }[
  */
 const NEEDS: Partial<Record<string, readonly Code[]>> = {
   [Permissions.form_create]: [Permissions.form_read, Permissions.design_create],
-  [Permissions.form_update]: [Permissions.form_read],
+  [Permissions.form_update]: [Permissions.form_read, Permissions.document_template_read],
   [Permissions.form_delete]: [Permissions.form_read],
   [Permissions.design_create]: [Permissions.form_read, Permissions.design_update],
   [Permissions.design_read]: [Permissions.form_read],
@@ -68,14 +68,8 @@ const NEEDS: Partial<Record<string, readonly Code[]>> = {
   [Permissions.submission_print_upload]: [Permissions.submission_read],
   [Permissions.team_read]: [Permissions.form_read],
   [Permissions.team_update]: [Permissions.team_read],
-  [Permissions.document_template_create]: [
-    Permissions.form_read,
-    Permissions.document_template_read,
-  ],
-  [Permissions.document_template_delete]: [
-    Permissions.form_read,
-    Permissions.document_template_read,
-  ],
+  [Permissions.document_template_create]: [Permissions.form_update],
+  [Permissions.document_template_delete]: [Permissions.form_update],
 };
 
 /** `next`, plus what each newly ticked permission needs. Unticking touches nothing else. */
@@ -85,12 +79,13 @@ export function withNeededPermissions(
 ): string[] {
   const result = new Set(next);
   const pending = next.filter((code) => !previous.includes(code));
+  const visited = new Set<string>();
   for (let code = pending.pop(); code !== undefined; code = pending.pop()) {
+    if (visited.has(code)) continue;
+    visited.add(code);
     for (const needed of NEEDS[code] ?? []) {
-      if (!result.has(needed)) {
-        result.add(needed);
-        pending.push(needed);
-      }
+      result.add(needed);
+      pending.push(needed);
     }
   }
   return [...result];

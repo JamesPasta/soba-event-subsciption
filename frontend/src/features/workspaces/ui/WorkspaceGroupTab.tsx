@@ -43,7 +43,7 @@ export function WorkspaceGroupTab({ dict, workspaceId }: Readonly<WorkspaceGroup
   });
   const { table } = useDataTable(query, groupsResult, t.loadError);
   const writer = useWorkspaceGroupsWriter(workspaceId);
-  // Only for the roles' own names; a failed read falls back to the dictionary or the code.
+  // Only for the roles' own names; until they read, a custom role shows a generic name.
   const { rows: roles } = useWorkspaceRoles(workspaceId);
 
   const [formView, setFormView] = useState<FormView>(null);
@@ -89,7 +89,7 @@ export function WorkspaceGroupTab({ dict, workspaceId }: Readonly<WorkspaceGroup
             group.roles.map((code) => (
               <Tag
                 key={code}
-                text={groupRoleLabel(dict, code, catalogNames.get(code))}
+                text={groupRoleLabel(dict, code, catalogNames.get(code) ?? t.customRoleFallback)}
                 color="blue"
                 data-testid={`group-role-${group.id}-${code}`}
               />

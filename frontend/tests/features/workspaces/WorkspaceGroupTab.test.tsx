@@ -152,6 +152,23 @@ describe('WorkspaceGroupTab', () => {
     expect(await screen.findByText(t.noRolesSelected)).toBeInTheDocument();
   });
 
+  it('shows a custom role by a generic name, never its code, when the roles cannot be read', async () => {
+    mockApi.listWorkspaceRoles.mockRejectedValue(new ApiError('Request failed (500)', 500));
+    mockApi.listWorkspaceGroups.mockResolvedValue(
+      groupsPage([
+        group({ id: 'grp-audit', name: 'Auditors', roles: [AUDITOR.roleCode, 'form_designer'] }),
+      ]),
+    );
+    renderTab();
+
+    const custom = await screen.findByTestId(`group-role-grp-audit-${AUDITOR.roleCode}`);
+    expect(custom).toHaveTextContent(t.customRoleFallback);
+    expect(custom).not.toHaveTextContent(AUDITOR.roleCode);
+    expect(screen.getByTestId('group-role-grp-audit-form_designer')).toHaveTextContent(
+      t.roleNames.form_designer,
+    );
+  });
+
   it('removes a group once confirmed, then re-reads the list', async () => {
     const user = userEvent.setup();
     mockApi.deleteWorkspaceGroup.mockResolvedValue(undefined);

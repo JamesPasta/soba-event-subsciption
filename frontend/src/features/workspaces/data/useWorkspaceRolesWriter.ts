@@ -6,7 +6,6 @@ import type { WriteOutcome } from '@/src/shared/api/dataContracts';
 import type { AssignablePermissionCode } from '@/src/types/permissions';
 import type { UpdateWorkspaceRoleBody, WorkspaceRole } from '@/src/types/workspaceRoles';
 import { createWorkspaceRole, deleteWorkspaceRole, updateWorkspaceRole } from './api';
-import { WORKSPACE_GROUPS_KEY } from './useWorkspaceGroups';
 import { WORKSPACE_ROLES_KEY } from './useWorkspaceRoles';
 
 /** What the role form edits. */
@@ -19,19 +18,13 @@ export interface WorkspaceRoleFields {
 const samePermissions = (a: string[], b: string[]) =>
   a.length === b.length && a.every((code) => b.includes(code));
 
-/**
- * Create, update or remove the workspace's own roles. Each write re-reads the roles list and the
- * groups list, whose rows show role names.
- */
+/** Create, update or remove the workspace's own roles. Each write re-reads the roles list. */
 export function useWorkspaceRolesWriter(workspaceId: string) {
   const { mutate } = useSWRConfig();
   const refresh = useCallback(
     () =>
       mutate(
-        (key) =>
-          Array.isArray(key) &&
-          (key[0] === WORKSPACE_ROLES_KEY || key[0] === WORKSPACE_GROUPS_KEY) &&
-          key[1] === workspaceId,
+        (key) => Array.isArray(key) && key[0] === WORKSPACE_ROLES_KEY && key[1] === workspaceId,
       ),
     [mutate, workspaceId],
   );
@@ -63,8 +56,10 @@ export function useWorkspaceRolesWriter(workspaceId: string) {
       if (!samePermissions(fields.permissionCodes, role.permissions)) {
         changes.permissionCodes = fields.permissionCodes as AssignablePermissionCode[];
       }
-      if (Object.keys(changes).length) {
+      if (!Object.keys(changes).length) return { status: 'applied', value: undefined };
+      try {
         await updateWorkspaceRole(token, workspaceId, role.roleCode, changes);
+      } finally {
         await refresh();
       }
       return { status: 'applied', value: undefined };
@@ -74,8 +69,11 @@ export function useWorkspaceRolesWriter(workspaceId: string) {
 
   const remove = useCallback(
     async (token: string, roleCode: string): Promise<WriteOutcome<void>> => {
-      await deleteWorkspaceRole(token, workspaceId, roleCode);
-      await refresh();
+      try {
+        await deleteWorkspaceRole(token, workspaceId, roleCode);
+      } finally {
+        await refresh();
+      }
       return { status: 'applied', value: undefined };
     },
     [workspaceId, refresh],

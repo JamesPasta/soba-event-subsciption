@@ -61,7 +61,7 @@ export function WorkspaceGroupForm({
         onCancel={onDone}
       />
     );
-  } else if (roles.error) {
+  } else if (roles.error && roles.total === undefined) {
     // Without the role list there is nothing to choose from, and a save would send no roles.
     content = (
       <TabFormUnavailable

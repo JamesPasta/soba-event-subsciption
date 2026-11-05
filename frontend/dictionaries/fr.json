@@ -182,6 +182,7 @@
       "roles": "Attribuez des rôles à ce groupe",
       "rolesHelp": "Rôles accordés à tous les membres de ce groupe sur l'ensemble des formulaires de l'espace de travail.",
       "noRolesSelected": "Aucun rôle sélectionné",
+      "customRoleFallback": "Rôle personnalisé",
       "systemGroup": "Groupe système",
       "systemGroupTooltip": "Les groupes système sont protégés et ne peuvent pas être supprimés.",
       "deleteConfirmTitle": "Supprimer le groupe",
