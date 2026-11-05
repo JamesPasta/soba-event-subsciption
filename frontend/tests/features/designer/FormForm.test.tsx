@@ -20,6 +20,7 @@ vi.mock('@/app/[lang]/Providers', () => ({
     ...en,
     form: {
       loading: 'Loading',
+      previewSubmissionDisabled: 'Submission during a preview is disabled.',
       apiKey: 'API Key',
       nameLabel: 'Form Name',
       descriptionLabel: 'Description',
@@ -145,8 +146,22 @@ vi.mock('@/src/shared/api/sobaApi', () => ({
 }));
 
 // Mock DynamicForm and FormDesigner components used in FormForm
+const preview = vi.hoisted(() => ({ emit: vi.fn() }));
 vi.mock('@/src/features/formio-v5/ui/DynamicForm', () => ({
-  DynamicForm: () => <div data-testid="dynamic-form">preview</div>,
+  DynamicForm: ({
+    onSubmit,
+    onFormReady,
+  }: {
+    onSubmit: () => void;
+    onFormReady: (instance: typeof preview) => void;
+  }) => {
+    React.useEffect(() => onFormReady(preview), [onFormReady]);
+    return (
+      <div data-testid="dynamic-form">
+        <button onClick={onSubmit}>Submit preview</button>
+      </div>
+    );
+  },
 }));
 
 vi.mock('@bcgov/design-system-react-components', async (importOriginal) => {
@@ -315,6 +330,27 @@ describe('FormForm', () => {
     });
     // The designer area includes a form name heading; assert it renders with loaded value
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Test' })).toBeInTheDocument());
+  });
+
+  it('warns and releases the pending state on every preview submission', async () => {
+    mockWorkspaceState.versions = [{ id: 'v1', versionNo: 1, state: 'draft' }];
+    await act(async () => {
+      await renderForm({ formId: 'f1' });
+    });
+    await userEvent.click(screen.getByTestId('preview-form-button'));
+    const submit = await screen.findByRole('button', { name: 'Submit preview' });
+
+    await userEvent.click(submit);
+    await userEvent.click(submit);
+
+    expect(store.getState().notification.notifications).toEqual([
+      expect.objectContaining({ text: en.form.previewSubmissionDisabled, type: 'warning' }),
+      expect.objectContaining({ text: en.form.previewSubmissionDisabled, type: 'warning' }),
+    ]);
+    expect(preview.emit).toHaveBeenCalledTimes(2);
+    expect(preview.emit).toHaveBeenNthCalledWith(1, 'submitError', '');
+    expect(preview.emit).toHaveBeenNthCalledWith(2, 'submitError', '');
+    expect(screen.getByTestId('dynamic-form')).toBeInTheDocument();
   });
 
   // The form's current version is what the builder is fed.
