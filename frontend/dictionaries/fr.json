@@ -452,6 +452,11 @@
     }
   },
   "form": {
+    "deleteTitle": "Supprimer le formulaire",
+    "delete": "Supprimer",
+    "deleteMessage": "Supprimer « {name} »? Le formulaire ne sera plus accessible, y compris par les liens partagés. Cette action ne peut pas être annulée dans l’application.",
+    "deleteSuccess": "Le formulaire a été supprimé.",
+    "deleteError": "Impossible de supprimer le formulaire.",
     "saved": "Formulaire enregistré avec succès.",
     "saveError": "Erreur lors de l'enregistrement du formulaire.",
     "versionConflict": "Ce formulaire a été modifié depuis son ouverture. Enregistrez vos modifications comme nouvelle version, ou abandonnez-les.",

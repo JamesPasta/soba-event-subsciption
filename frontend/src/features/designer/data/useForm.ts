@@ -13,7 +13,7 @@ import {
   publishSobaFormVersion,
   saveFormVersionSchema,
 } from '@/src/shared/api/sobaApi';
-import { updateSobaForm } from '@/src/shared/api/sobaApiDesign';
+import { deleteSobaForm, updateSobaForm } from '@/src/shared/api/sobaApiDesign';
 import { useAuthedSWR } from '@/src/shared/api/useAuthedSWR';
 import { ApiError } from '@/src/shared/api/sobaHelpers';
 import { sessionReadConfig } from '@/src/shared/api/swrConfig';
@@ -223,8 +223,7 @@ const mintFormIds = () => ({ id: uuidv7(), versionId: uuidv7() });
 
 /**
  * The write side of one form: its record, its version schemas, and new versions. Each action
- * refreshes the caches it affects (the form, the version list, and the schema just written), so a
- * component never refreshes by hand.
+ * updates the caches it affects, so a component never refreshes by hand.
  */
 export function useFormWriter(formId: string) {
   const { mutate } = useSWRConfig();
@@ -312,7 +311,20 @@ export function useFormWriter(formId: string) {
     [commitSchema, refreshVersions, refreshForm],
   );
 
-  return { update, createVersion, restoreVersion, saveSchema };
+  const remove = useCallback(
+    async (token: string): Promise<WriteOutcome<void>> => {
+      await deleteSobaForm(token, formId);
+      // Clear the detail without reading the now-deleted resource, and refresh the lists.
+      await Promise.all([
+        mutate(designFormKey(formId), undefined, { revalidate: false }),
+        mutate((key) => Array.isArray(key) && key[0] === 'forms'),
+      ]);
+      return { status: 'applied', value: undefined };
+    },
+    [formId, mutate],
+  );
+
+  return { update, createVersion, restoreVersion, saveSchema, remove };
 }
 
 /**

@@ -29,7 +29,7 @@ jest.mock('../../../../src/core/middleware/workspaceContext', () => {
 });
 
 jest.mock('../../../../src/core/container', () => ({
-  formsApiService: { createForm: jest.fn(), createDraft: jest.fn() },
+  formsApiService: { createForm: jest.fn(), createDraft: jest.fn(), deleteForm: jest.fn() },
 }));
 
 import { designFormsRouter } from '../../../../src/core/api/forms/route';
@@ -39,6 +39,7 @@ import { Permissions } from '../../../../src/core/db/codes';
 
 const createFormMock = formsApiService.createForm as jest.Mock;
 const createDraftMock = formsApiService.createDraft as jest.Mock;
+const deleteFormMock = formsApiService.deleteForm as jest.Mock;
 
 const FORM_ID = '01a11400-0000-7000-8000-000000000001';
 const VERSION_ID = '01a11400-0000-7000-8000-000000000002';
@@ -51,6 +52,34 @@ app.use(coreErrorHandler);
 beforeEach(() => {
   createFormMock.mockReset();
   createDraftMock.mockReset();
+  deleteFormMock.mockReset();
+});
+
+describe('DELETE /forms/:id', () => {
+  it('requires form_delete permission', () => {
+    expect(mockPermissionCalls).toContainEqual([Permissions.form_delete]);
+  });
+
+  it('returns 204 after deleting the scoped form', async () => {
+    deleteFormMock.mockResolvedValue({ id: FORM_ID });
+    const res = await request(app).delete(`/forms/${FORM_ID}`);
+    expect(res.status).toBe(204);
+    expect(deleteFormMock).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: 'ws1' }),
+      FORM_ID,
+    );
+  });
+
+  it('refuses a caller without permission before deleting', async () => {
+    const res = await request(app).delete(`/forms/${FORM_ID}`).set('x-deny', 'true');
+    expect(res.status).toBe(403);
+    expect(deleteFormMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when the form is no longer available', async () => {
+    deleteFormMock.mockResolvedValue(null);
+    expect((await request(app).delete(`/forms/${FORM_ID}`)).status).toBe(404);
+  });
 });
 
 describe('POST /forms', () => {

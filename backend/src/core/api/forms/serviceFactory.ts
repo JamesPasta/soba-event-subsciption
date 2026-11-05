@@ -98,6 +98,7 @@ const toFormDto = (item: FormRecord) => ({
 });
 
 const toFormListItemDto = (item: FormListRow): FormListItem => ({
+  permissions: item.permissions,
   id: item.id,
   workspaceId: item.workspaceId,
   workspaceName: item.workspaceName,

@@ -89,6 +89,12 @@ export async function getSobaForm(token: string, id: string): Promise<SobaFormDe
   return parseJson(response);
 }
 
+/** A retry after a successful delete may find the form already gone. */
+export async function deleteSobaForm(token: string, id: string): Promise<void> {
+  const response = await sobaFetch(`/design/forms/${id}`, { token, method: 'DELETE' });
+  if (!response.ok && response.status !== 404) await parseJson(response);
+}
+
 /** One page of forms. Search, sort and paging are resolved by the server. */
 export async function getSobaForms(
   token: string,

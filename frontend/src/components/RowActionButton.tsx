@@ -7,6 +7,7 @@ import styles from './RowActionButton.module.css';
 type RowActionButtonProps = {
   /** Marks the row's primary/default action (e.g. the form name or submission id). */
   main?: boolean;
+  danger?: boolean;
   isDisabled?: boolean;
   onPress: () => void;
   children: React.ReactNode;
@@ -24,6 +25,7 @@ type RowActionButtonProps = {
  */
 export function RowActionButton({
   main = false,
+  danger = false,
   isDisabled,
   onPress,
   children,
@@ -34,6 +36,7 @@ export function RowActionButton({
     <span className={main ? styles.main : undefined}>
       <Button
         variant="link"
+        danger={danger}
         size="small"
         aria-label={ariaLabel}
         data-testid={testId}

@@ -38,6 +38,7 @@ export {
   getFormVersionSchema,
   updateSobaForm,
   deleteSobaSubmission,
+  deleteSobaForm,
   getSobaSubmissionReview,
   addSobaSubmissionNote,
   updateSobaSubmissionStatus,

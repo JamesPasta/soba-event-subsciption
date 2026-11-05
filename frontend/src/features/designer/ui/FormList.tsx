@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useCallback, useEffect, useState } from 'react';
+import { hasAllPermissions, Permissions } from '@soba/lib';
 import { Button as DSButton } from '@bcgov/design-system-react-components';
 import { DataTable, type Column } from '@/src/components/DataTable';
 import { Tag } from '@/src/components/Tag';
@@ -34,6 +35,7 @@ import styles from './FormList.module.css';
 import type { WorkspaceLookupItem } from '@/src/types/workspaces';
 import { Modal } from '@/src/components/Modal';
 import { FormCreateContent } from './FormCreateContent';
+import { DeleteFormModal } from './DeleteFormModal';
 
 /**
  * Resolves the URL's workspace filter, which can name a workspace that does not exist or that this
@@ -126,6 +128,7 @@ function FormList() {
   const holdFormsRequest = workspaceFilter.holdRequest;
 
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<SobaFormSummary | null>(null);
 
   // Wait for the filter to resolve before reading, or the first arrival scopes to no workspace. A
   // refused or malformed id reads unscoped on purpose: the picker reads "all workspaces" and the
@@ -270,9 +273,28 @@ function FormList() {
           return <span className="small">{form.createdBy}</span>;
         },
       },
+      {
+        key: 'delete',
+        label: dict.form.deleteTitle,
+        hideLabel: true,
+        align: 'end',
+        render: (form: SobaFormSummary) =>
+          hasAllPermissions(form.permissions ?? [], [Permissions.form_delete]) ? (
+            <RowActionButton
+              aria-label={`${dict.form.deleteTitle}: ${form.name}`}
+              danger
+              data-testid={`delete-${form.id}-button`}
+              onPress={() => setPendingDelete(form)}
+            >
+              {dict.form.delete}
+            </RowActionButton>
+          ) : null,
+      },
     ],
     [
       dictForm?.submit,
+      dict.form.deleteTitle,
+      dict.form.delete,
       dict.submission?.submissions,
       dict.workspaces?.workspace,
       dictForm?.nameLabel,
@@ -297,6 +319,13 @@ function FormList() {
 
   return (
     <>
+      {pendingDelete && (
+        <DeleteFormModal
+          formId={pendingDelete.id}
+          name={pendingDelete.name}
+          onClose={() => setPendingDelete(null)}
+        />
+      )}
       <Modal show={showCreateModal} onClose={hideModal} title={dict.form.createForm}>
         <FormCreateContent onCancelPress={hideModal} />
       </Modal>

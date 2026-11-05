@@ -14,6 +14,8 @@ export type SortDirection = 'asc' | 'desc';
 export interface Column<T> {
   key: string;
   label: string;
+  /** Keep the column heading available to screen readers without displaying it. */
+  hideLabel?: boolean;
   width?: string;
   align?: 'start' | 'center' | 'end';
   render?: (item: T) => React.ReactNode;
@@ -121,7 +123,8 @@ export function DataTable<T>({
   const { field: sortField, direction: sortDirection } = splitSort(sort);
 
   const renderHeader = (col: Column<T>) => {
-    if (!col.sortField || !onSortChange) return col.label;
+    if (!col.sortField || !onSortChange)
+      return col.hideLabel ? <span className="visually-hidden">{col.label}</span> : col.label;
     const active = col.sortField === sortField;
     const flipped: SortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
     const nextDirection = active ? flipped : (col.sortDefaultDirection ?? 'asc');

@@ -23,6 +23,7 @@ const FORM_ACCESS: FormAccessGrant = {
 const listCalls = {
   listFormsForWorkspace: (workspaceIds: string[], formAccess: FormAccessGrant) =>
     listFormsForWorkspace({
+      actorId: 'actor1',
       workspaceIds,
       formAccess,
       offset: 0,
