@@ -146,19 +146,28 @@ vi.mock('@/src/shared/api/sobaApi', () => ({
 }));
 
 // Mock DynamicForm and FormDesigner components used in FormForm
-const preview = vi.hoisted(() => ({ emit: vi.fn() }));
+const preview = vi.hoisted(() => ({
+  cancel: vi.fn(),
+  beforeSubmit: null as
+    | ((submission: unknown, next: (error: { silent: boolean }) => void) => void)
+    | null,
+}));
 vi.mock('@/src/features/formio-v5/ui/DynamicForm', () => ({
   DynamicForm: ({
-    onSubmit,
-    onFormReady,
+    options,
   }: {
-    onSubmit: () => void;
-    onFormReady: (instance: typeof preview) => void;
+    options: {
+      hooks: {
+        beforeSubmit: NonNullable<typeof preview.beforeSubmit>;
+      };
+    };
   }) => {
-    React.useEffect(() => onFormReady(preview), [onFormReady]);
+    preview.beforeSubmit = options.hooks.beforeSubmit;
     return (
       <div data-testid="dynamic-form">
-        <button onClick={onSubmit}>Submit preview</button>
+        <button onClick={() => options.hooks.beforeSubmit({ data: {} }, preview.cancel)}>
+          Submit preview
+        </button>
       </div>
     );
   },
@@ -332,7 +341,7 @@ describe('FormForm', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Test' })).toBeInTheDocument());
   });
 
-  it('warns and releases the pending state on every preview submission', async () => {
+  it('warns and cancels every preview submission before it completes', async () => {
     mockWorkspaceState.versions = [{ id: 'v1', versionNo: 1, state: 'draft' }];
     await act(async () => {
       await renderForm({ formId: 'f1' });
@@ -347,11 +356,54 @@ describe('FormForm', () => {
       expect.objectContaining({ text: en.form.previewSubmissionDisabled, type: 'warning' }),
       expect.objectContaining({ text: en.form.previewSubmissionDisabled, type: 'warning' }),
     ]);
-    expect(preview.emit).toHaveBeenCalledTimes(2);
-    expect(preview.emit).toHaveBeenNthCalledWith(1, 'submitError', '');
-    expect(preview.emit).toHaveBeenNthCalledWith(2, 'submitError', '');
+    expect(preview.cancel).toHaveBeenCalledTimes(2);
+    expect(preview.cancel).toHaveBeenNthCalledWith(1, { silent: true });
+    expect(preview.cancel).toHaveBeenNthCalledWith(2, { silent: true });
     expect(screen.getByTestId('dynamic-form')).toBeInTheDocument();
   });
+
+  it('prevents real Form.io completion and clears loading without losing preview data', async () => {
+    mockWorkspaceState.versions = [{ id: 'v1', versionNo: 1, state: 'draft' }];
+    await act(async () => {
+      await renderForm({ formId: 'f1' });
+    });
+    await userEvent.click(screen.getByTestId('preview-form-button'));
+    await screen.findByRole('button', { name: 'Submit preview' });
+
+    const { Formio } = await import('@formio/js');
+    const host = document.createElement('div');
+    const instance = await Formio.createForm(
+      host,
+      {
+        components: [
+          { type: 'textfield', key: 'name', input: true },
+          { type: 'button', key: 'submit', action: 'submit', label: 'Submit' },
+        ],
+      },
+      { hooks: { beforeSubmit: preview.beforeSubmit! } },
+    );
+    try {
+      await instance.setSubmission({ data: { name: 'Preview answer' } });
+      const onSubmit = vi.fn();
+      const onSubmitDone = vi.fn();
+      instance.on('submit', onSubmit);
+      instance.on('submitDone', onSubmitDone);
+
+      await act(async () => {
+        await expect(instance.submit()).rejects.toBe(false);
+        await expect(instance.submit()).rejects.toBe(false);
+      });
+
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(onSubmitDone).not.toHaveBeenCalled();
+      expect(instance.submitting).toBe(false);
+      expect(instance.submissionInProcess).toBe(false);
+      expect(instance.data).toMatchObject({ name: 'Preview answer' });
+      expect(host).not.toHaveTextContent('Submission Complete');
+    } finally {
+      instance.destroy();
+    }
+  }, 15000);
 
   // The form's current version is what the builder is fed.
   it('reads the schema of the current version', async () => {

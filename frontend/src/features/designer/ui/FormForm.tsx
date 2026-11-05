@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Tabs, Tab } from 'react-bootstrap';
 import { Button, Select } from '@bcgov/design-system-react-components';
@@ -7,7 +7,7 @@ import { CenteredProgress } from '@/app/ui/base/CenteredProgress';
 import { Modal as CommonModal } from '@/src/components/Modal';
 import styles from './FormForm.module.css';
 
-import type { FormProps, FormType } from '@formio/react';
+import type { FormType } from '@formio/react';
 import { newFormSchema } from '@soba/lib';
 
 import { useKeycloak } from '@/lib/hooks/useKeycloak';
@@ -173,10 +173,6 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
   // isSaving lags a render, so a second call in the same task still sees false; this does not.
   const writing = useRef(false);
   const [showPreview, setShowPreview] = useState(false);
-  const previewFormRef = useRef<Parameters<NonNullable<FormProps['onFormReady']>>[0] | null>(null);
-  const setPreviewForm = useCallback<NonNullable<FormProps['onFormReady']>>((instance) => {
-    previewFormRef.current = instance;
-  }, []);
 
   const {
     form,
@@ -648,11 +644,17 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
           <DynamicForm
             src=""
             form={formSchema}
-            onSubmit={() => {
-              addNotification({ text: dict.form.previewSubmissionDisabled, type: 'warning' });
-              previewFormRef.current?.emit('submitError', '');
+            options={{
+              hooks: {
+                beforeSubmit: (
+                  _submission: unknown,
+                  next: (error: { silent: boolean }) => void,
+                ) => {
+                  addNotification({ text: dict.form.previewSubmissionDisabled, type: 'warning' });
+                  next({ silent: true });
+                },
+              },
             }}
-            onFormReady={setPreviewForm}
           />
         ) : (
           <p className="text-center p-5 text-muted">
