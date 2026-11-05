@@ -84,9 +84,9 @@ const publishedVersionIdOf = (formId: SQLWrapper) =>
 
 /**
  * Ids of the forms the user holds a submit role on, plus the forms of their draft and submitted
- * submissions, as listSubmissionsForParticipant lists them. A submit role is one holding
- * submission_create itself; `*` does not count, or form administrators would list every form.
- * Audience alone lists nothing. Role forms need a published version; history forms do not.
+ * submissions, as listSubmissionsForParticipant lists them. A submit role holds submission_create
+ * itself; `*` does not count. Audience alone lists nothing. Role forms need a published version;
+ * history forms do not.
  */
 const submitterFormIds = (userId: string, workspaceId?: string) => {
   const submitterGroups = effectiveGroups(userId, {

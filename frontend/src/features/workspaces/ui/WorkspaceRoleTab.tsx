@@ -87,7 +87,7 @@ export function WorkspaceRoleTab({ dict, workspaceId }: Readonly<WorkspaceRoleTa
       );
       setPendingDelete(null);
     } catch (err: unknown) {
-      // A role still on a group is refused with a code, which says what to do about it.
+      // A coded refusal says why; anything else is generic.
       addNotification({
         text: apiErrorMessage(err, dict.apiErrors) ?? t.deleteError,
         type: 'error',

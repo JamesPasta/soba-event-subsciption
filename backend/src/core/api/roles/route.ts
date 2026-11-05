@@ -24,8 +24,8 @@ const router = express.Router();
 const ROLES_PATH = '/workspaces/:id/roles';
 const ROLE_PATH = '/workspaces/:id/roles/:roleCode';
 
-// The same gates as groups: reads need an owner, admin or member role; writes need workspace
-// management authority.
+// The workspace is resolved from :id, so every route requires workspace membership. Reads also
+// require an owner, admin or member role; writes require workspace-management authority.
 const workspaceResource = workspaceFromResource({ kind: 'workspace', idFrom: 'paramsId' });
 
 router.get(

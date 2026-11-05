@@ -49,9 +49,8 @@ export const PERMISSION_AREAS: readonly { area: PermissionArea; codes: Code[] }[
 ];
 
 /**
- * What each permission needs for the screens and routes it opens to work. Advice for the picker
- * only: groups stack roles, so a role may leave one out on purpose. submission_create and
- * document_template_read need nothing, because submitting does not go through form_read.
+ * What each permission needs for its screens and routes to work. The picker ticks these; the server
+ * does not require them. Submitting does not go through form_read.
  */
 const NEEDS: Partial<Record<string, readonly Code[]>> = {
   [Permissions.form_create]: [Permissions.form_read, Permissions.design_create],

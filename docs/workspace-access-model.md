@@ -21,8 +21,8 @@ adds a third control per submission, who takes part in it; see
 > except schema normalize (no workspace), and check the caller's permissions on the form in
 > question (see
 > [Resolving a user's permissions](#resolving-a-users-permissions)). Creating a form requires
-> `form_create` and `design_create`; only `form_admin` satisfies that, via `*`. Creating a design on
-> an existing form requires `design_create` and `design_update` (`form_designer`), since the create
+> `form_create` and `design_create`; `form_admin` satisfies that through `*`, and a workspace's own
+> role can hold both. Creating a design on an existing form requires `design_create` and `design_update` (`form_designer`), since the create
 > writes the design's schema. The submit routes decide with the submitter rules in `@soba/lib`; the
 > file and submit document generation routes make the same read and decide by the same rules (see
 > [Submission participants](#submission-participants)); rendering a document also needs
@@ -91,6 +91,24 @@ Only `user` members are managed here. Per-form overrides are covered in
 [Form-level overrides](#form-level-overrides). The repo (`workspaceGroupRepo.ts`) is shared with
 workspace bootstrap.
 
+### Managing roles
+
+The role APIs use the same gates as the group APIs: `requireWorkspaceManage` for writes and
+`requireWorkspacePeopleRead` for reads.
+
+| method   | path                              | effect                                                     |
+| -------- | --------------------------------- | ---------------------------------------------------------- |
+| `GET`    | `/workspaces/:id/roles`           | the fixed roles and the workspace's own, with permissions  |
+| `GET`    | `/workspaces/:id/roles/:roleCode` | one of those roles                                         |
+| `POST`   | `/workspaces/:id/roles`           | create a workspace role from `name` and `permissionCodes`  |
+| `PATCH`  | `/workspaces/:id/roles/:roleCode` | change the name, the permissions or both, as one write     |
+| `DELETE` | `/workspaces/:id/roles/:roleCode` | soft-delete; refused while an active group carries it      |
+
+Any permission except `*` can be assigned. Fixed roles cannot be changed, and another workspace's role
+answers 404. Names are unique among a workspace's active roles, up to 100 characters. A permission
+change applies at once to everyone in a group carrying the role. Each write adds a `role_audit` row
+with the actor, and the role's name and permissions before and after.
+
 **Protected groups.** The two bootstrap groups carry a hidden `workspace_group.system_code`
 (`form_admins`/`form_submitters`) so protections don't depend on the renameable name. Both can be
 renamed but not deleted, and their roles can't be changed; _Form administrators_ must always keep at
@@ -127,7 +145,8 @@ each role grants permissions. Users are members of groups.
 - `workspace_group_role` — the role(s) a group carries (many-to-many; a group can hold more than one).
 - `workspace_group_membership` — who is in a group.
 - `role` / `permission` / `role_permission` — the catalog: the roles, the permissions, and the mapping
-  between them.
+  between them. A role with `workspace_id` set belongs to that workspace (`source = 'workspace'`).
+- `role_audit` - one row per write to a workspace's own role.
 
 ### The catalog
 
@@ -147,9 +166,12 @@ new permissions later needs no change to that role.
 
 `form_submitter` holds no `form_read`, so someone who can only submit has no design access.
 
-`form_create` is catalogued but not assigned to any seeded role. Only `form_admin` can create a form
-(via `*`). `form_designer` can create a new design on an existing form (`design_create` and
+`form_create` is on no seeded role. `form_admin` matches it through `*`, and a workspace's own role can
+hold it. `form_designer` can create a new design on an existing form (`design_create` and
 `design_update`).
+
+A workspace can also define its own roles: a name and any permissions but `*`. Such a role holds exactly
+what it lists, so a new permission or a change to a seeded role does not reach it.
 
 `submission_print_upload`, with `submission_read`, lets staff print a submission with a template
 uploaded for that print only.
@@ -246,7 +268,7 @@ Drafts are not offered on a public audience.
 
 `formAccessRepo.ts` has two resolvers. Each returns the permission codes a user holds through the
 active roles of the active groups they are an active `user` member of; a set containing `*` grants
-everything.
+everything. A deleted role, or one another workspace owns, grants nothing even if a group carries it.
 
 - `resolveFormPermissions(actorId, workspaceId, formId)` - on one form, with its overrides applied
   (`permissionsByForm` over `effectiveGroups`).
@@ -337,11 +359,11 @@ is a 409. An open of an id the caller already owns, on the same form, answers th
 grant on, across every workspace, with the caller's role on each. Submissions on a deleted form or
 form version are left out. Anonymous callers get a 401, since the public user's grants are shared.
 
-`GET /submit/forms/mine` lists the forms the caller holds the `form_submitter` role on, plus the forms
-of the submissions `GET /submit/submissions/mine` returns, across every workspace. The role resolves
-like any form permission, so a form's active override of a group replaces that group's workspace
-members. Only that role lists a form, not every role granting `submission_create`: form
-administrators find their forms in design mode. A role form needs a published version; a form
+`GET /submit/forms/mine` lists the forms the caller holds a submit role on, plus the forms of the
+submissions `GET /submit/submissions/mine` returns, across every workspace. A submit role is one holding
+`submission_create` itself. It resolves like any form permission, so a form's active override of a
+group replaces that group's workspace members. `*` does not count, so form administrators find their
+forms in design mode, and audience alone lists nothing. A role form needs a published version; a form
 reached through a submission is listed without one. Each row carries the facts the access rules
 read: the caller's permission codes on the form, its effective audience, its effective drafts
 setting and its published version. The rules are pure functions in `@soba/lib`
