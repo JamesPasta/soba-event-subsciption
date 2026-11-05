@@ -24,8 +24,9 @@ import {
   WorkspaceGroupStatus,
   WorkspaceMembershipStatus,
 } from '../codes';
-import { ConflictError } from '../../errors';
+import { ConflictError, ValidationError } from '../../errors';
 import { LAST_FORM_ADMIN } from '../../messages';
+import { lockRolesForWorkspace } from './roleRepo';
 
 /** Insert rows for a group's role set; duplicate codes collapse to one row. */
 const groupRoleRows = (args: {
@@ -409,6 +410,20 @@ export const isUserInGroup = async (groupId: string, membershipId: string): Prom
   return Boolean(rows[0]);
 };
 
+/**
+ * Refuses a role that is neither a platform role nor one of this workspace's own. Holds the roles
+ * for the rest of the transaction: a delete waits for the link to commit, then sees it and refuses.
+ */
+const lockGroupRoles = async (tx: Tx, workspaceId: string, roleCodes: string[]): Promise<void> => {
+  const codes = [...new Set(roleCodes)];
+  if (!codes.length) return;
+  const known = new Set(await lockRolesForWorkspace(tx, workspaceId, codes));
+  const missing = codes.filter((code) => !known.has(code));
+  if (missing.length) {
+    throw new ValidationError(`Unknown role code(s): ${missing.join(', ')}`);
+  }
+};
+
 /** Creates a group carrying the given roles; returns the new group id. */
 export const createWorkspaceGroup = (args: {
   workspaceId: string;
@@ -416,7 +431,11 @@ export const createWorkspaceGroup = (args: {
   description?: string | null;
   roleCodes: string[];
   displayLabel: string | null;
-}): Promise<string> => db.transaction((tx) => createGroupWithRole(tx, args));
+}): Promise<string> =>
+  db.transaction(async (tx) => {
+    await lockGroupRoles(tx, args.workspaceId, args.roleCodes);
+    return createGroupWithRole(tx, args);
+  });
 
 /** Replaces a group's role set with `roleCodes`. */
 export const replaceGroupRoles = async (args: {
@@ -426,6 +445,7 @@ export const replaceGroupRoles = async (args: {
   displayLabel: string | null;
 }): Promise<void> => {
   await db.transaction(async (tx) => {
+    await lockGroupRoles(tx, args.workspaceId, args.roleCodes);
     await tx.delete(workspaceGroupRoles).where(eq(workspaceGroupRoles.groupId, args.groupId));
     if (args.roleCodes.length) {
       await tx.insert(workspaceGroupRoles).values(groupRoleRows(args));

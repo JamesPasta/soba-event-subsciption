@@ -23,10 +23,17 @@ export const Permissions = {
 
 export type PermissionCode = (typeof Permissions)[keyof typeof Permissions];
 
+export type AssignablePermissionCode = Exclude<PermissionCode, typeof Permissions.all>;
+
+/** What a workspace's own role can hold: every permission but the wildcard. */
+export const AssignablePermissions = Object.values(Permissions).filter(
+  (code): code is AssignablePermissionCode => code !== Permissions.all,
+);
+
 /**
- * POST /forms writes the form and its first design. `form_create` is not seeded onto any role;
- * only form_admin matches it (via `*`). form_designer has `design_create` for new designs on
- * existing forms.
+ * POST /forms writes the form and its first design. `form_create` is on no fixed role: form_admin
+ * matches it through `*`, and a workspace's own role can hold it. form_designer has `design_create`
+ * for new designs on existing forms.
  */
 export const FormCreatePermissions = [Permissions.form_create, Permissions.design_create] as const;
 
@@ -112,7 +119,7 @@ export type SubmissionChangeStatusCode =
  * `sign_in_required` are 401 for an anonymous caller and 403 otherwise; `drafts_*`,
  * `status_updates_disabled` and `revise_disabled` are 403; `status_changed`,
  * `status_move_not_allowed`, `revision_needs_submitter`, `data_changed`, `*_closed`, `*_taken`,
- * `version_not_published`, `already_exists`, `member_exists`, `member_protected` and
+ * `version_not_published`, `already_exists`, `member_exists`, `member_protected`, `role_in_use` and
  * `last_form_admin` are 409; `*_not_found` and `not_published` are 404;
  * `*_invalid` and `form_not_ready` are 400; `*_unavailable` and `render_busy` are 503;
  * `render_failed`, `no_saved_data`, `file_infected` and `identity_unconfirmed` are 422;
@@ -166,6 +173,9 @@ export const ApiErrorCodes = {
   no_saved_data: 'no_saved_data',
   // Workspace groups.
   group_name_taken: 'group_name_taken',
+  // Workspace roles.
+  role_name_taken: 'role_name_taken',
+  role_in_use: 'role_in_use',
   // Submission review.
   note_id_taken: 'note_id_taken',
   status_id_taken: 'status_id_taken',

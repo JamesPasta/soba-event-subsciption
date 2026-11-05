@@ -1,7 +1,6 @@
 import { ApiErrorCodes, type SortLocale } from '@soba/lib';
 import { ConflictError, NotFoundError, ValidationError } from '../../errors';
 import { GROUP_NAME_TAKEN } from '../../messages';
-import { listRolesForWorkspace } from '../../db/repos/roleRepo';
 import {
   addGroupMember,
   createWorkspaceGroup,
@@ -28,18 +27,6 @@ export interface GroupsContextInput {
 export type AddMemberInput = { kind: 'user'; membershipId: string };
 
 const GROUP_NOT_FOUND = 'Group not found';
-
-/** Rejects role codes that are neither a platform role nor one of this workspace's own roles. */
-async function assertRolesExist(workspaceId: string, roleCodes: string[]): Promise<void> {
-  const codes = [...new Set(roleCodes)];
-  if (!codes.length) return;
-  const found = await listRolesForWorkspace(workspaceId, codes);
-  const known = new Set(found.map((r) => r.code));
-  const missing = codes.filter((c) => !known.has(c));
-  if (missing.length) {
-    throw new ValidationError(`Unknown role code(s): ${missing.join(', ')}`);
-  }
-}
 
 /** Asserts the group is active in the workspace and returns its systemCode (null for user-created). */
 async function requireGroup(workspaceId: string, groupId: string): Promise<string | null> {
@@ -99,7 +86,6 @@ export class GroupsApiService {
     input: { name: string; description?: string; roleCodes: string[] },
   ) {
     await assertNameFree(ctx.workspaceId, input.name);
-    await assertRolesExist(ctx.workspaceId, input.roleCodes);
     const groupId = await createWorkspaceGroup({
       workspaceId: ctx.workspaceId,
       name: input.name,
@@ -141,7 +127,6 @@ export class GroupsApiService {
     if (systemCode) {
       throw new ConflictError('System group roles cannot be changed');
     }
-    await assertRolesExist(ctx.workspaceId, roleCodes);
     await replaceGroupRoles({
       workspaceId: ctx.workspaceId,
       groupId,

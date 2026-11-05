@@ -27,6 +27,7 @@ import {
   forms,
   jobs,
   notificationAudits,
+  roleAudit,
   rolePermissions,
   roles,
   submissionExportAudits,
@@ -294,6 +295,7 @@ export const WORKSPACE_SCOPED_TABLES: readonly string[] = [
   'workspace_group_role',
   'workspace_group_membership',
   'workspace_group',
+  'role_audit',
   'role',
   'workspace_disclaimer_acceptance',
   'workspace_membership',
@@ -424,6 +426,7 @@ async function purgeWorkspaceScoped(
     'workspace_group',
     tx.delete(workspaceGroups).where(inArray(workspaceGroups.workspaceId, ids)),
   );
+  await record('role_audit', tx.delete(roleAudit).where(inArray(roleAudit.workspaceId, ids)));
   await record(
     'role_permission',
     tx

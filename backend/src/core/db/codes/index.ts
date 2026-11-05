@@ -41,6 +41,13 @@ export const RoleStatus = {
 } as const;
 export type RoleStatusCode = (typeof RoleStatus)[keyof typeof RoleStatus];
 
+export const RoleAuditAction = {
+  create: 'create',
+  update: 'update',
+  delete: 'delete',
+} as const;
+export type RoleAuditActionCode = (typeof RoleAuditAction)[keyof typeof RoleAuditAction];
+
 export const WorkspaceMembershipRole = {
   owner: 'owner',
   admin: 'admin',

@@ -958,6 +958,8 @@
     "render_failed": "The document could not be printed from this template.",
     "no_saved_data": "This submission has no saved answers to print.",
     "group_name_taken": "A group with this name already exists in this workspace. Choose a different name.",
+    "role_name_taken": "A role with this name already exists in this workspace. Choose a different name.",
+    "role_in_use": "This role is still assigned to a group. Remove it from the group first.",
     "note_id_taken": "This note could not be added. Reload the page and try again.",
     "status_id_taken": "This status change could not be saved. Reload the page and try again.",
     "status_changed": "Someone else changed the status first. Check the current status and try again.",

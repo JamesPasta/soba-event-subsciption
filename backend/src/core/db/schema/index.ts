@@ -3,6 +3,7 @@ export * from './core';
 export * from './feature';
 export * from './roles';
 export * from './permissions';
+export * from './roleAudit';
 export * from './codes';
 export * from './forms';
 export * from './formGroupOverride';

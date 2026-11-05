@@ -959,6 +959,8 @@
     "render_failed": "Le document n’a pas pu être imprimé à partir de ce modèle.",
     "no_saved_data": "Cette soumission n’a aucune réponse enregistrée à imprimer.",
     "group_name_taken": "Un groupe portant ce nom existe déjà dans cet espace de travail. Choisissez un autre nom.",
+    "role_name_taken": "Un rôle portant ce nom existe déjà dans cet espace de travail. Choisissez un autre nom.",
+    "role_in_use": "Ce rôle est encore attribué à un groupe. Retirez-le d'abord du groupe.",
     "note_id_taken": "Cette note n'a pas pu être ajoutée. Rechargez la page et réessayez.",
     "status_id_taken": "Ce changement d'état n'a pas pu être enregistré. Rechargez la page et réessayez.",
     "status_changed": "Quelqu'un d'autre a changé l'état en premier. Vérifiez l'état actuel et réessayez.",

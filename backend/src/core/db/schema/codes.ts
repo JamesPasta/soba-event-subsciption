@@ -2,6 +2,7 @@ import { boolean, integer, primaryKey, text } from 'drizzle-orm/pg-core';
 import { sobaSchema } from './core';
 
 export const CODE_SOURCE_CORE = 'core';
+export const CODE_SOURCE_WORKSPACE = 'workspace';
 
 const codeColumns = () => ({
   code: text('code').notNull(),
