@@ -173,9 +173,7 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
   // isSaving lags a render, so a second call in the same task still sees false; this does not.
   const writing = useRef(false);
   const [showPreview, setShowPreview] = useState(false);
-  const previewFormRef = useRef<Parameters<NonNullable<FormProps['onFormReady']>>[0] | null>(
-    null,
-  );
+  const previewFormRef = useRef<Parameters<NonNullable<FormProps['onFormReady']>>[0] | null>(null);
   const setPreviewForm = useCallback<NonNullable<FormProps['onFormReady']>>((instance) => {
     previewFormRef.current = instance;
   }, []);
