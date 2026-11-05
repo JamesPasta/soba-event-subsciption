@@ -125,7 +125,7 @@ function RoleFields({ dict, workspaceId, role, onDone }: Readonly<RoleFieldsProp
       addNotification({ text: role ? t.updateSuccess : t.createSuccess, type: 'success' });
       onDone();
     } catch (err: unknown) {
-      // A coded refusal says why; anything else is generic.
+      // A coded refusal, such as a name already in use, says why; anything else is generic.
       addNotification({
         text: apiErrorMessage(err, dict.apiErrors) ?? (role ? t.updateError : t.createError),
         type: 'error',

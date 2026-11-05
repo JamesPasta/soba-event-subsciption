@@ -22,9 +22,10 @@ adds a third control per submission, who takes part in it; see
 > question (see
 > [Resolving a user's permissions](#resolving-a-users-permissions)). Creating a form requires
 > `form_create` and `design_create`; `form_admin` satisfies that through `*`, and a workspace's own
-> role can hold both. Creating a design on an existing form requires `design_create` and `design_update` (`form_designer`), since the create
-> writes the design's schema. The submit routes decide with the submitter rules in `@soba/lib`; the
-> file and submit document generation routes make the same read and decide by the same rules (see
+> role can hold both. Creating a design on an existing form requires `design_create` and
+> `design_update` (`form_designer`), since the create writes the design's schema. The submit routes
+> decide with the submitter rules in `@soba/lib`; the file and submit document generation routes
+> make the same read and decide by the same rules (see
 > [Submission participants](#submission-participants)); rendering a document also needs
 > `document_template_read`. The template routes (`features/templates/route.ts`) are gated by
 > `requireFormPermissions`: `form_read` and `document_template_read` to list and download,
@@ -81,15 +82,27 @@ Groups, their roles, and their members are managed through the group APIs. Write
 | `POST`   | `/workspaces/:id/groups/:groupId/members`           | add a workspace member (by `membershipId`)             |
 | `DELETE` | `/workspaces/:id/groups/:groupId/members/:memberId` | remove a member by its row id                          |
 
-Group names are unique among **active** groups in a workspace. Delete is a soft-delete: the group and
-its roles and memberships are set to `inactive` in one transaction, so the resolver (which only reads
-active roles/memberships) stops granting through it, and the name frees up for reuse.
+Group names are unique among **active** groups in a workspace, up to 100 characters. Delete is a
+soft-delete: the group and its roles and memberships are set to `inactive` in one transaction, so the
+resolver (which only reads active roles/memberships) stops granting through it, and the name frees up
+for reuse.
 
 `GET /members?workspaceId=` lists the workspace's members under the same read rule.
 
 Only `user` members are managed here. Per-form overrides are covered in
 [Form-level overrides](#form-level-overrides). The repo (`workspaceGroupRepo.ts`) is shared with
 workspace bootstrap.
+
+**Protected groups.** The two bootstrap groups carry a hidden `workspace_group.system_code`
+(`form_admins`/`form_submitters`) so protections don't depend on the renameable name. Both can be
+renamed but not deleted, and their roles can't be changed; _Form administrators_ must always keep at
+least one active user member (the last member can't be removed). Attempts return 409. The group DTO
+exposes a `system` boolean so the UI can hide those actions.
+
+**Members are people.** Each member is `{id, kind:'user', membershipId, userId, displayLabel}`, added
+via `POST /workspaces/:id/groups/:groupId/members` with `{kind:'user', membershipId}` and removed by
+row id. Who outside the workspace may submit is not group membership; it is the
+[Form Audience](#form-audience) setting.
 
 ### Managing roles
 
@@ -108,17 +121,6 @@ Any permission except `*` can be assigned. Fixed roles cannot be changed, and an
 answers 404. Names are unique among a workspace's active roles, up to 100 characters. A permission
 change applies at once to everyone in a group carrying the role. Each write adds a `role_audit` row
 with the actor, and the role's name and permissions before and after.
-
-**Protected groups.** The two bootstrap groups carry a hidden `workspace_group.system_code`
-(`form_admins`/`form_submitters`) so protections don't depend on the renameable name. Both can be
-renamed but not deleted, and their roles can't be changed; _Form administrators_ must always keep at
-least one active user member (the last member can't be removed). Attempts return 409. The group DTO
-exposes a `system` boolean so the UI can hide those actions.
-
-**Members are people.** Each member is `{id, kind:'user', membershipId, userId, displayLabel}`, added
-via `POST /workspaces/:id/groups/:groupId/members` with `{kind:'user', membershipId}` and removed by
-row id. Who outside the workspace may submit is not group membership; it is the
-[Form Audience](#form-audience) setting.
 
 ## Form access (RBAC)
 

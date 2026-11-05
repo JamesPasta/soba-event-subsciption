@@ -50,7 +50,7 @@ export const PERMISSION_AREAS: readonly { area: PermissionArea; codes: Code[] }[
 
 /**
  * What each permission needs for its screens and routes to work. The picker ticks these; the server
- * does not require them. Submitting does not go through form_read.
+ * does not require them.
  */
 const NEEDS: Partial<Record<string, readonly Code[]>> = {
   [Permissions.form_create]: [Permissions.form_read, Permissions.design_create],
