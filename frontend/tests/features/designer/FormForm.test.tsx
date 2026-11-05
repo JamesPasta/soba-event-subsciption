@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import en from '@/dictionaries/en.json';
 
@@ -348,18 +348,31 @@ describe('FormForm', () => {
     });
     await userEvent.click(screen.getByTestId('preview-form-button'));
     const submit = await screen.findByRole('button', { name: 'Submit preview' });
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
 
     await userEvent.click(submit);
+    const firstWarning = within(dialog).getByRole('alert');
+    expect(firstWarning).toHaveTextContent(en.form.previewSubmissionDisabled);
+    expect(firstWarning).toHaveAttribute('aria-atomic', 'true');
+    expect(screen.getByTestId('close-preview-button').parentElement?.previousElementSibling).toBe(
+      firstWarning,
+    );
+    expect(submit).toHaveFocus();
     await userEvent.click(submit);
 
-    expect(store.getState().notification.notifications).toEqual([
-      expect.objectContaining({ text: en.form.previewSubmissionDisabled, type: 'warning' }),
-      expect.objectContaining({ text: en.form.previewSubmissionDisabled, type: 'warning' }),
-    ]);
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(en.form.previewSubmissionDisabled);
+    expect(within(dialog).getByRole('alert')).not.toBe(firstWarning);
+    expect(submit).toHaveFocus();
+    expect(store.getState().notification.notifications).toEqual([]);
     expect(preview.cancel).toHaveBeenCalledTimes(2);
     expect(preview.cancel).toHaveBeenNthCalledWith(1, { silent: true });
     expect(preview.cancel).toHaveBeenNthCalledWith(2, { silent: true });
     expect(screen.getByTestId('dynamic-form')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('close-preview-button'));
+    await userEvent.click(screen.getByTestId('preview-form-button'));
+    expect(within(screen.getByRole('dialog')).queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('prevents real Form.io completion and clears loading without losing preview data', async () => {

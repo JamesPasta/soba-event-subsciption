@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Tabs, Tab } from 'react-bootstrap';
-import { Button, Select } from '@bcgov/design-system-react-components';
+import { Button, InlineAlert, Select } from '@bcgov/design-system-react-components';
 import { CenteredProgress } from '@/app/ui/base/CenteredProgress';
 import { Modal as CommonModal } from '@/src/components/Modal';
 import styles from './FormForm.module.css';
@@ -173,6 +173,7 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
   // isSaving lags a render, so a second call in the same task still sees false; this does not.
   const writing = useRef(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [previewSubmitAttempts, setPreviewSubmitAttempts] = useState(0);
 
   const {
     form,
@@ -453,7 +454,10 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
           <Button
             variant="secondary"
             data-testid="preview-form-button"
-            onPress={() => setShowPreview(true)}
+            onPress={() => {
+              setPreviewSubmitAttempts(0);
+              setShowPreview(true);
+            }}
             isDisabled={isSaving || loading}
           >
             {dict.form.preview || 'Preview'}
@@ -631,13 +635,24 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
         onClose={() => setShowPreview(false)}
         size="lg"
         footer={
-          <Button
-            variant="secondary"
-            data-testid="close-preview-button"
-            onPress={() => setShowPreview(false)}
-          >
-            {dict.form.closePreview || 'Close Preview'}
-          </Button>
+          <div className="d-flex flex-column gap-3 w-100">
+            {previewSubmitAttempts > 0 && (
+              <div key={previewSubmitAttempts} role="alert" aria-atomic="true">
+                <InlineAlert variant="warning" role="presentation">
+                  {dict.form.previewSubmissionDisabled}
+                </InlineAlert>
+              </div>
+            )}
+            <div className="d-flex justify-content-start">
+              <Button
+                variant="secondary"
+                data-testid="close-preview-button"
+                onPress={() => setShowPreview(false)}
+              >
+                {dict.form.closePreview || 'Close Preview'}
+              </Button>
+            </div>
+          </div>
         }
       >
         {formSchema ? (
@@ -650,7 +665,7 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
                   _submission: unknown,
                   next: (error: { silent: boolean }) => void,
                 ) => {
-                  addNotification({ text: dict.form.previewSubmissionDisabled, type: 'warning' });
+                  setPreviewSubmitAttempts((attempts) => attempts + 1);
                   next({ silent: true });
                 },
               },
