@@ -163,10 +163,14 @@ describe('workspace role routes', () => {
     expect(roleNameExistsInWorkspace).not.toHaveBeenCalled();
   });
 
-  it("lets a role keep its own name, and checks it against the others'", async () => {
-    jest.mocked(listRolesForWorkspace).mockResolvedValue([AUDITOR] as never);
-    await request(app).patch(ROLE).send({ name: 'Auditor' });
-    expect(roleNameExistsInWorkspace).toHaveBeenCalledWith('ws1', 'Auditor', 'custom-1');
+  it('answers a rename of a fixed role as read-only, whatever the name', async () => {
+    jest
+      .mocked(updateWorkspaceRole)
+      .mockRejectedValue(new ConflictError('Fixed roles cannot be changed'));
+    jest.mocked(roleNameExistsInWorkspace).mockResolvedValue(true);
+    const res = await request(app).patch(`${ROLES}/team_manager`).send({ name: 'Auditor' });
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'Fixed roles cannot be changed' });
   });
 
   it.each([

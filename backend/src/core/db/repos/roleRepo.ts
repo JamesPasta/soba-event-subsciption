@@ -164,11 +164,10 @@ export const lockRolesForWorkspace = async (
   return rows.map((row) => row.code);
 };
 
-/** True if another of the workspace's active roles has this name. */
+/** True if one of the workspace's active roles has this name. */
 export const roleNameExistsInWorkspace = async (
   workspaceId: string,
   name: string,
-  exceptRoleCode?: string,
 ): Promise<boolean> => {
   const rows = await db
     .select({ code: roles.code })
@@ -178,7 +177,6 @@ export const roleNameExistsInWorkspace = async (
         eq(roles.workspaceId, workspaceId),
         eq(roles.name, name),
         eq(roles.status, RoleStatus.active),
-        exceptRoleCode ? ne(roles.code, exceptRoleCode) : undefined,
       ),
     )
     .limit(1);

@@ -28,13 +28,9 @@ const toWorkspaceRoles = async (roles: RoleRow[]): Promise<WorkspaceRole[]> => {
   }));
 };
 
-/** Rejects a name already taken by another of the workspace's active roles. */
-async function assertNameFree(
-  workspaceId: string,
-  name: string,
-  exceptRoleCode?: string,
-): Promise<void> {
-  if (await roleNameExistsInWorkspace(workspaceId, name, exceptRoleCode)) {
+/** Rejects a name already taken by one of the workspace's active roles. */
+async function assertNameFree(workspaceId: string, name: string): Promise<void> {
+  if (await roleNameExistsInWorkspace(workspaceId, name)) {
     throw new ConflictError(ROLE_NAME_TAKEN, ApiErrorCodes.role_name_taken);
   }
 }
@@ -56,12 +52,12 @@ export class RolesApiService {
     return this.get(ctx.workspaceId, await createWorkspaceRole(ctx, body));
   }
 
+  /** The write checks the role is the workspace's own before it checks the name. */
   async update(
     ctx: RoleWriteContext,
     roleCode: string,
     body: UpdateWorkspaceRoleBody,
   ): Promise<WorkspaceRole> {
-    if (body.name !== undefined) await assertNameFree(ctx.workspaceId, body.name, roleCode);
     await updateWorkspaceRole(ctx, roleCode, body);
     return this.get(ctx.workspaceId, roleCode);
   }
