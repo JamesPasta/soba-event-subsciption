@@ -141,11 +141,14 @@ whatever `--size` or `--skip-anonymous` says. Its names start `[dev] Zz `, so it
 anchors and the bulk in English and French, and it is created first, so it trails `id:desc` lists
 too.
 
-Personas are the owner, the public user as an anonymous caller, and thirteen generated users:
+Personas are the owner, the public user as an anonymous caller, and seventeen generated users:
 `admin`, who owns the three workspaces, plus `submitter`, `designer`, `reviewer`, `viewer` (a
 `viewer` member in an approvers group), `overrideRemoved`, `overrideAdded`, `inactiveMember`,
-`inactiveGroupMember`, `inactiveGroup` (in an inactive group carrying form admin), `outsider`,
-`bceidOutsider` (`bceidbusiness`), and `collaborator`.
+`inactiveGroupMember`, `inactiveGroup` (in an inactive group carrying form admin), `customSubmitter`
+and `customDesigner` (each in a group carrying a role the Roles workspace owns),
+`deletedCustomRole` (its group still carries a deleted role), `foreignCustomRole` (seated in
+Audience, its group carries a role Roles owns), `outsider`, `bceidOutsider` (`bceidbusiness`), and
+`collaborator`.
 
 | Workspace                    | Audience, drafts           | Review (status updates, submitter revision) | Forms                                                                                                                                                 |
 | ---------------------------- | -------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |

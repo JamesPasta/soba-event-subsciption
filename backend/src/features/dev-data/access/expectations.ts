@@ -127,8 +127,8 @@ const EVERYONE: PersonaKey[] = [...PERSONA_KEYS];
 /** Everyone signing in through IDIR. */
 const IDIR: PersonaKey[] = EVERYONE.filter((p) => p !== 'bceidOutsider' && p !== 'anonymous');
 
-/** Effective form_submitter role holders in the roles workspace, without an override. */
-const ROLE_SUBMITTERS: PersonaKey[] = ['owner', 'submitter', 'overrideRemoved'];
+/** Effective submit role holders in the roles workspace, without an override of their group. */
+const ROLE_SUBMITTERS: PersonaKey[] = ['owner', 'submitter', 'overrideRemoved', 'customSubmitter'];
 
 const ROLES_STAFF_UPDATE: PersonaKey[] = ['admin', 'reviewer'];
 
@@ -152,10 +152,10 @@ const rolesUnlisted = (): FormExpectation => ({
 export const FORM_EXPECTATIONS: Record<CoverageFormKey, FormExpectation> = {
   rolesInherit: rolesInherited(),
   rolesOverride: {
-    listed: ['submitter', 'overrideAdded'],
-    start: ['admin', 'submitter', 'overrideAdded'],
-    draft: ['admin', 'submitter', 'overrideAdded'],
-    templates: ['admin', 'submitter', 'overrideAdded'],
+    listed: ['submitter', 'overrideAdded', 'customSubmitter'],
+    start: ['admin', 'submitter', 'overrideAdded', 'customSubmitter'],
+    draft: ['admin', 'submitter', 'overrideAdded', 'customSubmitter'],
+    templates: ['admin', 'submitter', 'overrideAdded', 'customSubmitter'],
     update: ROLES_STAFF_UPDATE,
   },
   rolesOverrideCleared: rolesInherited(),
@@ -216,18 +216,21 @@ export const FORM_EXPECTATIONS: Record<CoverageFormKey, FormExpectation> = {
 };
 
 /** form_read in the roles workspace without an override: the staff groups. */
-const ROLES_READERS: PersonaKey[] = ['admin', 'designer', 'reviewer', 'viewer'];
+const ROLES_READERS: PersonaKey[] = ['admin', 'designer', 'reviewer', 'viewer', 'customDesigner'];
 
-/** submission_read in the roles workspace: admin, the reviewers and the approvers. */
-const ROLES_SUBMISSION_READERS: PersonaKey[] = ['admin', 'reviewer', 'viewer'];
+/** submission_print_upload in the roles workspace: admin, the reviewers and the approvers. */
+const ROLES_PRINT_UPLOADERS: PersonaKey[] = ['admin', 'reviewer', 'viewer'];
+
+/** submission_read in the roles workspace: those, and the custom role granting it. */
+const ROLES_SUBMISSION_READERS: PersonaKey[] = [...ROLES_PRINT_UPLOADERS, 'customDesigner'];
 
 const rolesDesign = (changes: Partial<DesignExpectation> = {}): DesignExpectation => ({
   designListed: ROLES_READERS,
   designRead: ROLES_READERS,
-  designUpdate: ['admin', 'designer'],
+  designUpdate: ['admin', 'designer', 'customDesigner'],
   submissionsRead: ROLES_SUBMISSION_READERS,
   staffTemplates: ['admin'],
-  printUpload: ROLES_SUBMISSION_READERS,
+  printUpload: ROLES_PRINT_UPLOADERS,
   ...changes,
 });
 
@@ -240,7 +243,13 @@ const everyCheck = (personas: PersonaKey[]): DesignExpectation => ({
   printUpload: personas,
 });
 
-const DESIGNERS_OVERRIDE_READERS: PersonaKey[] = ['admin', 'reviewer', 'viewer', 'overrideAdded'];
+const DESIGNERS_OVERRIDE_READERS: PersonaKey[] = [
+  'admin',
+  'reviewer',
+  'viewer',
+  'overrideAdded',
+  'customDesigner',
+];
 
 export const DESIGN_EXPECTATIONS: Record<CoverageFormKey, DesignExpectation> = {
   rolesInherit: rolesDesign(),
@@ -249,7 +258,7 @@ export const DESIGN_EXPECTATIONS: Record<CoverageFormKey, DesignExpectation> = {
   rolesDesignersOverride: rolesDesign({
     designListed: DESIGNERS_OVERRIDE_READERS,
     designRead: DESIGNERS_OVERRIDE_READERS,
-    designUpdate: ['admin', 'overrideAdded'],
+    designUpdate: ['admin', 'overrideAdded', 'customDesigner'],
   }),
   rolesUnpublished: rolesDesign(),
   // A deleted form's routes return 404 before any permission check.
@@ -281,10 +290,13 @@ export const WORKSPACE_EXPECTATIONS: Record<CoverageWorkspaceKey, WorkspaceExpec
       'overrideAdded',
       'inactiveGroupMember',
       'inactiveGroup',
+      'customSubmitter',
+      'customDesigner',
+      'deletedCustomRole',
     ],
-    formCreate: ['admin'],
+    formCreate: ['admin', 'customDesigner'],
   },
-  audience: { peopleRead: ['admin', 'owner'], formCreate: ['admin', 'owner'] },
+  audience: { peopleRead: ['admin', 'owner', 'foreignCustomRole'], formCreate: ['admin', 'owner'] },
   public: { peopleRead: ['admin'], formCreate: ['admin'] },
 };
 
@@ -334,7 +346,7 @@ export const SUBMISSION_EXPECTATIONS: Record<CoverageSubmissionKey, SubmissionEx
   submitterOnDeletedVersion: NONE,
   submitterOnDeletedForm: NONE,
   ownerDraft: { mine: ['owner'], ...inProgressFor('owner'), delete: ['owner'] },
-  // The submitter role grants the write and the render; the members audience admits no one else.
+  // The submit role grants the write and the render; the members audience admits no one else.
   submitterDraft: { mine: ['submitter'], ...inProgressFor('submitter'), delete: ['submitter'] },
   // A reviewer sent it back: its submitter edits it as in progress, but cannot delete it.
   submitterRevising: { mine: ['submitter'], ...inProgressFor('submitter'), delete: [] },

@@ -366,7 +366,7 @@ export const registerSubmitOpenApi = (registry: OpenAPIRegistry) => {
     path: '/submit/forms/mine',
     tags: [TAG],
     security: [{ bearerAuth: [] }],
-    description: `Forms the caller holds the submitter role on, and forms they have a draft or submitted submission on, across every workspace. Each row carries the facts the access rules in @soba/lib read (canStartSubmission, canSaveSubmissionDraft); the server enforces the same rules. ${OFFSET_DRIFT_NOTE}`,
+    description: `Forms the caller holds a submit role on, and forms they have a draft or submitted submission on, across every workspace. Each row carries the facts the access rules in @soba/lib read (canStartSubmission, canSaveSubmissionDraft); the server enforces the same rules. ${OFFSET_DRIFT_NOTE}`,
     request: { query: ListMyFormsQuerySchema },
     responses: {
       200: {

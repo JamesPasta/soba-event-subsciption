@@ -50,7 +50,7 @@ function resolveWorkspaceFilter(param: string | undefined, options: WorkspaceOpt
   return { workspaceId: undefined, pending: false, drop: true };
 }
 
-/** The forms the caller holds the submitter role on or has submitted to: start a submission. */
+/** The forms the caller holds a submit role on or has submitted to: start a submission. */
 export function MyFormsList() {
   const dict = useDictionary();
   const dictMine = dict.myForms;

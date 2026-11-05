@@ -16,7 +16,7 @@ const EMPTY: MyFormListItem[] = [];
 const EMPTY_OPTIONS: MyWorkspaceLookupItem[] = [];
 
 /**
- * One page of the forms the caller holds the submitter role on or has submitted to, optionally in
+ * One page of the forms the caller holds a submit role on or has submitted to, optionally in
  * one workspace.
  * `holdRequest` waits for the workspace filter to resolve.
  */

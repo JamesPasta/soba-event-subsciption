@@ -138,7 +138,7 @@ export async function getMySubmissions(
   return parseJson(response);
 }
 
-/** A page of the forms the caller holds the submitter role on or has submitted to; signed in. */
+/** A page of the forms the caller holds a submit role on or has submitted to; signed in. */
 export async function getMyForms(
   token: string,
   args: ListQueryArgs & { workspaceId?: string },
