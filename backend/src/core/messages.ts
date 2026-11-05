@@ -9,6 +9,7 @@ export const WORKSPACE_CREATE_FORBIDDEN =
 export const WORKSPACE_MANAGE_FORBIDDEN =
   'Only workspace owners or admins can manage this workspace';
 export const GROUP_NAME_TAKEN = 'A group with this name already exists';
+export const GROUP_NOT_FOUND = 'Group not found';
 export const ROLE_NAME_TAKEN = 'A role with this name already exists';
 export const ROLE_IN_USE = 'This role is still assigned to a group';
 export const ROLE_NOT_FOUND = 'Role not found';

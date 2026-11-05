@@ -24,8 +24,8 @@ import {
   WorkspaceGroupStatus,
   WorkspaceMembershipStatus,
 } from '../codes';
-import { ConflictError, ValidationError } from '../../errors';
-import { LAST_FORM_ADMIN } from '../../messages';
+import { ConflictError, NotFoundError, ValidationError } from '../../errors';
+import { GROUP_NOT_FOUND, LAST_FORM_ADMIN } from '../../messages';
 import { lockRolesForWorkspace } from './roleRepo';
 
 /** Insert rows for a group's role set; duplicate codes collapse to one row. */
@@ -437,6 +437,22 @@ export const createWorkspaceGroup = (args: {
     return createGroupWithRole(tx, args);
   });
 
+/** Locked before its role rows: saves to one group run in turn, and wait for a delete to finish. */
+const lockActiveGroup = async (tx: Tx, workspaceId: string, groupId: string): Promise<void> => {
+  const rows = await tx
+    .select({ id: workspaceGroups.id })
+    .from(workspaceGroups)
+    .where(
+      and(
+        eq(workspaceGroups.id, groupId),
+        eq(workspaceGroups.workspaceId, workspaceId),
+        eq(workspaceGroups.status, WorkspaceGroupStatus.active),
+      ),
+    )
+    .for('no key update');
+  if (!rows.length) throw new NotFoundError(GROUP_NOT_FOUND);
+};
+
 /** Replaces a group's role set with `roleCodes`. */
 export const replaceGroupRoles = async (args: {
   workspaceId: string;
@@ -445,6 +461,7 @@ export const replaceGroupRoles = async (args: {
   displayLabel: string | null;
 }): Promise<void> => {
   await db.transaction(async (tx) => {
+    await lockActiveGroup(tx, args.workspaceId, args.groupId);
     await lockGroupRoles(tx, args.workspaceId, args.roleCodes);
     await tx.delete(workspaceGroupRoles).where(eq(workspaceGroupRoles.groupId, args.groupId));
     if (args.roleCodes.length) {

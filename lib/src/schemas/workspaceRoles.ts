@@ -16,19 +16,23 @@ export const ListWorkspaceRolesResponseSchema = z.object({
 });
 export type ListWorkspaceRolesResponse = z.infer<typeof ListWorkspaceRolesResponseSchema>;
 
+export const WORKSPACE_ROLE_NAME_MAX_LENGTH = 100;
+
+const RoleNameSchema = z.string().trim().min(1).max(WORKSPACE_ROLE_NAME_MAX_LENGTH);
+
 const PermissionCodesSchema = z
   .array(z.enum(AssignablePermissions as [AssignablePermissionCode, ...AssignablePermissionCode[]]))
   .min(1);
 
 export const CreateWorkspaceRoleBodySchema = z.object({
-  name: z.string().trim().min(1),
+  name: RoleNameSchema,
   permissionCodes: PermissionCodesSchema,
 });
 export type CreateWorkspaceRoleBody = z.infer<typeof CreateWorkspaceRoleBodySchema>;
 
 export const UpdateWorkspaceRoleBodySchema = z
   .object({
-    name: z.string().trim().min(1).optional(),
+    name: RoleNameSchema.optional(),
     permissionCodes: PermissionCodesSchema.optional(),
   })
   .refine((body) => body.name !== undefined || body.permissionCodes !== undefined, {

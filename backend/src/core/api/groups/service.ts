@@ -1,6 +1,6 @@
 import { ApiErrorCodes, type SortLocale } from '@soba/lib';
 import { ConflictError, NotFoundError, ValidationError } from '../../errors';
-import { GROUP_NAME_TAKEN } from '../../messages';
+import { GROUP_NAME_TAKEN, GROUP_NOT_FOUND } from '../../messages';
 import {
   addGroupMember,
   createWorkspaceGroup,
@@ -25,8 +25,6 @@ export interface GroupsContextInput {
 }
 
 export type AddMemberInput = { kind: 'user'; membershipId: string };
-
-const GROUP_NOT_FOUND = 'Group not found';
 
 /** Asserts the group is active in the workspace and returns its systemCode (null for user-created). */
 async function requireGroup(workspaceId: string, groupId: string): Promise<string | null> {

@@ -16,6 +16,8 @@ export const roleStatus = sobaSchema.table('role_status', {
   isActive: boolean('is_active').notNull().default(true),
 });
 
+export const ROLE_WORKSPACE_NAME_UNIQUE = 'role_workspace_name_uq';
+
 /**
  * DB-backed roles. source = 'core', 'feature' or 'workspace'; feature_code set when source is
  * 'feature', workspace_id set when source is 'workspace'. Extensible: features can add roles with
@@ -39,7 +41,7 @@ export const roles = sobaSchema.table(
       sql`(${table.source} = 'workspace') = (${table.workspaceId} is not null)`,
     ),
     // Active roles only, so a soft-deleted role frees its name for reuse.
-    workspaceNameUnique: uniqueIndex('role_workspace_name_uq')
+    workspaceNameUnique: uniqueIndex(ROLE_WORKSPACE_NAME_UNIQUE)
       .on(table.workspaceId, table.name)
       .where(sql`${table.status} = 'active'`),
   }),

@@ -12,7 +12,7 @@ import {
 import { v7 as uuidv7 } from 'uuid';
 import { ApiErrorCodes } from '@soba/lib';
 import { ConflictError, NotFoundError } from '../../errors';
-import { FIXED_ROLE_READ_ONLY, ROLE_IN_USE, ROLE_NOT_FOUND } from '../../messages';
+import { FIXED_ROLE_READ_ONLY, ROLE_IN_USE, ROLE_NAME_TAKEN, ROLE_NOT_FOUND } from '../../messages';
 import { db, type DbOrTx, type Tx } from '../client';
 import {
   RoleAuditAction,
@@ -21,7 +21,9 @@ import {
   WorkspaceGroupStatus,
   type RoleAuditActionCode,
 } from '../codes';
+import { isUniqueViolationOn } from '../pgError';
 import {
+  ROLE_WORKSPACE_NAME_UNIQUE,
   roleAudit,
   roles,
   features,
@@ -229,67 +231,100 @@ const insertRolePermissions = (tx: Tx, roleCode: string, permissionCodes: string
     .insert(rolePermissions)
     .values([...new Set(permissionCodes)].map((permissionCode) => ({ roleCode, permissionCode })));
 
-/** Locks one of the workspace's own roles for a write. A fixed role is read-only. */
+/**
+ * Locks one of the workspace's own roles for a write. A fixed role is read-only. Fixed roles are
+ * not locked: every workspace's group saves share-lock them.
+ */
 const lockOwnRole = async (tx: Tx, workspaceId: string, roleCode: string): Promise<RoleRow> => {
-  const [role] = await tx.select().from(roles).where(eq(roles.code, roleCode)).for('no key update');
-  if (role?.workspaceId === null) throw new ConflictError(FIXED_ROLE_READ_ONLY);
-  if (role?.workspaceId !== workspaceId || role.status === RoleStatus.inactive) {
-    throw new NotFoundError(ROLE_NOT_FOUND);
-  }
-  return role;
+  const [role] = await tx
+    .select()
+    .from(roles)
+    .where(
+      and(
+        eq(roles.code, roleCode),
+        eq(roles.workspaceId, workspaceId),
+        ne(roles.status, RoleStatus.inactive),
+      ),
+    )
+    .for('no key update');
+  if (role) return role;
+  const [fixed] = await tx
+    .select({ code: roles.code })
+    .from(roles)
+    .where(and(eq(roles.code, roleCode), isNull(roles.workspaceId)));
+  throw fixed ? new ConflictError(FIXED_ROLE_READ_ONLY) : new NotFoundError(ROLE_NOT_FOUND);
 };
 
+/**
+ * Two saves can both pass the pre-check and race to the write; the loser hits the name's unique
+ * index. That is the same conflict the pre-check reports, so it gets the same code.
+ */
+const nameConflictOr = (err: unknown): unknown =>
+  isUniqueViolationOn(err, ROLE_WORKSPACE_NAME_UNIQUE)
+    ? new ConflictError(ROLE_NAME_TAKEN, ApiErrorCodes.role_name_taken)
+    : err;
+
 /** Creates one of the workspace's own roles; returns its code. */
-export const createWorkspaceRole = (
+export const createWorkspaceRole = async (
   ctx: RoleWriteContext,
   fields: RoleWriteFields,
-): Promise<string> =>
-  db.transaction(async (tx) => {
-    const roleCode = uuidv7();
-    await tx.insert(roles).values({
-      code: roleCode,
-      name: fields.name,
-      status: RoleStatus.active,
-      source: CODE_SOURCE_WORKSPACE,
-      workspaceId: ctx.workspaceId,
-      createdBy: ctx.actorDisplayLabel,
-      updatedBy: ctx.actorDisplayLabel,
+): Promise<string> => {
+  try {
+    return await db.transaction(async (tx) => {
+      const roleCode = uuidv7();
+      await tx.insert(roles).values({
+        code: roleCode,
+        name: fields.name,
+        status: RoleStatus.active,
+        source: CODE_SOURCE_WORKSPACE,
+        workspaceId: ctx.workspaceId,
+        createdBy: ctx.actorDisplayLabel,
+        updatedBy: ctx.actorDisplayLabel,
+      });
+      await insertRolePermissions(tx, roleCode, fields.permissionCodes);
+      await writeRoleAudit(tx, ctx, {
+        roleCode,
+        action: RoleAuditAction.create,
+        before: null,
+        after: await roleSnapshot(tx, roleCode, fields.name),
+      });
+      return roleCode;
     });
-    await insertRolePermissions(tx, roleCode, fields.permissionCodes);
-    await writeRoleAudit(tx, ctx, {
-      roleCode,
-      action: RoleAuditAction.create,
-      before: null,
-      after: await roleSnapshot(tx, roleCode, fields.name),
-    });
-    return roleCode;
-  });
+  } catch (err) {
+    throw nameConflictOr(err);
+  }
+};
 
 /** Changes the name, the permissions or both, as one write. */
-export const updateWorkspaceRole = (
+export const updateWorkspaceRole = async (
   ctx: RoleWriteContext,
   roleCode: string,
   fields: Partial<RoleWriteFields>,
-): Promise<void> =>
-  db.transaction(async (tx) => {
-    const role = await lockOwnRole(tx, ctx.workspaceId, roleCode);
-    const before = await roleSnapshot(tx, roleCode, role.name);
-    const name = fields.name ?? role.name;
-    await tx
-      .update(roles)
-      .set({ name, updatedBy: ctx.actorDisplayLabel, updatedAt: new Date() })
-      .where(eq(roles.code, roleCode));
-    if (fields.permissionCodes) {
-      await tx.delete(rolePermissions).where(eq(rolePermissions.roleCode, roleCode));
-      await insertRolePermissions(tx, roleCode, fields.permissionCodes);
-    }
-    await writeRoleAudit(tx, ctx, {
-      roleCode,
-      action: RoleAuditAction.update,
-      before,
-      after: await roleSnapshot(tx, roleCode, name),
+): Promise<void> => {
+  try {
+    await db.transaction(async (tx) => {
+      const role = await lockOwnRole(tx, ctx.workspaceId, roleCode);
+      const before = await roleSnapshot(tx, roleCode, role.name);
+      const name = fields.name ?? role.name;
+      await tx
+        .update(roles)
+        .set({ name, updatedBy: ctx.actorDisplayLabel, updatedAt: new Date() })
+        .where(eq(roles.code, roleCode));
+      if (fields.permissionCodes) {
+        await tx.delete(rolePermissions).where(eq(rolePermissions.roleCode, roleCode));
+        await insertRolePermissions(tx, roleCode, fields.permissionCodes);
+      }
+      await writeRoleAudit(tx, ctx, {
+        roleCode,
+        action: RoleAuditAction.update,
+        before,
+        after: await roleSnapshot(tx, roleCode, name),
+      });
     });
-  });
+  } catch (err) {
+    throw nameConflictOr(err);
+  }
+};
 
 /** Soft-deletes one of the workspace's own roles. Refuses while an active group carries it. */
 export const softDeleteWorkspaceRole = (ctx: RoleWriteContext, roleCode: string): Promise<void> =>

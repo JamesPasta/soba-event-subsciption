@@ -3,6 +3,7 @@ import {
   CreateWorkspaceRoleBodySchema,
   Permissions,
   UpdateWorkspaceRoleBodySchema,
+  WORKSPACE_ROLE_NAME_MAX_LENGTH,
 } from '../src';
 
 describe('workspace role bodies', () => {
@@ -35,6 +36,18 @@ describe('workspace role bodies', () => {
     expect(
       CreateWorkspaceRoleBodySchema.safeParse({ name: 'Clerk', permissionCodes: [] }).success,
     ).toBe(false);
+  });
+
+  it('limits the name, after trimming it', () => {
+    const permissionCodes = [Permissions.form_read];
+    const atLimit = 'x'.repeat(WORKSPACE_ROLE_NAME_MAX_LENGTH);
+    expect(
+      CreateWorkspaceRoleBodySchema.safeParse({ name: `  ${atLimit}  `, permissionCodes }).success,
+    ).toBe(true);
+    expect(
+      CreateWorkspaceRoleBodySchema.safeParse({ name: `${atLimit}x`, permissionCodes }).success,
+    ).toBe(false);
+    expect(UpdateWorkspaceRoleBodySchema.safeParse({ name: `${atLimit}x` }).success).toBe(false);
   });
 
   it('trims the name', () => {

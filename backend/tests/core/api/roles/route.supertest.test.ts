@@ -137,6 +137,7 @@ describe('workspace role routes', () => {
     ['an unknown permission', { name: 'Auditor', permissionCodes: ['nope'] }],
     ['no permissions', { name: 'Auditor', permissionCodes: [] }],
     ['a blank name', { name: '   ', permissionCodes: ['form_read'] }],
+    ['a name over the limit', { name: 'x'.repeat(101), permissionCodes: ['form_read'] }],
   ])('rejects creating with %s', async (_label, invalid) => {
     expect((await request(app).post(ROLES).send(invalid)).status).toBe(400);
     expect(createWorkspaceRole).not.toHaveBeenCalled();
