@@ -67,6 +67,16 @@ describe('errorHandler', () => {
     },
   );
 
+  it.each(['40P01', '55P03'])(
+    'errorToHttpResponse maps Postgres lock error %s on the cause chain to 503',
+    (code) => {
+      expect(errorToHttpResponse(queryError(code))).toEqual({
+        statusCode: 503,
+        body: { error: 'Another change was in progress; try again', code: 'try_again' },
+      });
+    },
+  );
+
   it('errorToHttpResponse keeps the status of an exposed http-errors 4xx (body-parser)', () => {
     const parseError = Object.assign(new Error('Unexpected token } in JSON'), {
       status: 400,
@@ -166,6 +176,23 @@ describe('errorHandler', () => {
       expect(JSON.stringify(warn.mock.calls)).not.toContain('jane.doe');
     } finally {
       warn.mockRestore();
+    }
+  });
+
+  it('coreErrorHandler logs lock contention as a warning by its fields, never its parameters', () => {
+    const warn = jest.spyOn(log, 'warn').mockImplementation(() => undefined);
+    const error = jest.spyOn(log, 'error').mockImplementation(() => undefined);
+    try {
+      coreErrorHandler(queryError('40P01'), {} as Request, respond(), jest.fn());
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'DrizzleQueryError', code: '40P01' }),
+        'Database lock contention',
+      );
+      expect(error).not.toHaveBeenCalled();
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('jane.doe');
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
     }
   });
 

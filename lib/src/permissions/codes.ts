@@ -121,7 +121,7 @@ export type SubmissionChangeStatusCode =
  * `status_move_not_allowed`, `revision_needs_submitter`, `data_changed`, `*_closed`, `*_taken`,
  * `version_not_published`, `already_exists`, `member_exists`, `member_protected`, `role_in_use` and
  * `last_form_admin` are 409; `*_not_found` and `not_published` are 404;
- * `*_invalid` and `form_not_ready` are 400; `*_unavailable` and `render_busy` are 503;
+ * `*_invalid` and `form_not_ready` are 400; `*_unavailable`, `render_busy` and `try_again` are 503;
  * `render_failed`, `no_saved_data`, `file_infected` and `identity_unconfirmed` are 422;
  * `file_type_blocked` is 415; `file_too_large` and `request_too_large` are 413;
  * `engine_*_rejected` are 400; `unauthenticated` is 401; `rate_limited` and `*_limit_reached` are
@@ -203,6 +203,7 @@ export const ApiErrorCodes = {
   workspace_name_taken: 'workspace_name_taken',
   route_not_found: 'route_not_found',
   rate_limited: 'rate_limited',
+  try_again: 'try_again',
   internal_error: 'internal_error',
 } as const;
 export type ApiErrorCode = (typeof ApiErrorCodes)[keyof typeof ApiErrorCodes];

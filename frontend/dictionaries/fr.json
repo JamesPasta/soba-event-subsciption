@@ -999,6 +999,7 @@
     "workspace_name_taken": "Un espace de travail portant ce nom existe déjà.",
     "route_not_found": "Cette page ou cette fonctionnalité n’est pas disponible.",
     "rate_limited": "Trop de demandes. Veuillez patienter un moment et réessayer.",
+    "try_again": "Une autre modification était en cours d’enregistrement. Veuillez réessayer.",
     "internal_error": "Une erreur s’est produite sur le serveur. Veuillez réessayer.",
     "revision_needs_submitter": "Une soumission anonyme ne peut pas être renvoyée pour révision, car personne ne pourrait la rouvrir.",
     "data_changed": "Quelqu’un d’autre a modifié ces réponses en premier. La page affiche maintenant ses réponses; refaites votre modification."

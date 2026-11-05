@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 
 import en from '@/dictionaries/en.json';
 import type { Dictionary } from '@/src/types/dictionary';
-import type { WorkspaceGroup } from '@/src/types/workspaceGroups';
+import { WORKSPACE_GROUP_NAME_MAX_LENGTH, type WorkspaceGroup } from '@/src/types/workspaceGroups';
 import { ApiError } from '@/src/shared/api/sobaHelpers';
 import {
   ADMINS,
@@ -125,6 +125,14 @@ describe('WorkspaceGroupForm', () => {
       t.roleNames.form_designer,
       t.roleNames.submission_reviewer,
     ]);
+  });
+
+  it('limits the name to what the server accepts', async () => {
+    renderForm(REVIEWERS.id);
+    expect(await screen.findByRole('textbox', { name: new RegExp(t.name) })).toHaveAttribute(
+      'maxlength',
+      String(WORKSPACE_GROUP_NAME_MAX_LENGTH),
+    );
   });
 
   it('will not save a group without a name', async () => {

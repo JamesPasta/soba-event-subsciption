@@ -16,7 +16,7 @@ import { apiErrorMessage, messageForDataError } from '@/src/shared/api/dataError
 import { useAuthErrorDefaults } from '@/src/shared/api/useDataErrorNotice';
 import { useSortLocale } from '@/src/shared/list/useSortLocale';
 import type { Dictionary } from '@/src/types/dictionary';
-import type { WorkspaceGroup } from '@/src/types/workspaceGroups';
+import { WORKSPACE_GROUP_NAME_MAX_LENGTH, type WorkspaceGroup } from '@/src/types/workspaceGroups';
 import type { WorkspaceRole } from '@/src/types/workspaceRoles';
 import { useWorkspaceGroup } from '../data/useWorkspaceGroup';
 import { useWorkspaceGroupsWriter } from '../data/useWorkspaceGroupsWriter';
@@ -168,6 +168,7 @@ function GroupFields({ dict, workspaceId, group, roles, onDone }: Readonly<Group
         value={name}
         onChange={setName}
         isRequired
+        maxLength={WORKSPACE_GROUP_NAME_MAX_LENGTH}
         isDisabled={saving || isSystem}
         data-testid="group-name-input"
       />

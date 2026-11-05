@@ -998,6 +998,7 @@
     "workspace_name_taken": "A workspace with this name already exists.",
     "route_not_found": "This page or feature is not available.",
     "rate_limited": "Too many requests. Please wait a moment and try again.",
+    "try_again": "Another change was being saved at the same time. Please try again.",
     "internal_error": "Something went wrong on the server. Please try again.",
     "revision_needs_submitter": "An anonymous submission cannot be sent back for revision, as no one could open it again.",
     "data_changed": "Someone else changed these answers first. The page now shows theirs; make your change again."

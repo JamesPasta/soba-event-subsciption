@@ -1,5 +1,5 @@
 import { ApiErrorCodes, type SortLocale } from '@soba/lib';
-import { ConflictError, NotFoundError, ValidationError } from '../../errors';
+import { ConflictError, NotFoundError } from '../../errors';
 import { GROUP_NAME_TAKEN, GROUP_NOT_FOUND } from '../../messages';
 import {
   addGroupMember,
@@ -7,9 +7,7 @@ import {
   getWorkspaceGroup,
   getWorkspaceGroupMeta,
   groupNameExistsInWorkspace,
-  isUserInGroup,
   listWorkspaceGroups,
-  membershipInWorkspace,
   removeGroupMember,
   renameGroup,
   replaceGroupRoles,
@@ -136,7 +134,12 @@ export class GroupsApiService {
 
   async addMember(ctx: GroupsContextInput, groupId: string, input: AddMemberInput) {
     await requireGroup(ctx.workspaceId, groupId);
-    await addUserMember(ctx, groupId, input.membershipId);
+    await addGroupMember({
+      workspaceId: ctx.workspaceId,
+      groupId,
+      membershipId: input.membershipId,
+      displayLabel: ctx.actorDisplayLabel,
+    });
     return loadGroup(ctx, groupId);
   }
 
@@ -148,25 +151,6 @@ export class GroupsApiService {
     }
     return loadGroup(ctx, groupId);
   }
-}
-
-async function addUserMember(
-  ctx: GroupsContextInput,
-  groupId: string,
-  membershipId: string,
-): Promise<void> {
-  if (!(await membershipInWorkspace(ctx.workspaceId, membershipId))) {
-    throw new ValidationError('Membership is not an active member of the workspace');
-  }
-  if (await isUserInGroup(groupId, membershipId)) {
-    throw new ConflictError('Member already in group');
-  }
-  await addGroupMember({
-    workspaceId: ctx.workspaceId,
-    groupId,
-    membershipId,
-    displayLabel: ctx.actorDisplayLabel,
-  });
 }
 
 export const groupsApiService = new GroupsApiService();
