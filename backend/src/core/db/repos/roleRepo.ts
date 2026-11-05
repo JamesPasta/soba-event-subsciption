@@ -1,5 +1,16 @@
-import { and, asc, eq, inArray, or, type InferSelectModel } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  isNull,
+  ne,
+  or,
+  type InferSelectModel,
+  type SQL,
+} from 'drizzle-orm';
 import { db } from '../client';
+import { RoleStatus } from '../codes';
 import { roles, features, rolePermissions } from '../schema';
 import { CODE_SOURCE_CORE } from '../schema/codes';
 
@@ -20,7 +31,11 @@ function sourceDisplay(role: { source: string; featureCode: string | null }): st
 export const getRoleByCode = async (
   code: string,
 ): Promise<(RoleRow & { sourceDisplay: string }) | null> => {
-  const rows = await db.select().from(roles).where(eq(roles.code, code)).limit(1);
+  const rows = await db
+    .select()
+    .from(roles)
+    .where(and(eq(roles.code, code), isNull(roles.workspaceId)))
+    .limit(1);
   const row = rows[0];
   if (!row) return null;
   return {
@@ -30,6 +45,7 @@ export const getRoleByCode = async (
   };
 };
 
+/** Platform roles only. A workspace's own roles come from listRolesForWorkspace. */
 export const listRoles = async (
   filters?: ListRolesFilters,
 ): Promise<(RoleRow & { sourceDisplay: string })[]> => {
@@ -40,7 +56,7 @@ export const listRoles = async (
     onlyEnabledFeatures,
   } = filters ?? {};
 
-  const conditions = [];
+  const conditions: (SQL | undefined)[] = [isNull(roles.workspaceId)];
 
   if (codeFilter?.length) {
     conditions.push(inArray(roles.code, codeFilter));
@@ -56,7 +72,7 @@ export const listRoles = async (
     conditions.push(eq(roles.status, statusFilter));
   }
 
-  const baseWhere = conditions.length ? and(...conditions) : undefined;
+  const baseWhere = and(...conditions);
 
   if (onlyEnabledFeatures === false) {
     const rows = await db.select().from(roles).where(baseWhere).orderBy(asc(roles.code));
@@ -67,13 +83,12 @@ export const listRoles = async (
   }
 
   const enabledCondition = or(eq(roles.source, CODE_SOURCE_CORE), eq(features.status, 'enabled'));
-  const whereClause = baseWhere ? and(baseWhere, enabledCondition) : enabledCondition;
 
   const rows = await db
     .select()
     .from(roles)
     .leftJoin(features, eq(roles.featureCode, features.code))
-    .where(whereClause)
+    .where(and(baseWhere, enabledCondition))
     .orderBy(asc(roles.code));
 
   return rows.map((r) => {
@@ -84,6 +99,25 @@ export const listRoles = async (
     };
   });
 };
+
+/**
+ * The platform's roles, whatever their feature's state, and the workspace's own roles that are not
+ * deleted. `codes` narrows the result.
+ */
+export const listRolesForWorkspace = (workspaceId: string, codes?: string[]): Promise<RoleRow[]> =>
+  db
+    .select()
+    .from(roles)
+    .where(
+      and(
+        or(
+          isNull(roles.workspaceId),
+          and(eq(roles.workspaceId, workspaceId), ne(roles.status, RoleStatus.inactive)),
+        ),
+        codes ? inArray(roles.code, codes) : undefined,
+      ),
+    )
+    .orderBy(asc(roles.code));
 
 /** Permission codes by role code, each list in code order. A role with none has no entry. */
 export const listPermissionCodesByRole = async (

@@ -4,7 +4,7 @@ jest.mock('../../../../src/core/db/repos/workspaceGroupRepo', () => ({
   createWorkspaceGroup: jest.fn(),
   renameGroup: jest.fn(),
 }));
-jest.mock('../../../../src/core/db/repos/roleRepo', () => ({ listRoles: jest.fn() }));
+jest.mock('../../../../src/core/db/repos/roleRepo', () => ({ listRolesForWorkspace: jest.fn() }));
 
 import { groupsApiService } from '../../../../src/core/api/groups/service';
 import {

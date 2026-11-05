@@ -37,6 +37,7 @@ export type AppUserStatusCode = (typeof AppUserStatus)[keyof typeof AppUserStatu
 export const RoleStatus = {
   active: 'active',
   deprecated: 'deprecated',
+  inactive: 'inactive',
 } as const;
 export type RoleStatusCode = (typeof RoleStatus)[keyof typeof RoleStatus];
 

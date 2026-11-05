@@ -27,6 +27,8 @@ import {
   forms,
   jobs,
   notificationAudits,
+  rolePermissions,
+  roles,
   submissionExportAudits,
   settingsAudit,
   sobaAdmins,
@@ -292,6 +294,7 @@ export const WORKSPACE_SCOPED_TABLES: readonly string[] = [
   'workspace_group_role',
   'workspace_group_membership',
   'workspace_group',
+  'role',
   'workspace_disclaimer_acceptance',
   'workspace_membership',
   'feature_scope',
@@ -421,6 +424,18 @@ async function purgeWorkspaceScoped(
     'workspace_group',
     tx.delete(workspaceGroups).where(inArray(workspaceGroups.workspaceId, ids)),
   );
+  await record(
+    'role_permission',
+    tx
+      .delete(rolePermissions)
+      .where(
+        inArray(
+          rolePermissions.roleCode,
+          tx.select({ code: roles.code }).from(roles).where(inArray(roles.workspaceId, ids)),
+        ),
+      ),
+  );
+  await record('role', tx.delete(roles).where(inArray(roles.workspaceId, ids)));
   await record(
     'workspace_disclaimer_acceptance',
     tx

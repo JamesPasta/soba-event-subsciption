@@ -17,12 +17,15 @@ jest.mock('../../../../src/core/middleware/workspaceContext', () => {
   return { workspaceFromResource: () => resolve };
 });
 jest.mock('../../../../src/core/db/repos/roleRepo', () => ({
-  listRoles: jest.fn(),
+  listRolesForWorkspace: jest.fn(),
   listPermissionCodesByRole: jest.fn(),
 }));
 
 import { rolesRouter } from '../../../../src/core/api/roles';
-import { listPermissionCodesByRole, listRoles } from '../../../../src/core/db/repos/roleRepo';
+import {
+  listPermissionCodesByRole,
+  listRolesForWorkspace,
+} from '../../../../src/core/db/repos/roleRepo';
 import { coreErrorHandler } from '../../../../src/core/middleware/errorHandler';
 
 const ROLES = '/workspaces/01a0dc24-1f2e-7a3b-8c4d-5e6f7a8b9c0d/roles';
@@ -34,21 +37,23 @@ app.use(coreErrorHandler);
 describe('workspace role routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.mocked(listRoles).mockResolvedValue([
-      { code: 'form_admin', name: 'Form admin' },
-      { code: 'team_manager', name: 'Team manager' },
-      { code: 'empty_role', name: 'Empty role' },
+    jest.mocked(listRolesForWorkspace).mockResolvedValue([
+      { code: 'form_admin', name: 'Form admin', workspaceId: null },
+      { code: 'team_manager', name: 'Team manager', workspaceId: null },
+      { code: 'custom-1', name: 'Auditor', workspaceId: 'ws1' },
+      { code: 'custom-2', name: 'Empty role', workspaceId: 'ws1' },
     ] as never);
     jest.mocked(listPermissionCodesByRole).mockResolvedValue(
       new Map([
         ['form_admin', ['*']],
         ['team_manager', ['form_read', 'team_read', 'team_update']],
+        ['custom-1', ['submission_read']],
       ]),
     );
   });
 
   it.each(['owner', 'admin', 'member'])(
-    'lists fixed roles with permissions for a %s',
+    'lists fixed and custom roles with permissions for a %s',
     async (role) => {
       const res = await request(app).get(ROLES).set('x-test-role', role);
       expect(res.status).toBe(200);
@@ -60,19 +65,20 @@ describe('workspace role routes', () => {
           system: true,
           permissions: ['form_read', 'team_read', 'team_update'],
         },
-        { roleCode: 'empty_role', name: 'Empty role', system: true, permissions: [] },
+        { roleCode: 'custom-1', name: 'Auditor', system: false, permissions: ['submission_read'] },
+        { roleCode: 'custom-2', name: 'Empty role', system: false, permissions: [] },
       ]);
     },
   );
 
-  it('asks for every role, including those of switched-off features', async () => {
+  it("reads the caller's workspace, never one named by the client", async () => {
     await request(app).get(ROLES);
-    expect(listRoles).toHaveBeenCalledWith({ onlyEnabledFeatures: false });
+    expect(listRolesForWorkspace).toHaveBeenCalledWith('ws1');
   });
 
   it('refuses a viewer', async () => {
     const res = await request(app).get(ROLES).set('x-test-role', 'viewer');
     expect(res.status).toBe(403);
-    expect(listRoles).not.toHaveBeenCalled();
+    expect(listRolesForWorkspace).not.toHaveBeenCalled();
   });
 });

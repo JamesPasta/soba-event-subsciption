@@ -4,6 +4,7 @@ import {
   exists,
   inArray,
   isNull,
+  ne,
   not,
   notExists,
   or,
@@ -18,6 +19,7 @@ import {
   formGroupOverrides,
   forms,
   rolePermissions,
+  roles,
   workspaceGroupMemberships,
   workspaceGroupRoles,
   workspaceGroups,
@@ -27,6 +29,7 @@ import {
   FormGroupOverrideStatus,
   GroupMemberKind,
   Permissions,
+  RoleStatus,
   WorkspaceGroupMembershipStatus,
   WorkspaceGroupRoleStatus,
   WorkspaceGroupStatus,
@@ -173,7 +176,10 @@ export const effectiveGroups = (userId: string | null, scope: GroupScope) => {
   return unionAll(inherited, overridden);
 };
 
-/** Joins the active roles of the group in `groupId`, and their permission codes. */
+/**
+ * Joins the active roles of the group in `groupId`, and their permission codes. A deleted role, or
+ * one another workspace owns, grants nothing even if a group still carries it.
+ */
 const withRolePermissions = <T extends PgSelect>(query: T, groupId: SQLWrapper) =>
   query
     .innerJoin(
@@ -183,7 +189,15 @@ const withRolePermissions = <T extends PgSelect>(query: T, groupId: SQLWrapper) 
         eq(workspaceGroupRoles.status, WorkspaceGroupRoleStatus.active),
       ),
     )
-    .innerJoin(rolePermissions, eq(rolePermissions.roleCode, workspaceGroupRoles.roleCode));
+    .innerJoin(
+      roles,
+      and(
+        eq(roles.code, workspaceGroupRoles.roleCode),
+        ne(roles.status, RoleStatus.inactive),
+        or(isNull(roles.workspaceId), eq(roles.workspaceId, workspaceGroupRoles.workspaceId)),
+      ),
+    )
+    .innerJoin(rolePermissions, eq(rolePermissions.roleCode, roles.code));
 
 /** Per form, the user's permission codes from the active roles of their effective groups. */
 export const permissionsByForm = (userId: string, scope: GroupScope) => {
