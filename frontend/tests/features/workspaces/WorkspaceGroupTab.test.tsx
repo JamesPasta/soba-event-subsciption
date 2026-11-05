@@ -89,14 +89,14 @@ describe('WorkspaceGroupTab', () => {
     expect(screen.getByTestId('delete-group-button-grp-reviewers')).toBeInTheDocument();
   });
 
-  it("shows one of the workspace's own roles by its name", async () => {
+  it("shows one of the workspace's own roles by its name, marked custom", async () => {
     mockApi.listWorkspaceGroups.mockResolvedValue(
       groupsPage([group({ id: 'grp-audit', name: 'Auditors', roles: [AUDITOR.roleCode] })]),
     );
     renderTab();
 
     expect(await screen.findByTestId(`group-role-grp-audit-${AUDITOR.roleCode}`)).toHaveTextContent(
-      AUDITOR.name,
+      t.customRoleName.replace('{name}', AUDITOR.name),
     );
     expect(mockApi.listWorkspaceRoles).toHaveBeenCalledWith('token', WORKSPACE_ID);
   });

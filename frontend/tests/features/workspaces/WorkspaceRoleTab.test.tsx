@@ -17,7 +17,6 @@ const { mockApi, mockLocale, mockAddNotification } = vi.hoisted(() => ({
     createWorkspaceRole: vi.fn(),
     updateWorkspaceRole: vi.fn(),
     deleteWorkspaceRole: vi.fn(),
-    listWorkspaceGroups: vi.fn(),
   },
   mockLocale: { value: 'en' },
   mockAddNotification: vi.fn(),
@@ -423,6 +422,37 @@ describe('WorkspaceRoleTab', () => {
     );
     expect(screen.getByTestId('role-name-custom-1')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: t.deleteRole })).not.toBeInTheDocument();
+  });
+
+  it('leaves an open create form alone when another role is removed', async () => {
+    const user = userEvent.setup();
+    renderTab();
+    await user.click(await screen.findByTestId('create-ws-role-button'));
+    await user.click(nameInput());
+    await user.paste('Inspector');
+    await user.click(screen.getByTestId('delete-role-button-custom-1'));
+    await user.click(screen.getByRole('button', { name: t.deleteRole }));
+
+    await waitFor(() => expect(mockApi.deleteWorkspaceRole).toHaveBeenCalled());
+    expect(screen.getByTestId('workspace-role-create-form')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Inspector')).toBeInTheDocument();
+  });
+
+  it('re-reads the list after a refused create', async () => {
+    const user = userEvent.setup();
+    mockApi.createWorkspaceRole.mockRejectedValue(new ApiError('Request failed (500)', 500));
+    renderTab();
+    await user.click(await screen.findByTestId('create-ws-role-button'));
+    await user.click(nameInput());
+    await user.paste('Inspector');
+    await user.click(permissionBox('form_read'));
+    const readsBefore = mockApi.listWorkspaceRoles.mock.calls.length;
+
+    await user.click(screen.getByTestId('role-submit-button'));
+
+    await waitFor(() =>
+      expect(mockApi.listWorkspaceRoles.mock.calls.length).toBeGreaterThan(readsBefore),
+    );
   });
 
   it('re-reads the list after a refused edit, as the role may have gone', async () => {

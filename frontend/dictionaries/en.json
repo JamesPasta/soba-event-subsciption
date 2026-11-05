@@ -182,6 +182,7 @@
       "rolesHelp": "Roles granted to all members of this group across all forms in the workspace.",
       "noRolesSelected": "No roles selected",
       "customRoleFallback": "Custom role",
+      "customRoleName": "{name} (Custom)",
       "systemGroup": "System Group",
       "systemGroupTooltip": "System groups are protected and cannot be deleted.",
       "deleteConfirmTitle": "Remove Group",

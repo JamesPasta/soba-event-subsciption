@@ -7,7 +7,7 @@ import type { Dictionary } from '@/src/types/dictionary';
 import { Permissions } from '@/src/types/permissions';
 
 const { state } = vi.hoisted(() => ({
-  state: { permissions: [] as string[], types: ['print'] as string[] | null },
+  state: { formRead: true, permissions: [] as string[], types: ['print'] as string[] | null },
 }));
 
 const TEMPLATE = {
@@ -38,7 +38,7 @@ vi.mock('@/src/shared/hooks/useFormatLongDate', () => ({
 
 vi.mock('@/src/features/designer/data/useForm', () => ({
   useForm: () => ({
-    form: { workspaceId: 'ws-1', permissions: state.permissions },
+    form: state.formRead ? { workspaceId: 'ws-1', permissions: state.permissions } : undefined,
     currentVersion: { id: 'v-1' },
     versions: [],
     versionsTruncated: false,
@@ -73,8 +73,18 @@ const renderDrawer = () =>
 
 describe('TemplatesDrawer', () => {
   beforeEach(() => {
+    state.formRead = true;
     state.permissions = [Permissions.form_read, Permissions.document_template_read];
     state.types = ['print'];
+  });
+
+  it('offers no upload or delete until the form, with its permissions, is read', () => {
+    state.formRead = false;
+    state.permissions = [Permissions.all];
+    renderDrawer();
+    expect(screen.queryByTestId('template-upload-form')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('template-tmpl-1-delete')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('template-no-types')).not.toBeInTheDocument();
   });
 
   it('offers no upload or delete to someone who can only read templates', () => {

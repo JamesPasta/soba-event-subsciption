@@ -2,6 +2,7 @@ import React, { act } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useSWRConfig } from 'swr';
 
 import en from '@/dictionaries/en.json';
 import type { Dictionary } from '@/src/types/dictionary';
@@ -18,7 +19,6 @@ import {
 
 const { mockApi, mockAddNotification } = vi.hoisted(() => ({
   mockApi: {
-    listWorkspaceGroups: vi.fn(),
     listWorkspaceRoles: vi.fn(),
     getWorkspaceGroup: vi.fn(),
     createWorkspaceGroup: vi.fn(),
@@ -59,6 +59,7 @@ const nameInput = () => screen.getByRole('textbox', { name: new RegExp(t.name) }
 const roleBox = (code: keyof typeof en.workspaces.groups.roleNames) =>
   screen.getByRole('checkbox', { name: t.roleNames[code] });
 const saveButton = () => screen.getByTestId('group-submit-button');
+const customLabel = (name: string) => t.customRoleName.replace('{name}', name);
 
 describe('WorkspaceGroupForm', () => {
   beforeEach(() => {
@@ -94,12 +95,12 @@ describe('WorkspaceGroupForm', () => {
     expect(roles).toHaveAccessibleDescription(t.rolesHelp);
   });
 
-  it("offers the workspace's own roles by name, and assigns one by its code", async () => {
+  it("offers the workspace's own roles by name, marked custom, and assigns one by its code", async () => {
     const user = userEvent.setup();
     mockApi.createWorkspaceGroup.mockResolvedValue(REVIEWERS);
     renderForm();
 
-    await user.click(await screen.findByRole('checkbox', { name: AUDITOR.name }));
+    await user.click(await screen.findByRole('checkbox', { name: customLabel(AUDITOR.name) }));
     await user.click(nameInput());
     await user.paste('Auditors');
     await user.click(saveButton());
@@ -120,7 +121,7 @@ describe('WorkspaceGroupForm', () => {
     expect(
       Array.from(roles.querySelectorAll('label')).map((label) => label.textContent?.trim()),
     ).toEqual([
-      AUDITOR.name,
+      customLabel(AUDITOR.name),
       t.roleNames.form_admin,
       t.roleNames.form_designer,
       t.roleNames.submission_reviewer,
@@ -301,6 +302,37 @@ describe('WorkspaceGroupForm', () => {
     );
     expect(nameInput()).toHaveValue('Half typed');
     expect(screen.queryByTestId('group-roles-error')).not.toBeInTheDocument();
+  });
+
+  it('keeps what was typed when a later read of the group fails', async () => {
+    const user = userEvent.setup();
+    let reread: () => Promise<unknown> = () => Promise.resolve();
+    function Reread() {
+      const { mutate } = useSWRConfig();
+      reread = () => mutate(['workspace-group', WORKSPACE_ID, REVIEWERS.id, 'en']);
+      return null;
+    }
+    renderSignedIn(
+      <>
+        <Reread />
+        {editForm(REVIEWERS.id)}
+      </>,
+    );
+    await screen.findByDisplayValue(REVIEWERS.name);
+    await user.clear(nameInput());
+    await user.paste('Half typed');
+    const readsBefore = mockApi.getWorkspaceGroup.mock.calls.length;
+
+    mockApi.getWorkspaceGroup.mockRejectedValue(new ApiError('Request failed (500)', 500));
+    await act(async () => {
+      await reread().catch(() => undefined);
+    });
+
+    await waitFor(() =>
+      expect(mockApi.getWorkspaceGroup.mock.calls.length).toBeGreaterThan(readsBefore),
+    );
+    expect(nameInput()).toHaveValue('Half typed');
+    expect(screen.queryByTestId('group-load-error')).not.toBeInTheDocument();
   });
 
   it('shows no fields when the roles cannot be read', async () => {

@@ -21,7 +21,7 @@ import type { WorkspaceRole } from '@/src/types/workspaceRoles';
 import { useWorkspaceGroup } from '../data/useWorkspaceGroup';
 import { useWorkspaceGroupsWriter } from '../data/useWorkspaceGroupsWriter';
 import { useWorkspaceRoles } from '../data/useWorkspaceRoles';
-import { groupRoleLabel, rolesByLabel } from '../groupRoleLabel';
+import { assignableRoleLabel, rolesByLabel } from '../groupRoleLabel';
 import { TabFormSection, TabFormUnavailable } from './TabForm';
 import styles from './WorkspaceForm.module.css';
 
@@ -50,7 +50,7 @@ export function WorkspaceGroupForm({
   const record = useWorkspaceGroup(workspaceId, groupId ?? null);
 
   let content: React.ReactNode;
-  if (record.error) {
+  if (record.error && !record.group) {
     // Editing without the record would post the empty fields as a new group.
     content = (
       <TabFormUnavailable
@@ -185,7 +185,7 @@ function GroupFields({ dict, workspaceId, group, roles, onDone }: Readonly<Group
             value={role.roleCode}
             data-testid={`role-checkbox-${role.roleCode}`}
           >
-            {groupRoleLabel(dict, role.roleCode, role.name)}
+            {assignableRoleLabel(dict, role)}
           </Checkbox>
         ))}
       </CheckboxGroup>

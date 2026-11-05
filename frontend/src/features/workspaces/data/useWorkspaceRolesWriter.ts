@@ -31,11 +31,14 @@ export function useWorkspaceRolesWriter(workspaceId: string) {
 
   const create = useCallback(
     async (token: string, fields: WorkspaceRoleFields): Promise<WriteOutcome<void>> => {
-      await createWorkspaceRole(token, workspaceId, {
-        name: fields.name,
-        permissionCodes: fields.permissionCodes as AssignablePermissionCode[],
-      });
-      await refresh();
+      try {
+        await createWorkspaceRole(token, workspaceId, {
+          name: fields.name,
+          permissionCodes: fields.permissionCodes as AssignablePermissionCode[],
+        });
+      } finally {
+        await refresh();
+      }
       return { status: 'applied', value: undefined };
     },
     [workspaceId, refresh],

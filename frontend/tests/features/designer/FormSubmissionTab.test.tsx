@@ -4,8 +4,9 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { Provider } from 'react-redux';
 import { SWRConfig } from 'swr';
 
-const { mockGetSubmissions, mockDelete, mockPush, search, dict } = vi.hoisted(() => ({
+const { mockGetSubmissions, mockGetForm, mockDelete, mockPush, search, dict } = vi.hoisted(() => ({
   mockGetSubmissions: vi.fn(),
+  mockGetForm: vi.fn(),
   mockDelete: vi.fn(),
   mockPush: vi.fn(),
   search: { value: '' },
@@ -59,6 +60,7 @@ const { mockGetSubmissions, mockDelete, mockPush, search, dict } = vi.hoisted(()
 
 vi.mock('@/src/shared/api/sobaApi', () => ({
   getSobaSubmissions: (...args: unknown[]) => mockGetSubmissions(...args),
+  getSobaForm: (...args: unknown[]) => mockGetForm(...args),
   deleteSobaSubmission: (...args: unknown[]) => mockDelete(...args),
   fetchCurrentUser: async () => ({ actor: { id: 'u-me', displayLabel: 'Me' } }),
 }));
@@ -94,6 +96,10 @@ describe('FormSubmissionTab', () => {
     sessionStorage.clear();
     search.value = '';
     exportsAllowed.value = true;
+    mockGetForm.mockResolvedValue({
+      id: 'f1',
+      permissions: ['submission_read', 'submission_delete'],
+    });
     mockGetSubmissions.mockResolvedValue({
       items: [
         {
@@ -191,6 +197,21 @@ describe('FormSubmissionTab', () => {
     });
     return screen.findByTestId('confirm-modal-message');
   };
+
+  it('offers Delete only to someone who may delete submissions on the form', async () => {
+    mockGetForm.mockResolvedValue({ id: 'f1', permissions: ['submission_read'] });
+    await renderTab();
+
+    await waitFor(() => expect(screen.getByTestId('sub-1-view-link')).toBeInTheDocument());
+    expect(screen.queryByTestId('sub-1-delete-link')).not.toBeInTheDocument();
+  });
+
+  it('offers Delete to a form administrator', async () => {
+    mockGetForm.mockResolvedValue({ id: 'f1', permissions: ['*'] });
+    await renderTab();
+
+    expect(await screen.findByTestId('sub-1-delete-link')).toBeInTheDocument();
+  });
 
   it('names a submitted submission by its confirmation code before deleting', async () => {
     await renderTab();
