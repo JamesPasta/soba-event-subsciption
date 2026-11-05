@@ -10,7 +10,6 @@ import { Tag } from '@/src/components/Tag';
 import { ListPageSearchField } from '@/src/components/ListPageSearchField';
 import { useKeycloak } from '@/lib/hooks/useKeycloak';
 import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
-import { useRolesMeta } from '@/src/shared/api/useRolesMeta';
 import { WORKSPACE_GROUPS_LIST_QUERY } from '@/src/shared/list/listQueryMemory';
 import { useListQuery } from '@/src/shared/list/useListQuery';
 import { useDataTable } from '@/src/shared/list/useDataTable';
@@ -18,6 +17,7 @@ import type { Dictionary } from '@/src/types/dictionary';
 import type { WorkspaceGroup } from '@/src/types/workspaceGroups';
 import { useWorkspaceGroups } from '../data/useWorkspaceGroups';
 import { useWorkspaceGroupsWriter } from '../data/useWorkspaceGroupsWriter';
+import { useWorkspaceRoles } from '../data/useWorkspaceRoles';
 import { groupRoleLabel } from '../groupRoleLabel';
 import WorkspaceGroupForm from './WorkspaceGroupForm';
 
@@ -43,8 +43,8 @@ export function WorkspaceGroupTab({ dict, workspaceId }: Readonly<WorkspaceGroup
   });
   const { table } = useDataTable(query, groupsResult, t.loadError);
   const writer = useWorkspaceGroupsWriter(workspaceId);
-  // Only for the catalog's own role names; a failed read falls back to the dictionary or the code.
-  const { data: roles } = useRolesMeta();
+  // Only for the roles' own names; a failed read falls back to the dictionary or the code.
+  const { rows: roles } = useWorkspaceRoles(workspaceId);
 
   const [formView, setFormView] = useState<FormView>(null);
   const [pendingDelete, setPendingDelete] = useState<WorkspaceGroup | null>(null);
@@ -69,7 +69,7 @@ export function WorkspaceGroupTab({ dict, workspaceId }: Readonly<WorkspaceGroup
   };
 
   const columns: Column<WorkspaceGroup>[] = useMemo(() => {
-    const catalogNames = new Map(roles?.map((role) => [role.roleCode, role.name]));
+    const catalogNames = new Map(roles.map((role) => [role.roleCode, role.name]));
     return [
       {
         key: 'name',

@@ -9,18 +9,68 @@ import type {
   UpdateWorkspaceGroupBody,
   WorkspaceGroup,
 } from '@/src/types/workspaceGroups';
-import type { ListWorkspaceRolesResponse } from '@/src/types/workspaceRoles';
+import type {
+  CreateWorkspaceRoleBody,
+  ListWorkspaceRolesResponse,
+  UpdateWorkspaceRoleBody,
+  WorkspaceRole,
+} from '@/src/types/workspaceRoles';
 
 const groupsPath = (workspaceId: string) => `/workspaces/${workspaceId}/groups`;
 const groupPath = (workspaceId: string, groupId: string) => `${groupsPath(workspaceId)}/${groupId}`;
+
+const rolesPath = (workspaceId: string) => `/workspaces/${workspaceId}/roles`;
+const rolePath = (workspaceId: string, roleCode: string) => `${rolesPath(workspaceId)}/${roleCode}`;
 
 /** Every role available in the workspace, with its permission codes. */
 export async function listWorkspaceRoles(
   token: string,
   workspaceId: string,
 ): Promise<ListWorkspaceRolesResponse> {
-  const response = await sobaFetch(`/workspaces/${workspaceId}/roles`, { token });
+  const response = await sobaFetch(rolesPath(workspaceId), { token });
   return parseJson(response);
+}
+
+export async function getWorkspaceRole(
+  token: string,
+  workspaceId: string,
+  roleCode: string,
+): Promise<WorkspaceRole> {
+  const response = await sobaFetch(rolePath(workspaceId, roleCode), { token });
+  return parseJson(response);
+}
+
+export async function createWorkspaceRole(
+  token: string,
+  workspaceId: string,
+  body: CreateWorkspaceRoleBody,
+): Promise<WorkspaceRole> {
+  const response = await sobaFetch(rolesPath(workspaceId), { token, method: 'POST', json: body });
+  return parseJson(response);
+}
+
+export async function updateWorkspaceRole(
+  token: string,
+  workspaceId: string,
+  roleCode: string,
+  body: UpdateWorkspaceRoleBody,
+): Promise<WorkspaceRole> {
+  const response = await sobaFetch(rolePath(workspaceId, roleCode), {
+    token,
+    method: 'PATCH',
+    json: body,
+  });
+  return parseJson(response);
+}
+
+/** A 404 counts as deleted, as the other DELETE helpers treat it: the row is gone either way. */
+export async function deleteWorkspaceRole(
+  token: string,
+  workspaceId: string,
+  roleCode: string,
+): Promise<void> {
+  const response = await sobaFetch(rolePath(workspaceId, roleCode), { token, method: 'DELETE' });
+  if (!response.ok && response.status !== 404) await parseJson(response);
 }
 
 /** One page of the workspace's groups, searched and sorted by the server. */

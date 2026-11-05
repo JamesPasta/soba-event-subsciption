@@ -6,11 +6,8 @@ import { SWRConfig, type Cache } from 'swr';
 import makeStore from '@/lib/store';
 import { setAuthenticated, setToken } from '@/lib/slices/keycloakSlice';
 import { swrConfig } from '@/src/shared/api/swrConfig';
-import type {
-  ListWorkspaceGroupsResponse,
-  RoleWithSourceMeta,
-  WorkspaceGroup,
-} from '@/src/types/workspaceGroups';
+import type { ListWorkspaceGroupsResponse, WorkspaceGroup } from '@/src/types/workspaceGroups';
+import type { WorkspaceRole } from '@/src/types/workspaceRoles';
 
 /**
  * Workspace group test helpers. Tests render real hooks against a signed-in store and mock only
@@ -81,21 +78,21 @@ export const REVIEWERS = group({
   roles: ['submission_reviewer'],
 });
 
-const role = (roleCode: string, name: string): RoleWithSourceMeta => ({
+const role = (roleCode: string, name: string, system = true): WorkspaceRole => ({
   roleCode,
   name,
-  description: null,
-  status: 'active',
-  source: 'core',
-  createdAt: '2026-01-01T00:00:00.000Z',
-  updatedAt: '2026-01-01T00:00:00.000Z',
+  system,
+  permissions: ['form_read'],
 });
 
+export const AUDITOR = role('custom-1', 'Auditor', false);
+
 export const ROLES = {
-  roles: [
+  items: [
     role('form_admin', 'form_admin catalog name'),
     role('submission_reviewer', 'submission_reviewer catalog name'),
     role('form_designer', 'form_designer catalog name'),
+    AUDITOR,
   ],
 };
 

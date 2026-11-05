@@ -1,1 +1,6 @@
-export type { ListWorkspaceRolesResponse, WorkspaceRole } from '@soba/lib';
+export type {
+  CreateWorkspaceRoleBody,
+  ListWorkspaceRolesResponse,
+  UpdateWorkspaceRoleBody,
+  WorkspaceRole,
+} from '@soba/lib';

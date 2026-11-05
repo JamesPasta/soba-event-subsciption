@@ -7,27 +7,29 @@ import en from '@/dictionaries/en.json';
 import type { Dictionary } from '@/src/types/dictionary';
 import type { WorkspaceGroup } from '@/src/types/workspaceGroups';
 import { ApiError } from '@/src/shared/api/sobaHelpers';
-import { ADMINS, REVIEWERS, ROLES, WORKSPACE_ID, renderSignedIn } from './workspaceGroupsTestKit';
+import {
+  ADMINS,
+  AUDITOR,
+  REVIEWERS,
+  ROLES,
+  WORKSPACE_ID,
+  renderSignedIn,
+} from './workspaceGroupsTestKit';
 
-const { mockApi, mockFetchRolesMeta, mockAddNotification } = vi.hoisted(() => ({
+const { mockApi, mockAddNotification } = vi.hoisted(() => ({
   mockApi: {
     listWorkspaceGroups: vi.fn(),
+    listWorkspaceRoles: vi.fn(),
     getWorkspaceGroup: vi.fn(),
     createWorkspaceGroup: vi.fn(),
     renameWorkspaceGroup: vi.fn(),
     setWorkspaceGroupRoles: vi.fn(),
     deleteWorkspaceGroup: vi.fn(),
   },
-  mockFetchRolesMeta: vi.fn(),
   mockAddNotification: vi.fn(),
 }));
 
 vi.mock('@/src/features/workspaces/data/api', () => mockApi);
-
-vi.mock('@/src/shared/api/sobaApi', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/src/shared/api/sobaApi')>()),
-  fetchRolesMeta: mockFetchRolesMeta,
-}));
 
 vi.mock('@/lib/hooks/useKeycloak', () => ({
   useKeycloak: () => ({ authenticated: true, token: 'token', initializing: false }),
@@ -60,7 +62,7 @@ const saveButton = () => screen.getByTestId('group-submit-button');
 describe('WorkspaceGroupForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockFetchRolesMeta.mockResolvedValue(ROLES);
+    mockApi.listWorkspaceRoles.mockResolvedValue(ROLES);
     mockApi.getWorkspaceGroup.mockResolvedValue(REVIEWERS);
   });
 
@@ -89,6 +91,39 @@ describe('WorkspaceGroupForm', () => {
     renderForm();
     const roles = await screen.findByRole('group', { name: t.roles });
     expect(roles).toHaveAccessibleDescription(t.rolesHelp);
+  });
+
+  it("offers the workspace's own roles by name, and assigns one by its code", async () => {
+    const user = userEvent.setup();
+    mockApi.createWorkspaceGroup.mockResolvedValue(REVIEWERS);
+    renderForm();
+
+    await user.click(await screen.findByRole('checkbox', { name: AUDITOR.name }));
+    await user.click(nameInput());
+    await user.paste('Auditors');
+    await user.click(saveButton());
+
+    await waitFor(() =>
+      expect(mockApi.createWorkspaceGroup).toHaveBeenCalledWith('token', WORKSPACE_ID, {
+        name: 'Auditors',
+        roleCodes: [AUDITOR.roleCode],
+      }),
+    );
+    expect(mockApi.listWorkspaceRoles).toHaveBeenCalledWith('token', WORKSPACE_ID);
+  });
+
+  it('lists the roles in the order of the names shown', async () => {
+    renderForm();
+    const roles = await screen.findByRole('group', { name: t.roles });
+
+    expect(
+      Array.from(roles.querySelectorAll('label')).map((label) => label.textContent?.trim()),
+    ).toEqual([
+      AUDITOR.name,
+      t.roleNames.form_admin,
+      t.roleNames.form_designer,
+      t.roleNames.submission_reviewer,
+    ]);
   });
 
   it('will not save a group without a name', async () => {
@@ -231,7 +266,7 @@ describe('WorkspaceGroupForm', () => {
   });
 
   it('shows no fields when the roles cannot be read', async () => {
-    mockFetchRolesMeta.mockRejectedValue(new ApiError('Request failed (500)', 500));
+    mockApi.listWorkspaceRoles.mockRejectedValue(new ApiError('Request failed (500)', 500));
     renderForm();
 
     expect(await screen.findByTestId('group-roles-error')).toHaveTextContent(t.rolesLoadError);
