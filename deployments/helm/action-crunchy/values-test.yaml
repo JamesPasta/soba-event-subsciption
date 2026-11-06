@@ -33,12 +33,12 @@ crunchy:
         prometheus.io/port: '9187'
     dataVolumeClaimSpec:
       # Test data and WAL volume sizes.
-      storage: 20Gi
+      storage: 8Gi
       storageClassName: netapp-block-standard
       walStorage: 2Gi
     requests:
-      cpu: 150m
-      memory: 1536Mi
+      cpu: 100m
+      memory: 1Gi
     replicaCertCopy:
       requests:
         cpu: 1m

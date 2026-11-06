@@ -281,7 +281,8 @@ jobs:
             internal:
               enabled: false
             external:
-              host: "soba-test-mongodb-0.soba-test-mongodb-headless"
+              # All members, so Form.io can connect while any is down. The chart appends :port.
+              host: "soba-test-mongodb-0.soba-test-mongodb-headless:27017,soba-test-mongodb-1.soba-test-mongodb-headless:27017,soba-test-mongodb-2.soba-test-mongodb-headless"
               authSecretName: soba-test-mongodb-auth
           OVERRIDE
 
