@@ -71,12 +71,17 @@ spec:
               value: {{ ((index $worker "healthPort") | default 9090) | quote }}
             - name: TEMPORAL_TASK_QUEUE
               value: {{ ((index $worker "taskQueue") | default "soba") | quote }}
-            {{- if $root.Values.database.runtimeSecretName }}
+            {{- if or $root.Values.database.runtimeSecretName $root.Values.database.existingSecretName }}
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
+                  {{- if $root.Values.database.runtimeSecretName }}
                   name: {{ include "soba.runtimeDbSecretName" $root }}
                   key: {{ include "soba.runtimeDbSecretKey" $root }}
+                  {{- else }}
+                  name: {{ include "soba.dbSecretName" $root }}
+                  key: {{ include "soba.dbSecretKey" $root }}
+                  {{- end }}
             {{- end }}
           readinessProbe:
             httpGet:
