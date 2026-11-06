@@ -79,6 +79,20 @@ const run = async () => {
     await pool.query('SELECT 1');
   });
   await migrate(db, { migrationsFolder: 'drizzle' });
+  const runtimeRole = process.env.DB_RUNTIME_ROLE?.trim();
+  if (runtimeRole) {
+    const role = quoteIdentifier(runtimeRole);
+    const database = quoteIdentifier(new URL(env.getDatabaseUrl()).pathname.replace(/^\//, ''));
+    await pool.query(`GRANT USAGE ON SCHEMA soba TO ${role}`);
+    await pool.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA soba TO ${role}`);
+    await pool.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA soba TO ${role}`);
+    await pool.query(
+      `ALTER ROLE ${role} IN DATABASE ${database} SET statement_timeout = ${env.getDbStatementTimeoutMs()}`,
+    );
+    await pool.query(
+      `ALTER ROLE ${role} IN DATABASE ${database} SET lock_timeout = ${env.getDbLockTimeoutMs()}`,
+    );
+  }
   console.log('Migrations complete.');
   await pool.end();
 };

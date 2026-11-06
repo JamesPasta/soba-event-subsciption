@@ -158,6 +158,17 @@ DATABASE_URL
 {{- end }}
 
 {{/*
+Runtime database secret name and key.
+*/}}
+{{- define "soba.runtimeDbSecretName" -}}
+{{- .Values.database.runtimeSecretName -}}
+{{- end }}
+
+{{- define "soba.runtimeDbSecretKey" -}}
+{{- .Values.database.runtimeSecretKey | default "pgbouncer-uri" -}}
+{{- end }}
+
+{{/*
 Truthy ("true") only when the tempstorage-mount plugin is selected. Gates the
 temp PVC, its mount, and PLUGIN_TEMPSTORAGE_MOUNT_DIR off one value so they
 cannot drift apart. Any other code (e.g. tempstorage-os) needs no PVC.

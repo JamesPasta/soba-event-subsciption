@@ -162,13 +162,13 @@ spec:
             - secretRef:
                 name: {{ include "soba.fullname" . }}-formio
             {{- end }}
-          {{- if .Values.database.existingSecretName }}
+          {{- if .Values.database.runtimeSecretName }}
           env:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "soba.dbSecretName" . }}
-                  key: {{ include "soba.dbSecretKey" . }}
+                  name: {{ include "soba.runtimeDbSecretName" . }}
+                  key: {{ include "soba.runtimeDbSecretKey" . }}
           {{- end }}
           livenessProbe:
             httpGet:
