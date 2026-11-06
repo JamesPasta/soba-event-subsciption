@@ -79,7 +79,7 @@ const run = async () => {
     await pool.query('SELECT 1');
   });
   await migrate(db, { migrationsFolder: 'drizzle' });
-  const runtimeRole = process.env.DB_RUNTIME_ROLE?.trim();
+  const runtimeRole = env.getDbRuntimeRole();
   if (runtimeRole) {
     const role = quoteIdentifier(runtimeRole);
     const database = quoteIdentifier(new URL(env.getDatabaseUrl()).pathname.replace(/^\//, ''));

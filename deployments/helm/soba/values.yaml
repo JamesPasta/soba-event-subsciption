@@ -420,6 +420,11 @@ database:
   existingSecretName: ""
   existingSecretKey: "uri"
   # Pipeline performance fix: Revert if needed.
+  # Backend and worker DATABASE_URL secret; empty uses the migration job's connection.
+  runtimeSecretName: ""
+  runtimeSecretKey: "pgbouncer-uri"
+  # Role the migration job grants soba schema access and role timeouts to.
+  runtimeRole: ""
   # Option 2: components (used when uri is empty)
   host: ""
   port: "5432"
