@@ -26,19 +26,19 @@ crunchy:
     target: null
   instances:
     name: db
-    replicas: 1
+    replicas: 3
     metadata:
       annotations:
         prometheus.io/scrape: 'true'
         prometheus.io/port: '9187'
     dataVolumeClaimSpec:
       # Test data and WAL volume sizes.
-      storage: 5Gi
+      storage: 20Gi
       storageClassName: netapp-block-standard
-      walStorage: 512Mi
+      walStorage: 2Gi
     requests:
-      cpu: 50m
-      memory: 128Mi
+      cpu: 150m
+      memory: 1536Mi
     replicaCertCopy:
       requests:
         cpu: 1m
@@ -54,23 +54,22 @@ crunchy:
         - "host all all 0.0.0.0/0 scram-sha-256"
         - "host all all ::1/128 scram-sha-256"
       parameters:
-        shared_buffers: 16MB
+        shared_buffers: 512MB
         wal_buffers: "-1"
-        min_wal_size: 32MB
-        max_wal_size: 64MB
-        max_slot_wal_keep_size: 128MB
-        work_mem: 2MB
+        min_wal_size: 128MB
+        max_wal_size: 512MB
+        max_slot_wal_keep_size: 1GB
+        work_mem: 32MB
         log_min_duration_statement: 1000ms
         effective_io_concurrency: 20
   proxy:
     enabled: true
     pgBouncer:
-      replicas: 1
+      replicas: 2
       requests:
-        cpu: 5m
-        memory: 32Mi
-      maxConnections: 25
-      minPoolSize: 5
+        cpu: 50m
+        memory: 128Mi
+      maxConnections: 100
       poolMode: transaction
   pgmonitor:
     enabled: true

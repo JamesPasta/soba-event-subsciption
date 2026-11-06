@@ -24,7 +24,27 @@ mongodb:
       memory: 256Mi
     limits:
       cpu: 250m
-      memory: 512Mi
+      memory: 2Gi
+
+  # TCP checks in place of the chart's exec probes, which start mongosh inside the container.
+  customStartupProbe:
+    tcpSocket:
+      port: mongodb
+    periodSeconds: 10
+    failureThreshold: 30
+  customLivenessProbe:
+    tcpSocket:
+      port: mongodb
+    initialDelaySeconds: 30
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 6
+  customReadinessProbe:
+    tcpSocket:
+      port: mongodb
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
 
   pdb:
     create: false
