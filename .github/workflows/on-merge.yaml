@@ -7,7 +7,7 @@ env:
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, testdevmergebrnch]
     paths:
       - "backend/**"
       - "frontend/**"
@@ -35,9 +35,9 @@ jobs:
     name: Build & Push
     uses: ./.github/workflows/build-images.yaml
     with:
-      ref: develop
+      ref: ${{ github.ref }}
       platforms: amd64
-      image_version: develop
+      image_version: ${{ github.ref_name }}
     secrets: inherit
     permissions:
       contents: read
