@@ -275,8 +275,7 @@ function FormList() {
       },
       {
         key: 'delete',
-        label: dict.form.deleteTitle,
-        hideLabel: true,
+        label: dictFormList?.columns?.actions || 'Actions',
         align: 'end',
         render: (form: SobaFormSummary) =>
           hasAllPermissions(form.permissions ?? [], [Permissions.form_delete]) ? (
@@ -298,6 +297,7 @@ function FormList() {
       dict.submission?.submissions,
       dict.workspaces?.workspace,
       dictForm?.nameLabel,
+      dictFormList?.columns?.actions,
       dictFormList?.columns?.createdAt,
       dictFormList?.columns?.createdBy,
       dictFormList?.columns?.name,
