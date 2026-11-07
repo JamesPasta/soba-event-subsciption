@@ -35,6 +35,11 @@ describe('DeleteFormModal', () => {
     expect(mocks.close).toHaveBeenCalledOnce();
   });
 
+  it('preserves dollar replacement patterns in form names', () => {
+    render(<DeleteFormModal formId="f1" name="Q1 $& budget" onClose={mocks.close} />);
+    expect(screen.getByTestId('confirm-modal-message')).toHaveTextContent('Q1 $& budget');
+  });
+
   it('waits for deletion before reporting success and closing the modal', async () => {
     let finish!: () => void;
     mocks.remove.mockReturnValue(

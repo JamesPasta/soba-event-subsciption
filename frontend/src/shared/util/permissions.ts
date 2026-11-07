@@ -2,7 +2,7 @@ import { hasAllPermissions } from '@soba/lib';
 import type { PermissionCode } from '@/src/types/permissions';
 
 export const hasPermission = (
-  userPermissions: Array<PermissionCode> | undefined,
+  userPermissions: readonly string[] | undefined,
   userPermission: PermissionCode | undefined,
 ) => {
   if (!userPermissions || !userPermission) {

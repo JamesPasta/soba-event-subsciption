@@ -198,6 +198,7 @@ describe('FormList', () => {
         },
         {
           id: 'f2',
+          permissions: [],
           workspaceId: WS2,
           workspaceName: 'Beta',
           name: 'Form Two',

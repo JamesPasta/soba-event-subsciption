@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useCallback, useEffect, useState } from 'react';
-import { hasAllPermissions, Permissions } from '@soba/lib';
 import { Button as DSButton } from '@bcgov/design-system-react-components';
 import { DataTable, type Column } from '@/src/components/DataTable';
 import { Tag } from '@/src/components/Tag';
@@ -17,6 +16,8 @@ import { useDictionary } from '@/app/[lang]/Providers';
 import { useRouter, usePathname } from 'next/navigation';
 import { getLocaleFromPath } from '@/src/shared/util/locale';
 import { isUuid } from '@/src/shared/util/uuid';
+import { hasPermission } from '@/src/shared/util/permissions';
+import { Permissions } from '@/src/types/permissions';
 import type { SobaFormSummary } from '@/src/types/forms';
 import { useFormatLongDate } from '@/src/shared/hooks/useFormatLongDate';
 import { usePageNotices } from '@/src/components/PageHeader';
@@ -278,7 +279,7 @@ function FormList() {
         label: dictFormList?.columns?.actions || 'Actions',
         align: 'end',
         render: (form: SobaFormSummary) =>
-          hasAllPermissions(form.permissions ?? [], [Permissions.form_delete]) ? (
+          hasPermission(form.permissions, Permissions.form_delete) === true ? (
             <RowActionButton
               aria-label={`${dict.form.deleteTitle}: ${form.name}`}
               danger
