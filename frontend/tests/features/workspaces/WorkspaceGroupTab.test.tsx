@@ -8,6 +8,7 @@ import type { Dictionary } from '@/src/types/dictionary';
 import { ApiError } from '@/src/shared/api/sobaHelpers';
 import {
   ADMINS,
+  AUDITOR,
   REVIEWERS,
   ROLES,
   WORKSPACE_ID,
@@ -16,25 +17,20 @@ import {
   renderSignedIn,
 } from './workspaceGroupsTestKit';
 
-const { mockApi, mockFetchRolesMeta, mockAddNotification } = vi.hoisted(() => ({
+const { mockApi, mockAddNotification } = vi.hoisted(() => ({
   mockApi: {
     listWorkspaceGroups: vi.fn(),
+    listWorkspaceRoles: vi.fn(),
     getWorkspaceGroup: vi.fn(),
     createWorkspaceGroup: vi.fn(),
     renameWorkspaceGroup: vi.fn(),
     setWorkspaceGroupRoles: vi.fn(),
     deleteWorkspaceGroup: vi.fn(),
   },
-  mockFetchRolesMeta: vi.fn(),
   mockAddNotification: vi.fn(),
 }));
 
 vi.mock('@/src/features/workspaces/data/api', () => mockApi);
-
-vi.mock('@/src/shared/api/sobaApi', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/src/shared/api/sobaApi')>()),
-  fetchRolesMeta: mockFetchRolesMeta,
-}));
 
 vi.mock('@/lib/hooks/useKeycloak', () => ({
   useKeycloak: () => ({ authenticated: true, token: 'token', initializing: false }),
@@ -69,7 +65,7 @@ describe('WorkspaceGroupTab', () => {
     window.history.replaceState(null, '', '/en/workspace/ws-1');
     window.sessionStorage.clear();
     mockApi.listWorkspaceGroups.mockResolvedValue(groupsPage([ADMINS, REVIEWERS]));
-    mockFetchRolesMeta.mockResolvedValue(ROLES);
+    mockApi.listWorkspaceRoles.mockResolvedValue(ROLES);
   });
 
   it('reads the first page by name in the app language and lists each group with its roles', async () => {
@@ -91,6 +87,18 @@ describe('WorkspaceGroupTab', () => {
     // A system group cannot be removed.
     expect(screen.queryByTestId('delete-group-button-grp-admins')).not.toBeInTheDocument();
     expect(screen.getByTestId('delete-group-button-grp-reviewers')).toBeInTheDocument();
+  });
+
+  it("shows one of the workspace's own roles by its name, marked custom", async () => {
+    mockApi.listWorkspaceGroups.mockResolvedValue(
+      groupsPage([group({ id: 'grp-audit', name: 'Auditors', roles: [AUDITOR.roleCode] })]),
+    );
+    renderTab();
+
+    expect(await screen.findByTestId(`group-role-grp-audit-${AUDITOR.roleCode}`)).toHaveTextContent(
+      t.customRoleName.replace('{name}', AUDITOR.name),
+    );
+    expect(mockApi.listWorkspaceRoles).toHaveBeenCalledWith('token', WORKSPACE_ID);
   });
 
   it('asks the server for the other order when the name header is pressed', async () => {
@@ -142,6 +150,23 @@ describe('WorkspaceGroupTab', () => {
     renderTab();
 
     expect(await screen.findByText(t.noRolesSelected)).toBeInTheDocument();
+  });
+
+  it('shows a custom role by a generic name, never its code, when the roles cannot be read', async () => {
+    mockApi.listWorkspaceRoles.mockRejectedValue(new ApiError('Request failed (500)', 500));
+    mockApi.listWorkspaceGroups.mockResolvedValue(
+      groupsPage([
+        group({ id: 'grp-audit', name: 'Auditors', roles: [AUDITOR.roleCode, 'form_designer'] }),
+      ]),
+    );
+    renderTab();
+
+    const custom = await screen.findByTestId(`group-role-grp-audit-${AUDITOR.roleCode}`);
+    expect(custom).toHaveTextContent(t.customRoleFallback);
+    expect(custom).not.toHaveTextContent(AUDITOR.roleCode);
+    expect(screen.getByTestId('group-role-grp-audit-form_designer')).toHaveTextContent(
+      t.roleNames.form_designer,
+    );
   });
 
   it('removes a group once confirmed, then re-reads the list', async () => {

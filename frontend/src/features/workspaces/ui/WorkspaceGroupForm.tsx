@@ -14,12 +14,14 @@ import { useKeycloak } from '@/lib/hooks/useKeycloak';
 import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
 import { apiErrorMessage, messageForDataError } from '@/src/shared/api/dataError';
 import { useAuthErrorDefaults } from '@/src/shared/api/useDataErrorNotice';
-import { useRolesMeta } from '@/src/shared/api/useRolesMeta';
+import { useSortLocale } from '@/src/shared/list/useSortLocale';
 import type { Dictionary } from '@/src/types/dictionary';
-import type { RoleWithSourceMeta, WorkspaceGroup } from '@/src/types/workspaceGroups';
+import { WORKSPACE_GROUP_NAME_MAX_LENGTH, type WorkspaceGroup } from '@/src/types/workspaceGroups';
+import type { WorkspaceRole } from '@/src/types/workspaceRoles';
 import { useWorkspaceGroup } from '../data/useWorkspaceGroup';
 import { useWorkspaceGroupsWriter } from '../data/useWorkspaceGroupsWriter';
-import { groupRoleLabel } from '../groupRoleLabel';
+import { useWorkspaceRoles } from '../data/useWorkspaceRoles';
+import { assignableRoleLabel, rolesByLabel } from '../groupRoleLabel';
 import { TabFormSection, TabFormUnavailable } from './TabForm';
 import styles from './WorkspaceForm.module.css';
 
@@ -43,11 +45,12 @@ export function WorkspaceGroupForm({
 }: Readonly<WorkspaceGroupFormProps>) {
   const t = dict.workspaces.groups;
   const authDefaults = useAuthErrorDefaults();
-  const roles = useRolesMeta();
+  const locale = useSortLocale();
+  const roles = useWorkspaceRoles(workspaceId);
   const record = useWorkspaceGroup(workspaceId, groupId ?? null);
 
   let content: React.ReactNode;
-  if (record.error) {
+  if (record.error && !record.group) {
     // Editing without the record would post the empty fields as a new group.
     content = (
       <TabFormUnavailable
@@ -58,7 +61,7 @@ export function WorkspaceGroupForm({
         onCancel={onDone}
       />
     );
-  } else if (roles.error) {
+  } else if (roles.error && roles.total === undefined) {
     // Without the role list there is nothing to choose from, and a save would send no roles.
     content = (
       <TabFormUnavailable
@@ -69,7 +72,7 @@ export function WorkspaceGroupForm({
         onCancel={onDone}
       />
     );
-  } else if (!roles.data || (groupId && !record.group)) {
+  } else if (roles.total === undefined || (groupId && !record.group)) {
     // Also covers a read still waiting on the session, which reports no loading of its own.
     content = <CenteredProgress label={dict.general.loading} />;
   } else {
@@ -79,7 +82,7 @@ export function WorkspaceGroupForm({
         dict={dict}
         workspaceId={workspaceId}
         group={record.group}
-        roles={roles.data}
+        roles={rolesByLabel(dict, roles.rows, locale)}
         onDone={onDone}
       />
     );
@@ -100,7 +103,7 @@ interface GroupFieldsProps {
   workspaceId: string;
   /** The group as read for this form, or null to create one. Seeds the fields on mount. */
   group: WorkspaceGroup | null;
-  roles: RoleWithSourceMeta[];
+  roles: WorkspaceRole[];
   onDone: () => void;
 }
 
@@ -165,6 +168,7 @@ function GroupFields({ dict, workspaceId, group, roles, onDone }: Readonly<Group
         value={name}
         onChange={setName}
         isRequired
+        maxLength={WORKSPACE_GROUP_NAME_MAX_LENGTH}
         isDisabled={saving || isSystem}
         data-testid="group-name-input"
       />
@@ -181,7 +185,7 @@ function GroupFields({ dict, workspaceId, group, roles, onDone }: Readonly<Group
             value={role.roleCode}
             data-testid={`role-checkbox-${role.roleCode}`}
           >
-            {groupRoleLabel(dict, role.roleCode, role.name)}
+            {assignableRoleLabel(dict, role)}
           </Checkbox>
         ))}
       </CheckboxGroup>

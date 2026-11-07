@@ -10,6 +10,7 @@ import { registerAccessOpenApi } from '../../../../src/core/api/access/schema';
 import { registerAdminOpenApi } from '../../../../src/core/api/admin/schema';
 import { registerFormsOpenApi } from '../../../../src/core/api/forms/schema';
 import { registerGroupsOpenApi } from '../../../../src/core/api/groups/schema';
+import { registerRolesOpenApi } from '../../../../src/core/api/roles/schema';
 import { registerHealthOpenApi } from '../../../../src/core/api/health/schema';
 import { registerMeOpenApi } from '../../../../src/core/api/me/schema';
 import { registerMembersOpenApi } from '../../../../src/core/api/members/schema';
@@ -31,6 +32,7 @@ const REGISTRARS: RegisterOpenApiPaths[] = [
   registerSubmissionsOpenApi,
   registerSubmitOpenApi,
   registerGroupsOpenApi,
+  registerRolesOpenApi,
   registerAccessOpenApi,
   registerMeOpenApi,
   registerJobsOpenApi,

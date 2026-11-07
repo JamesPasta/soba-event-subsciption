@@ -278,8 +278,7 @@ export const registerFormsOpenApi = (registry: OpenAPIRegistry) => {
         description: VALIDATION_ERROR,
       },
       403: {
-        description:
-          'Caller lacks form_create and design_create in the workspace (form_admin via *)',
+        description: 'Caller lacks form_create and design_create in the workspace',
       },
       409: {
         description: `${FORM_NAME_TAKEN}, or the id belongs to another form or version`,

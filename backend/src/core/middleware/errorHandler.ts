@@ -12,7 +12,10 @@ export interface ErrorHttpResponse {
 // Text the column type can't hold: invalid text representation (a non-uuid id), and a character the
 // database encoding rejects (a NUL in text).
 const PG_INVALID_INPUT = ['22P02', '22021', '22P05'];
+// A deadlock, or a lock wait past lock_timeout: the same request can succeed when sent again.
+const PG_LOCK_CONTENTION = ['40P01', '55P03'];
 const INTERNAL_ERROR = 'Internal server error';
+const TRY_AGAIN = 'Another change was in progress; try again';
 
 /** Codes for the statuses a request rejected before app code runs can carry. */
 const CLIENT_ERROR_CODES: Partial<Record<number, ApiErrorCode>> = {
@@ -53,6 +56,9 @@ export function errorToHttpResponse(err: unknown): ErrorHttpResponse {
       body: { error: 'Invalid input', code: ApiErrorCodes.request_invalid },
     };
   }
+  if (hasPgCode(err, PG_LOCK_CONTENTION)) {
+    return { statusCode: 503, body: { error: TRY_AGAIN, code: ApiErrorCodes.try_again } };
+  }
   const clientStatus = clientErrorStatus(err);
   if (clientStatus !== null) {
     const code = CLIENT_ERROR_CODES[clientStatus];
@@ -80,6 +86,8 @@ export const coreErrorHandler = (
   } else if (hasPgCode(err, PG_INVALID_INPUT)) {
     // A server-side value can cause this too, and a 400 alone leaves no trace.
     log.warn(pgErrorFields(err) ?? {}, 'Database rejected request input');
+  } else if (hasPgCode(err, PG_LOCK_CONTENTION)) {
+    log.warn(pgErrorFields(err) ?? {}, 'Database lock contention');
   }
   res.status(statusCode).json(body);
 };
