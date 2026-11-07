@@ -401,14 +401,20 @@ const formKeysIn = (manifest: CoverageManifest, workspaceId: string): CoverageFo
 const formKeyOf = (manifest: CoverageManifest, formId: string): string =>
   COVERAGE_FORM_KEYS.find((key) => manifest.forms[key].formId === formId) ?? formId;
 
-/** A design list's rows in `workspaceIds` under `formAccess`, as the form id of each. */
-type DesignListFormIds = (
+/** A design list row's form and, when returned by the list, the actor's permission codes. */
+interface DesignListRow {
+  formId: string;
+  permissions?: readonly string[];
+}
+
+/** A design list's rows in `workspaceIds` under `formAccess`. */
+type DesignListRows = (
   workspaceIds: string[],
   formAccess: FormAccessGrant,
   actorId: string,
-) => Promise<string[]>;
+) => Promise<DesignListRow[]>;
 
-const designFormsList: DesignListFormIds = async (workspaceIds, formAccess, actorId) => {
+const designFormsList: DesignListRows = async (workspaceIds, formAccess, actorId) => {
   const { items } = await listFormsForWorkspace({
     actorId,
     workspaceIds,
@@ -418,20 +424,20 @@ const designFormsList: DesignListFormIds = async (workspaceIds, formAccess, acto
     sort: 'name:asc',
     locale: DEFAULT_SORT_LOCALE,
   });
-  return items.map((item) => item.id);
+  return items.map((item) => ({ formId: item.id, permissions: item.permissions }));
 };
 
 /** The design lists, each with the code sets it is run under. */
 const DESIGN_LISTS: readonly {
   name: string;
-  formIds: DesignListFormIds;
+  rows: DesignListRows;
   codeSets: readonly (readonly PermissionCode[])[];
   /** Planned deletes that leave every row of the form out of the list. */
   hides: readonly PlannedDelete[];
 }[] = [
   {
     name: 'forms',
-    formIds: designFormsList,
+    rows: designFormsList,
     codeSets: [
       [Permissions.form_read],
       [Permissions.submission_read],
@@ -442,7 +448,7 @@ const DESIGN_LISTS: readonly {
   },
   {
     name: 'form versions',
-    formIds: async (workspaceIds, formAccess) => {
+    rows: async (workspaceIds, formAccess) => {
       const { items } = await listFormVersionsForWorkspace({
         workspaceIds,
         formAccess,
@@ -450,14 +456,14 @@ const DESIGN_LISTS: readonly {
         limit: MAX_ROWS,
         sort: 'versionNo:desc',
       });
-      return items.map((item) => item.formId);
+      return items.map((item) => ({ formId: item.formId }));
     },
     codeSets: [[Permissions.form_read]],
     hides: ['deleteForm', 'deleteVersion'],
   },
   {
     name: 'submissions',
-    formIds: async (workspaceIds, formAccess) => {
+    rows: async (workspaceIds, formAccess) => {
       const { items } = await listSubmissionsForWorkspace({
         workspaceIds,
         formAccess,
@@ -466,7 +472,7 @@ const DESIGN_LISTS: readonly {
         sort: 'updatedAt:desc',
         locale: DEFAULT_SORT_LOCALE,
       });
-      return items.map((item) => item.formId);
+      return items.map((item) => ({ formId: item.formId }));
     },
     codeSets: [[Permissions.submission_read]],
     hides: ['deleteForm', 'deleteVersion'],
@@ -489,7 +495,8 @@ const differing = (a: ReadonlySet<string>, b: ReadonlySet<string>): string[] =>
 
 /**
  * Under the actor's grant, each design list must hold exactly the forms, of those it lists under
- * coverageFormsGrant, whose own check grants the codes.
+ * coverageFormsGrant, whose own check grants the codes. Returned permission codes must also
+ * match the form's own check as a set.
  */
 async function designListInconsistencies(
   manifest: CoverageManifest,
@@ -501,7 +508,7 @@ async function designListInconsistencies(
   const workspaceIds = [manifest.workspaces[workspaceKey].id];
   const fullLists = await Promise.all(
     DESIGN_LISTS.map((list) =>
-      list.formIds(workspaceIds, coverageFormsGrant(manifest, workspaceIds[0]), actorId),
+      list.rows(workspaceIds, coverageFormsGrant(manifest, workspaceIds[0]), actorId),
     ),
   );
   const cases = DESIGN_LISTS.flatMap((list, index) =>
@@ -510,14 +517,27 @@ async function designListInconsistencies(
   const issues = await Promise.all(
     cases.map(async ({ list, required, full }) => {
       const grant = await resolveFormAccessGrant(actorId, required, workspaceIds);
-      const listed = new Set(await list.formIds(workspaceIds, grant, actorId));
+      const rows = await list.rows(workspaceIds, grant, actorId);
+      const listed = new Set(rows.map((row) => row.formId));
       const expected = new Set(
-        full.filter((formId) => hasAllPermissions(permissions.get(formId) ?? [], required)),
+        full
+          .filter(({ formId }) => hasAllPermissions(permissions.get(formId) ?? [], required))
+          .map((row) => row.formId),
       );
-      return differing(listed, expected).map(
+      const visibilityIssues = differing(listed, expected).map(
         (formId) =>
           `${persona} x ${formKeyOf(manifest, formId)}: ${list.name} list for ${required.join('+')} differs from the form check`,
       );
+      const permissionIssues = rows.flatMap((row) => {
+        if (row.permissions === undefined) return [];
+        const codes = differing(new Set(row.permissions), permissions.get(row.formId) ?? new Set());
+        return codes.length
+          ? [
+              `${persona} x ${formKeyOf(manifest, row.formId)}: ${list.name} list for ${required.join('+')} permissions differ from the form check: ${codes.join(', ')}`,
+            ]
+          : [];
+      });
+      return [...visibilityIssues, ...permissionIssues];
     }),
   );
   return issues.flat();
@@ -541,12 +561,12 @@ async function deletedRowsShown(manifest: CoverageManifest): Promise<string[]> {
   );
   const issues = await Promise.all(
     reads.map(async ({ workspaceId, list }) => {
-      const shown = await list.formIds(
+      const shown = await list.rows(
         [workspaceId],
         coverageFormsGrant(manifest, workspaceId),
         manifest.personas.owner.id,
       );
-      return [...new Set(shown)].flatMap((formId) => {
+      return [...new Set(shown.map((row) => row.formId))].flatMap((formId) => {
         const key = formKeyOf(manifest, formId);
         const planned = PLANNED_DELETES.get(key);
         return planned && list.hides.includes(planned)
@@ -747,7 +767,8 @@ async function coverageDesignList(
     coverage.has(id),
   );
   const grant = await resolveFormAccessGrant(actorId, [Permissions.form_read], workspaceIds);
-  return new Set(await designFormsList(workspaceIds, grant, actorId));
+  const rows = await designFormsList(workspaceIds, grant, actorId);
+  return new Set(rows.map((row) => row.formId));
 }
 
 /** The actor's codes on the form as its design routes see them: none once the form is deleted. */
