@@ -25,16 +25,19 @@ const recipientsFor = async (
   change: StatusChangeForEmail,
   facts: StatusEmailFacts,
 ): Promise<string[]> => {
+  // No one is emailed about a change they made themselves, so the facts leave them out.
   if (email.audience === StatusEmailAudience.submitters) {
     if (facts.submitterEmails.length === 0) {
-      throw new JobCancelledError('No submitter has an email address');
+      throw new JobCancelledError(
+        'No submitter other than the person who made the change has an email address',
+      );
     }
     return facts.submitterEmails;
   }
   const { assigneeId } = change;
-  // No one is emailed about a change they made themselves.
-  if (!assigneeId || assigneeId === change.changedBy) {
-    throw new JobCancelledError('No one else was assigned');
+  if (!assigneeId) throw new JobCancelledError('No one was assigned');
+  if (assigneeId === change.changedBy) {
+    throw new JobCancelledError('Assigned to the person who made the change; no email sent');
   }
   if (!(await canReviewForm(change.workspaceId, facts.formId, assigneeId))) {
     throw new JobCancelledError('The assignee can no longer review this form');

@@ -139,7 +139,12 @@ it.each([
   [
     'the reviewer assigned it to themselves',
     () => mockChange.mockResolvedValue({ ...ASSIGNED, assigneeId: 'rev-1' }),
-    'No one else was assigned',
+    'Assigned to the person who made the change; no email sent',
+  ],
+  [
+    'no one was assigned',
+    () => mockChange.mockResolvedValue({ ...ASSIGNED, assigneeId: null }),
+    'No one was assigned',
   ],
   [
     'the assignee can no longer review the form',
@@ -178,8 +183,14 @@ it('emails each submitter, with the comment only when it was attached', async ()
   expect(emails[0].content.body).not.toContain('Please attach the signed declaration.');
 });
 
-it('ends cancelled when no submitter has an email address', async () => {
+// The facts leave out whoever made the change, so a reviewer who is the only submitter lands here.
+it('ends cancelled when no submitter other than the reviewer has an email address', async () => {
   mockChange.mockResolvedValue({ ...ASSIGNED, status: 'COMPLETED', assigneeId: null });
   mockFacts.mockResolvedValue({ ...FACTS, submitterEmails: [] });
-  await expect(run()).rejects.toThrow(new JobCancelledError('No submitter has an email address'));
+  await expect(run()).rejects.toThrow(
+    new JobCancelledError(
+      'No submitter other than the person who made the change has an email address',
+    ),
+  );
+  expect(mockFacts).toHaveBeenCalledWith('ws1', 's1', 'rev-1');
 });
