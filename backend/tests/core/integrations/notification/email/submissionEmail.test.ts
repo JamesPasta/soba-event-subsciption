@@ -70,7 +70,7 @@ describe('renderSubmissionEmail', () => {
       '<table role="presentation"',
       '<div lang="fr">',
       'href="https://soba.example/designer/fr/build/f1/submissions/s1"',
-      `<span lang="en">${FOOTER_EN}</span> <span lang="fr">`,
+      `<span lang="en">${FOOTER_EN}</span><br><span lang="fr">`,
     ].map((part) => body.indexOf(part));
     expect(order).not.toContain(-1);
     expect(order).toEqual([...order].sort((a, b) => a - b));

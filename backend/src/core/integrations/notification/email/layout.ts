@@ -67,7 +67,7 @@ ${lines(blocks)}
 const footer = (order: readonly EmailLanguage[]): SafeHtml =>
   markup`<p style="${FOOTER_STYLE}">${order.map(
     (language, index) =>
-      markup`${index > 0 && ' '}<span lang="${language}">${FOOTER[language]}</span>`,
+      markup`${index > 0 && LINE_BREAK}<span lang="${language}">${FOOTER[language]}</span>`,
   )}</p>`;
 
 /**

@@ -6,12 +6,22 @@ import {
   type StatusEmailFacts,
 } from '../../core/db/repos/submissionReviewRepo';
 import {
-  cleanName,
-  designerSubmissionLink,
-  withoutTrailingSlashes,
-} from '../../core/integrations/notification/emailText';
+  DEFAULT_EMAIL_LANGUAGE,
+  type EmailLanguage,
+} from '../../core/integrations/notification/email/language';
+import {
+  renderSubmissionEmail,
+  type SubmissionEmailTemplate,
+} from '../../core/integrations/notification/email/submissionEmail';
+import {
+  designerSubmissionUrl,
+  formsSubmissionUrl,
+  type FormsSubmissionPage,
+  type SafeUrl,
+} from '../../core/integrations/notification/email/url';
 import { log } from '../../core/logging';
 import { notificationService } from '../notifications/service';
+import { ASSIGNED_EMAIL, COMPLETED_EMAIL, REVISING_EMAIL } from './statusEmailTemplates';
 
 /** Who a status email goes to: the assignee, or the people who submitted it. */
 const StatusEmailAudience = {
@@ -20,93 +30,44 @@ const StatusEmailAudience = {
 } as const;
 type StatusEmailAudienceCode = (typeof StatusEmailAudience)[keyof typeof StatusEmailAudience];
 
-interface StatusEmailTemplate {
+type StatusEmailLink = (
+  facts: StatusEmailFacts,
+  submissionId: string,
+  language: EmailLanguage,
+) => SafeUrl | null;
+
+interface StatusEmail {
   audience: StatusEmailAudienceCode;
-  /** The app the link opens and its path from the locale on. */
-  link: (facts: StatusEmailFacts, submissionId: string) => string | null;
-  en: { subject: string; body: string };
-  fr: { subject: string; body: string };
+  /** The app the link opens: the designer for staff, the forms app for submitters. */
+  link: StatusEmailLink;
+  template: SubmissionEmailTemplate;
 }
 
-const designerLink = (facts: StatusEmailFacts, submissionId: string) =>
-  designerSubmissionLink(env.getDesignerAppUrl(), facts.formId, submissionId);
+const designerLink: StatusEmailLink = (facts, submissionId, language) =>
+  designerSubmissionUrl(env.getDesignerAppUrl(), language, facts.formId, submissionId);
 
-const formsLink = (path: string) => (_facts: StatusEmailFacts, submissionId: string) => {
-  const base = env.getFormsAppUrl();
-  return base ? `${withoutTrailingSlashes(base)}/en/${path}/${submissionId}` : null;
-};
+const formsLink =
+  (page: FormsSubmissionPage): StatusEmailLink =>
+  (_facts, submissionId, language) =>
+    formsSubmissionUrl(env.getFormsAppUrl(), language, page, submissionId);
 
-/**
- * The emails a status change sends, in English then French. `{code}` and `{form}` name the
- * submission. Submitted sends none: the submit has its own confirmation.
- */
-const STATUS_EMAILS: Partial<Record<SubmissionReviewStatus, StatusEmailTemplate>> = {
+/** The email a status change sends. Submitted sends none: the submit has its own confirmation. */
+const STATUS_EMAILS: Partial<Record<SubmissionReviewStatus, StatusEmail>> = {
   [SubmissionReviewStatuses.assigned]: {
     audience: StatusEmailAudience.assignee,
     link: designerLink,
-    en: {
-      subject: 'Submission {code} is assigned to you',
-      body: 'Submission {code} of {form} is assigned to you for review.',
-    },
-    fr: {
-      subject: 'La soumission {code} vous est attribuée',
-      body: 'La soumission {code} de {form} vous est attribuée pour examen.',
-    },
+    template: ASSIGNED_EMAIL,
   },
   [SubmissionReviewStatuses.revising]: {
     audience: StatusEmailAudience.submitters,
     link: formsLink('submit'),
-    en: {
-      subject: 'Please revise your submission {code}',
-      body: 'A reviewer asked you to revise your submission {code} of {form}. Open it, make your changes and submit it again.',
-    },
-    fr: {
-      subject: 'Veuillez réviser votre soumission {code}',
-      body: 'Un examinateur vous demande de réviser votre soumission {code} de {form}. Ouvrez-la, apportez vos modifications et soumettez-la de nouveau.',
-    },
+    template: REVISING_EMAIL,
   },
   [SubmissionReviewStatuses.completed]: {
     audience: StatusEmailAudience.submitters,
     link: formsLink('submission'),
-    en: {
-      subject: 'The review of your submission {code} is complete',
-      body: 'The review of your submission {code} of {form} is complete.',
-    },
-    fr: {
-      subject: 'L’examen de votre soumission {code} est terminé',
-      body: 'L’examen de votre soumission {code} de {form} est terminé.',
-    },
+    template: COMPLETED_EMAIL,
   },
-};
-
-const COMMENT_HEADING = { en: 'Comment from the reviewer:', fr: 'Commentaire de l’examinateur :' };
-const LINK_HEADING = { en: 'Open it here:', fr: 'Ouvrez-la ici :' };
-
-// Replacer functions, so a `$` in a form name stays as typed.
-const fill = (text: string, facts: StatusEmailFacts) =>
-  text
-    .replaceAll('{code}', () => facts.confirmationCode)
-    .replaceAll('{form}', () => cleanName(facts.formName));
-
-/** The email text, English then French, with the reviewer's comment and the link when there are. */
-export const statusEmailContent = (
-  template: StatusEmailTemplate,
-  facts: StatusEmailFacts,
-  link: string | null,
-  comment: string | undefined,
-): { subject: string; body: string } => {
-  const part = (lang: 'en' | 'fr') =>
-    [
-      fill(template[lang].body, facts),
-      comment ? `${COMMENT_HEADING[lang]}\n${comment}` : null,
-      link ? `${LINK_HEADING[lang]} ${link}` : null,
-    ]
-      .filter(Boolean)
-      .join('\n\n');
-  return {
-    subject: `${fill(template.en.subject, facts)} / ${fill(template.fr.subject, facts)}`,
-    body: `${part('en')}\n\n---\n\n${part('fr')}`,
-  };
 };
 
 export interface StatusEmailInput {
@@ -119,29 +80,40 @@ export interface StatusEmailInput {
   comment?: string;
 }
 
+const recipients = async (
+  email: StatusEmail,
+  facts: StatusEmailFacts,
+  assigneeId: string | null,
+): Promise<string[]> => {
+  if (email.audience === StatusEmailAudience.submitters) return facts.submitterEmails;
+  const address = assigneeId ? await findUserEmail(assigneeId) : null;
+  return address ? [address] : [];
+};
+
 /**
  * Sends the email a committed status change calls for, through the notification service, which
  * audits the send and never throws. Nothing here undoes the change: a lookup that fails is logged,
- * and a status with no email, or no one to send it to, sends nothing.
+ * and a status with no email, or no one to send it to, sends nothing. The person who made the
+ * change is never emailed about it.
  */
 export const sendStatusEmail = async (input: StatusEmailInput): Promise<void> => {
-  const template = STATUS_EMAILS[input.status];
-  if (!template) return;
+  const email = STATUS_EMAILS[input.status];
+  if (!email) return;
+  if (email.audience === StatusEmailAudience.assignee && input.assigneeId === input.actorId) return;
   try {
-    const facts = await findStatusEmailFacts(input.workspaceId, input.submissionId);
+    const facts = await findStatusEmailFacts(input.workspaceId, input.submissionId, input.actorId);
     if (!facts) return;
-    const to =
-      template.audience === StatusEmailAudience.assignee
-        ? [input.assigneeId ? await findUserEmail(input.assigneeId) : null].filter(
-            (email): email is string => !!email,
-          )
-        : facts.submitterEmails;
+    const to = await recipients(email, facts, input.assigneeId);
     if (to.length === 0) return;
-    const content = statusEmailContent(
-      template,
-      facts,
-      template.link(facts, input.submissionId),
-      input.comment,
+    const content = renderSubmissionEmail(
+      email.template,
+      {
+        formName: facts.formName,
+        confirmationCode: facts.confirmationCode,
+        link: (language) => email.link(facts, input.submissionId, language),
+        comment: input.comment,
+      },
+      DEFAULT_EMAIL_LANGUAGE,
     );
     // One email per address, so submitters do not see each other's addresses.
     await Promise.all(
@@ -153,7 +125,7 @@ export const sendStatusEmail = async (input: StatusEmailInput): Promise<void> =>
             submissionId: input.submissionId,
             actorId: input.actorId,
           },
-          { recipients: { to: [address] }, content: { ...content, bodyType: 'text' } },
+          { recipients: { to: [address] }, content },
         ),
       ),
     );

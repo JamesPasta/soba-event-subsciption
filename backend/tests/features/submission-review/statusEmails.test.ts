@@ -39,7 +39,7 @@ beforeEach(() => {
   mockSend.mockResolvedValue({ outcome: 'accepted', audited: true });
 });
 
-it('tells the assignee, with a link to the staff page', async () => {
+it('tells the assignee in both languages, with a designer link in each', async () => {
   await sendStatusEmail({
     ...BASE,
     status: SubmissionReviewStatuses.assigned,
@@ -47,12 +47,15 @@ it('tells the assignee, with a link to the staff page', async () => {
   });
 
   const { context, email } = sent();
+  expect(mockFacts).toHaveBeenCalledWith('ws1', 's1', 'rev-1');
   expect(mockUserEmail).toHaveBeenCalledWith('u-grace');
   expect(email.recipients).toEqual({ to: ['grace@example.com'] });
   expect(email.content.subject).toBe(
-    'Submission K7M2Q9XA is assigned to you / La soumission K7M2Q9XA vous est attribuée',
+    'Permit application Submission Assignment / Attribution de soumission : Permit application (K7M2Q9XA)',
   );
-  expect(email.content.body).toContain('https://design.example/en/build/f1/submissions/s1');
+  expect(email.content.bodyType).toBe('html');
+  expect(email.content.body).toContain('href="https://design.example/en/build/f1/submissions/s1"');
+  expect(email.content.body).toContain('href="https://design.example/fr/build/f1/submissions/s1"');
   expect(context).toEqual({
     workspaceId: 'ws1',
     formId: 'f1',
@@ -61,7 +64,18 @@ it('tells the assignee, with a link to the staff page', async () => {
   });
 });
 
-it('asks the submitters to revise, in English and French, with the comment attached', async () => {
+it('sends nothing when reviewers assign the submission to themselves', async () => {
+  await sendStatusEmail({
+    ...BASE,
+    status: SubmissionReviewStatuses.assigned,
+    assigneeId: 'rev-1',
+  });
+
+  expect(mockFacts).not.toHaveBeenCalled();
+  expect(mockSend).not.toHaveBeenCalled();
+});
+
+it('asks each submitter to revise, with the comment once and a forms-app link in each language', async () => {
   await sendStatusEmail({
     ...BASE,
     status: SubmissionReviewStatuses.revising,
@@ -72,10 +86,13 @@ it('asks the submitters to revise, in English and French, with the comment attac
     ['sub@example.com'],
     ['collab@example.com'],
   ]);
-  const [, email] = mockSend.mock.calls[0];
-  expect(email.content.body).toMatch(
-    /revise your submission K7M2Q9XA of Permit application[\s\S]*Comment from the reviewer:\nPlease attach the signed declaration\.[\s\S]*https:\/\/forms\.example\/en\/submit\/s1[\s\S]*---[\s\S]*Commentaire de l’examinateur/,
-  );
+  const { body } = mockSend.mock.calls[0][1].content;
+  expect(body).toContain('Please sign in to make your changes and submit it again.');
+  expect(body).toContain('href="https://forms.example/en/submit/s1"');
+  expect(body).toContain('href="https://forms.example/fr/submit/s1"');
+  const comment =
+    '<strong>Comments / Commentaires :</strong><br>Please attach the signed declaration.';
+  expect(body.split(comment)).toHaveLength(2);
 });
 
 it('keeps a form name to one plain line, with no links and any $ as typed', async () => {
@@ -88,19 +105,24 @@ it('keeps a form name to one plain line, with no links and any $ as typed', asyn
   await sendStatusEmail({ ...BASE, status: SubmissionReviewStatuses.completed });
 
   const { email } = sent();
-  expect(email.content.body).toContain('K7M2Q9XA of Grant $$ [link removed] form is complete.');
+  expect(
+    email.content.subject.startsWith('Grant $$ [link removed] form Submission Completed'),
+  ).toBe(true);
+  expect(email.content.body).toContain(
+    'The review of your Grant $$ [link removed] form submission is complete.',
+  );
   expect(email.content.body).not.toContain('evil.example');
 });
 
-it('tells the submitters the review is complete, without a comment unless attached', async () => {
+it('tells the submitters the review is complete, with no comment unless attached', async () => {
   mockFacts.mockResolvedValue({ ...FACTS, submitterEmails: ['sub@example.com'] });
 
   await sendStatusEmail({ ...BASE, status: SubmissionReviewStatuses.completed });
 
   const { email } = sent();
-  expect(email.content.body).toContain('The review of your submission K7M2Q9XA');
-  expect(email.content.body).toContain('https://forms.example/en/submission/s1');
-  expect(email.content.body).not.toContain('Comment from the reviewer');
+  expect(email.content.body).toContain('href="https://forms.example/en/submission/s1"');
+  expect(email.content.body).toContain('href="https://forms.example/fr/submission/s1"');
+  expect(email.content.body).not.toContain('Comments');
 });
 
 it('sends nothing for Submitted, which has its own confirmation', async () => {

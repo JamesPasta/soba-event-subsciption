@@ -283,7 +283,7 @@ export interface StatusEmailFacts {
   formId: string;
   formName: string;
   confirmationCode: string;
-  /** The emails of its owner and active collaborators, once each. */
+  /** The emails of its owner and active collaborators, once each, leaving out the actor. */
   submitterEmails: string[];
 }
 
@@ -293,10 +293,14 @@ const emailsOf = (rows: Array<{ profile: unknown }>): string[] => [
   ),
 ];
 
-/** The facts a submission's status email needs; null when it is not live in the workspace. */
+/**
+ * The facts a submission's status email needs; null when it is not live in the workspace. The actor
+ * made the change, so they are not among the submitters it goes to.
+ */
 export const findStatusEmailFacts = async (
   workspaceId: string,
   submissionId: string,
+  actorId: string,
 ): Promise<StatusEmailFacts | null> => {
   const [row] = await db
     .select({
@@ -323,6 +327,7 @@ export const findStatusEmailFacts = async (
       and(
         eq(submissionParticipants.submissionId, submissionId),
         eq(submissionParticipants.status, SubmissionParticipantStatus.active),
+        ne(submissionParticipants.userId, actorId),
       ),
     );
   return { ...row, formName: row.formName ?? '', submitterEmails: emailsOf(submitters) };
