@@ -284,6 +284,7 @@ export const getStaffJobDetail = async (scope: JobScope, id: string): Promise<St
 const TYPE_NAMES: Record<string, string> = {
   [JobType.submission_submitted]: 'Submission received',
   [JobType.submission_export]: 'Submission export',
+  [JobType.submission_status_email]: 'Status email',
 };
 
 /** The job types this environment runs, named for the admin filter. */

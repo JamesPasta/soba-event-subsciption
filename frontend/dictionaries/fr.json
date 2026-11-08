@@ -410,7 +410,8 @@
     },
     "types": {
       "submissionSubmitted": "Soumission reçue",
-      "submissionExport": "Exportation des soumissions"
+      "submissionExport": "Exportation des soumissions",
+      "submissionStatusEmail": "Courriel de statut"
     },
     "detail": {
       "heading": "Tâche",

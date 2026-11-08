@@ -409,7 +409,8 @@
     },
     "types": {
       "submissionSubmitted": "Submission received",
-      "submissionExport": "Submission export"
+      "submissionExport": "Submission export",
+      "submissionStatusEmail": "Status email"
     },
     "detail": {
       "heading": "Job",

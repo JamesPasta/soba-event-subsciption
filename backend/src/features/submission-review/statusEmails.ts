@@ -9,6 +9,7 @@ import {
   DEFAULT_EMAIL_LANGUAGE,
   type EmailLanguage,
 } from '../../core/integrations/notification/email/language';
+import type { RenderedEmail } from '../../core/integrations/notification/email/layout';
 import {
   renderSubmissionEmail,
   type SubmissionEmailTemplate,
@@ -24,7 +25,7 @@ import { notificationService } from '../notifications/service';
 import { ASSIGNED_EMAIL, COMPLETED_EMAIL, REVISING_EMAIL } from './statusEmailTemplates';
 
 /** Who a status email goes to: the assignee, or the people who submitted it. */
-const StatusEmailAudience = {
+export const StatusEmailAudience = {
   assignee: 'assignee',
   submitters: 'submitters',
 } as const;
@@ -36,7 +37,7 @@ type StatusEmailLink = (
   language: EmailLanguage,
 ) => SafeUrl | null;
 
-interface StatusEmail {
+export interface StatusEmail {
   audience: StatusEmailAudienceCode;
   /** The app the link opens: the designer for staff, the forms app for submitters. */
   link: StatusEmailLink;
@@ -69,6 +70,28 @@ const STATUS_EMAILS: Partial<Record<SubmissionReviewStatus, StatusEmail>> = {
     template: COMPLETED_EMAIL,
   },
 };
+
+/** The email moving to `status` sends, or undefined when it sends none. */
+export const statusEmailFor = (status: SubmissionReviewStatus): StatusEmail | undefined =>
+  STATUS_EMAILS[status];
+
+/** The status email for a submission in both languages, with the comment when it goes in. */
+export const renderStatusEmail = (
+  email: StatusEmail,
+  facts: StatusEmailFacts,
+  submissionId: string,
+  comment: string | undefined,
+): RenderedEmail =>
+  renderSubmissionEmail(
+    email.template,
+    {
+      formName: facts.formName,
+      confirmationCode: facts.confirmationCode,
+      link: (language) => email.link(facts, submissionId, language),
+      comment,
+    },
+    DEFAULT_EMAIL_LANGUAGE,
+  );
 
 export interface StatusEmailInput {
   workspaceId: string;
@@ -105,16 +128,7 @@ export const sendStatusEmail = async (input: StatusEmailInput): Promise<void> =>
     if (!facts) return;
     const to = await recipients(email, facts, input.assigneeId);
     if (to.length === 0) return;
-    const content = renderSubmissionEmail(
-      email.template,
-      {
-        formName: facts.formName,
-        confirmationCode: facts.confirmationCode,
-        link: (language) => email.link(facts, input.submissionId, language),
-        comment: input.comment,
-      },
-      DEFAULT_EMAIL_LANGUAGE,
-    );
+    const content = renderStatusEmail(email, facts, input.submissionId, input.comment);
     // One email per address, so submitters do not see each other's addresses.
     await Promise.all(
       to.map((address) =>

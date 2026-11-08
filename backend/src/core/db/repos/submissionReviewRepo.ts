@@ -300,7 +300,7 @@ const emailsOf = (rows: Array<{ profile: unknown }>): string[] => [
 export const findStatusEmailFacts = async (
   workspaceId: string,
   submissionId: string,
-  actorId: string,
+  actorId: string | null,
 ): Promise<StatusEmailFacts | null> => {
   const [row] = await db
     .select({
@@ -327,10 +327,56 @@ export const findStatusEmailFacts = async (
       and(
         eq(submissionParticipants.submissionId, submissionId),
         eq(submissionParticipants.status, SubmissionParticipantStatus.active),
-        ne(submissionParticipants.userId, actorId),
+        actorId === null ? undefined : ne(submissionParticipants.userId, actorId),
       ),
     );
   return { ...row, formName: row.formName ?? '', submitterEmails: emailsOf(submitters) };
+};
+
+/** A status change as its email needs it. */
+export interface StatusChangeForEmail {
+  workspaceId: string;
+  submissionId: string;
+  status: SubmissionReviewStatus;
+  assigneeId: string | null;
+  /** Who made the change; null for a user since removed. */
+  changedBy: string | null;
+  /** The change is still the submission's status, and the submission is live. */
+  current: boolean;
+  /** The comment saved with the change, if any; whether it goes in the email is the job's choice. */
+  comment: string | null;
+}
+
+/** The status change `id` and its comment; null when there is none. */
+export const findStatusChangeForEmail = async (
+  id: string,
+): Promise<StatusChangeForEmail | null> => {
+  const [row] = await db
+    .select({
+      workspaceId: submissionStatuses.workspaceId,
+      submissionId: submissionStatuses.submissionId,
+      status: submissionStatuses.status,
+      assigneeId: submissionStatuses.assigneeId,
+      changedBy: submissionStatuses.changedBy,
+      currentStatusId: submissions.statusId,
+      deletedAt: submissions.deletedAt,
+      comment: submissionNotes.text,
+    })
+    .from(submissionStatuses)
+    .innerJoin(submissions, eq(submissions.id, submissionStatuses.submissionId))
+    .leftJoin(submissionNotes, eq(submissionNotes.id, submissionStatuses.id))
+    .where(eq(submissionStatuses.id, id))
+    .limit(1);
+  if (!row) return null;
+  return {
+    workspaceId: row.workspaceId,
+    submissionId: row.submissionId,
+    status: row.status as SubmissionReviewStatus,
+    assigneeId: row.assigneeId,
+    changedBy: row.changedBy,
+    current: row.currentStatusId === id && row.deletedAt === null,
+    comment: row.comment,
+  };
 };
 
 /** A user's email from their profile; null when none is known. */

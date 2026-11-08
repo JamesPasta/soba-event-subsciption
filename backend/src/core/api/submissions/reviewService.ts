@@ -1,6 +1,5 @@
 import {
   ApiErrorCodes,
-  hasAllPermissions,
   Permissions,
   SubmissionReviewStatuses,
   type AddSubmissionNoteBody,
@@ -10,7 +9,7 @@ import {
   type UpdateSubmissionStatusBody,
 } from '@soba/lib';
 import { findEffectiveReviewSettings } from '../../../features/form-settings/review/repo';
-import { listFormUserIdsHolding, resolveFormPermissions } from '../../db/repos/formAccessRepo';
+import { listFormUserIdsHolding } from '../../db/repos/formAccessRepo';
 import {
   addNote,
   changeStatus,
@@ -21,6 +20,7 @@ import {
 } from '../../db/repos/submissionReviewRepo';
 import { getSubmissionRecordById } from '../../db/repos/submissionRepo';
 import { getPublicUser } from '../../services/publicUser';
+import { canReviewForm } from '../../../features/submission-review/assignee';
 import { sendStatusEmail } from '../../../features/submission-review/statusEmails';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../errors';
 import type { SubmissionsContextInput } from './serviceFactory';
@@ -60,14 +60,7 @@ const assertAssignable = async (
   formId: string,
   assigneeId: string,
 ): Promise<void> => {
-  const [permissions, activeUsers] = await Promise.all([
-    resolveFormPermissions(assigneeId, workspaceId, formId),
-    listReviewUsers([assigneeId]),
-  ]);
-  if (
-    activeUsers.length === 0 ||
-    !hasAllPermissions(permissions, [Permissions.submission_review])
-  ) {
+  if (!(await canReviewForm(workspaceId, formId, assigneeId))) {
     throw new ValidationError(
       'The assignee cannot review submissions of this form',
       ApiErrorCodes.assignee_invalid,

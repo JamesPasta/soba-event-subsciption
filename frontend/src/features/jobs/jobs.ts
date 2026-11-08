@@ -9,6 +9,7 @@ import type { JobStatus, JobTypeItem, JobViewModel } from '@/src/types/jobs';
 
 const SUBMISSION_SUBMITTED = 'submission.submitted';
 const SUBMISSION_EXPORT = 'submission-export';
+const SUBMISSION_STATUS_EMAIL = 'submission.status-email';
 
 /** Text to show, and `lang` when only the server names it, which it does in English. */
 export type JobTypeLabel = { text: string; lang?: 'en' };
@@ -24,15 +25,20 @@ export const jobTypeLabel = (
 ): JobTypeLabel => {
   if (type === SUBMISSION_SUBMITTED) return { text: dict.jobs.types.submissionSubmitted };
   if (type === SUBMISSION_EXPORT) return { text: dict.jobs.types.submissionExport };
+  if (type === SUBMISSION_STATUS_EMAIL) return { text: dict.jobs.types.submissionStatusEmail };
   const action = postSubmissionActionUi(type);
   if (action) return { text: action.label(dict) };
   return { text: types.find((item) => item.type === type)?.name ?? type, lang: 'en' };
 };
 
-/** The types a submission's jobs can have that this build names: submission received and its actions. */
+/**
+ * The types a submission's jobs can have that this build names: submission received, its actions,
+ * and status emails.
+ */
 export const submissionJobTypes = (): string[] => [
   SUBMISSION_SUBMITTED,
   ...postSubmissionActionCodes(),
+  SUBMISSION_STATUS_EMAIL,
 ];
 
 const STATUS_VARIANTS: Record<JobStatus, StatusTagVariant> = {
