@@ -1,4 +1,8 @@
-import { cleanName, designerSubmissionLink } from '../../core/integrations/notification/emailText';
+import {
+  cleanName,
+  designerSubmissionLink,
+  escapeHtml,
+} from '../../core/integrations/notification/emailText';
 import type { PostSubmissionActionSubmission } from '../../core/integrations/post-submission-action/PostSubmissionActionPluginDefinition';
 
 /** The submission in the designer; opening it needs sign-in and access to the submission. */
@@ -10,22 +14,23 @@ export const designerLink = (
 export interface Notice {
   subject: string;
   body: string;
+  bodyType: 'html';
 }
 
-/** The fixed notice: the form, the confirmation ID, the link and who set it up. */
+/** The fixed notice: the confirmation ID, the form and the link. The subject is plain text. */
 export const buildNotice = (
   submission: PostSubmissionActionSubmission,
   link: string | null,
 ): Notice => {
   const formName = cleanName(submission.formName);
-  const workspaceName = cleanName(submission.workspaceName);
-  const lines = [
-    `A submission to "${formName}" was received.`,
-    '',
-    `Confirmation ID: ${submission.confirmationCode}`,
-    ...(link ? ['', `View it (sign-in required): ${link}`] : []),
-    '',
-    `You are receiving this because the team for this form in the "${workspaceName}" workspace set up this notice.`,
+  const paragraphs = [
+    `Confirmation ID: <strong>${escapeHtml(submission.confirmationCode)}</strong>`,
+    `There is a new ${escapeHtml(formName)} submission. Please sign in to review it.`,
+    ...(link ? [`<a href="${escapeHtml(link)}">View this submission</a>`] : []),
   ];
-  return { subject: `Submission received: ${formName}`, body: lines.join('\n') };
+  return {
+    subject: `${formName} Submission`,
+    body: paragraphs.map((paragraph) => `<p>${paragraph}</p>`).join('\n'),
+    bodyType: 'html',
+  };
 };

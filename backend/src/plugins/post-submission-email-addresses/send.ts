@@ -72,7 +72,7 @@ export const sendNotices = async (
     signal.throwIfAborted();
     const result = await notifications.sendEmail({
       recipients: { to: [remaining[index]] },
-      content: { subject: notice.subject, body: notice.body, bodyType: 'text' },
+      content: { subject: notice.subject, body: notice.body, bodyType: notice.bodyType },
     });
     const stoppedAt = `after ${tally.sent} of ${remaining.length}`;
     if (!result.audited) throw new Error(`A send was not recorded; stopping ${stoppedAt}`);
