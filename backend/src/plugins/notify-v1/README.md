@@ -24,17 +24,18 @@ Notify's channel list, which checks the endpoint and the key without sending.
 
 Backend code sends email through the notification service, which checks the
 `notifications` feature, calls the active plugin and writes one
-`notification_audit` row per send:
+`notification_audit` row per send. The content comes from the email kit, which
+renders a template in English and French; see
+[Notification emails](../../../../docs/notifications.md) for the templates and
+the rules every email follows:
 
 ```ts
 import { notificationService } from '../../features/notifications/service';
 
+const content = renderSubmissionEmail(TEMPLATE, facts, DEFAULT_EMAIL_LANGUAGE);
 const { outcome } = await notificationService.sendEmail(
   { workspaceId, formId, submissionId, actorId },
-  {
-    recipients: { to: ['recipient@example.com'] },
-    content: { subject: 'SOBA notification', body: 'Hello from SOBA', bodyType: 'text' },
-  },
+  { recipients: { to: [address] }, content },
 );
 ```
 
