@@ -4,7 +4,38 @@ import { insertJob } from '../db/repos/jobRepo';
 import type { SubmissionRecord } from '../db/repos/submissionRepo';
 import { resolveSubmittedActions, type ScopedAction } from '../../features/post-submission/resolve';
 import { getJobSettings } from './settings';
+import { submissionStatusEmailJob, type StatusEmailJobParams } from './submissionStatusEmail';
 import { submissionSubmittedJob } from './submissionSubmitted';
+
+/**
+ * Queue the email a review status change sends, in the transaction that makes the change. One job
+ * per change; true when this call queued it.
+ */
+export const enqueueStatusEmailJob = async (
+  tx: Tx,
+  input: {
+    workspaceId: string;
+    formId: string;
+    submissionId: string;
+    actorId: string;
+  } & StatusEmailJobParams,
+): Promise<boolean> => {
+  const params: StatusEmailJobParams = {
+    statusChangeId: input.statusChangeId,
+    attachComment: input.attachComment,
+  };
+  const id = await insertJob(tx, {
+    type: JobType.submission_status_email,
+    workspaceId: input.workspaceId,
+    formId: input.formId,
+    submissionId: input.submissionId,
+    createdBy: input.actorId,
+    params,
+    dedupeKey: `${JobType.submission_status_email}:${input.statusChangeId}`,
+    maxAttempts: submissionStatusEmailJob.maxAttempts ?? getJobSettings().maxAttempts,
+  });
+  return id !== null;
+};
 
 /** A submit queues the submitted job where post-submission is available. A save never checks. */
 export const queuesSubmittedJob = async (

@@ -66,9 +66,17 @@ jest.mock('../../../../src/core/services/publicUser', () => ({
   getPublicUser: () => Promise.resolve({ id: 'public-user', displayLabel: 'Public' }),
 }));
 
-const mockSendStatusEmail = jest.fn();
-jest.mock('../../../../src/features/submission-review/statusEmails', () => ({
-  sendStatusEmail: (...args: unknown[]) => mockSendStatusEmail(...args),
+const mockNotificationsEnabled = jest.fn();
+jest.mock('../../../../src/features/notifications/service', () => ({
+  notificationService: { enabled: () => mockNotificationsEnabled() },
+}));
+const mockEnqueueStatusEmail = jest.fn();
+jest.mock('../../../../src/core/jobs/enqueue', () => ({
+  enqueueStatusEmailJob: (...args: unknown[]) => mockEnqueueStatusEmail(...args),
+}));
+const mockNudgeJobs = jest.fn();
+jest.mock('../../../../src/core/jobs', () => ({
+  nudgeJobs: (...args: unknown[]) => mockNudgeJobs(...args),
 }));
 
 const mockFindEffectiveReviewSettings = jest.fn();
@@ -131,6 +139,8 @@ describe('submission review routes', () => {
     mockAccess.resolveFormPermissions.mockResolvedValue(new Set([Permissions.submission_review]));
     mockFindEffectiveReviewSettings.mockResolvedValue(SETTINGS_ON);
     mockGetSubmissionRecordById.mockResolvedValue({ id: 'sub1', submittedBy: 'submitter-1' });
+    mockNotificationsEnabled.mockResolvedValue(true);
+    mockEnqueueStatusEmail.mockResolvedValue(true);
   });
 
   it('gates the read on submission_read, and the writes and reviewers on submission_review', () => {
@@ -239,6 +249,7 @@ describe('submission review routes', () => {
       actorId: 'a1',
       actorDisplayLabel: 'Rev Iewer',
       allowStatusUpdates: true,
+      onChanged: expect.any(Function),
     });
     expect(response.body.statusHistory).toEqual([SUBMITTED]);
   });
@@ -316,7 +327,14 @@ describe('submission review routes', () => {
     expect(mockRepo.changeStatus).not.toHaveBeenCalled();
   });
 
-  it('emails once the change is made, attaching the comment only when asked', async () => {
+  it("queues the email in the change's transaction, attaching the comment only when asked", async () => {
+    // The repo runs the callback inside the transaction once it makes the change.
+    mockRepo.changeStatus.mockImplementation(
+      async (input: { onChanged?: (tx: unknown) => Promise<void> }) => {
+        await input.onChanged?.('tx');
+        return 'changed';
+      },
+    );
     const comment = 'Please attach the declaration.';
     await request(app)
       .post(STATUS_PATH)
@@ -326,18 +344,35 @@ describe('submission review routes', () => {
       .send({ ...REVISE, id: NOTE_ID, comment });
 
     expect(mockRepo.changeStatus).toHaveBeenCalledWith(expect.objectContaining({ comment }));
-    expect(mockSendStatusEmail.mock.calls).toEqual([
-      [expect.objectContaining({ status: SubmissionReviewStatuses.revising, comment })],
-      [expect.objectContaining({ comment: undefined })],
+    const job = {
+      workspaceId: 'ws1',
+      formId: 'f1',
+      submissionId: 'sub1',
+      actorId: 'a1',
+    };
+    expect(mockEnqueueStatusEmail.mock.calls).toEqual([
+      ['tx', { ...job, statusChangeId: STATUS_ID, attachComment: true }],
+      ['tx', { ...job, statusChangeId: NOTE_ID, attachComment: false }],
     ]);
+    expect(mockNudgeJobs).toHaveBeenCalledWith('submission.status-email');
   });
 
   // A retry after a lost response must not email anyone a second time.
-  it('sends no email for a retried change', async () => {
+  it('queues and nudges nothing for a retried change', async () => {
     mockRepo.changeStatus.mockResolvedValue('replayed');
     await request(app).post(STATUS_PATH).send(ASSIGN);
 
-    expect(mockSendStatusEmail).not.toHaveBeenCalled();
+    expect(mockEnqueueStatusEmail).not.toHaveBeenCalled();
+    expect(mockNudgeJobs).not.toHaveBeenCalled();
+  });
+
+  it('asks for no email when notifications are off', async () => {
+    mockNotificationsEnabled.mockResolvedValue(false);
+    await request(app).post(STATUS_PATH).send(ASSIGN);
+
+    expect(mockRepo.changeStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ onChanged: undefined }),
+    );
   });
 
   it('sends a signed-in submission back to its submitter to revise', async () => {

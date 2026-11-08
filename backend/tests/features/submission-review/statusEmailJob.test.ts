@@ -10,8 +10,6 @@ const mockCanReview = jest.fn();
 jest.mock('../../../src/features/submission-review/assignee', () => ({
   canReviewForm: (...args: unknown[]) => mockCanReview(...args),
 }));
-// The inline sender lives beside the templates; this job sends only through jobNotifications.
-jest.mock('../../../src/features/notifications/service', () => ({ notificationService: {} }));
 const mockJobNotifications = jest.fn();
 jest.mock('../../../src/features/notifications/jobNotifications', () => ({
   jobNotifications: (...args: unknown[]) => mockJobNotifications(...args),

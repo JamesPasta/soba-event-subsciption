@@ -20,8 +20,12 @@ import {
 } from '../../db/repos/submissionReviewRepo';
 import { getSubmissionRecordById } from '../../db/repos/submissionRepo';
 import { getPublicUser } from '../../services/publicUser';
+import { notificationService } from '../../../features/notifications/service';
 import { canReviewForm } from '../../../features/submission-review/assignee';
-import { sendStatusEmail } from '../../../features/submission-review/statusEmails';
+import { sendsStatusEmail } from '../../../features/submission-review/statusEmails';
+import { JobType } from '../../db/codes';
+import { nudgeJobs } from '../../jobs';
+import { enqueueStatusEmailJob } from '../../jobs/enqueue';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../errors';
 import type { SubmissionsContextInput } from './serviceFactory';
 
@@ -136,7 +140,11 @@ export const submissionReviewService = {
     if (body.status === SubmissionReviewStatuses.revising) {
       await assertRevisable(ctx.workspaceId, submissionId);
     }
+    const emails =
+      sendsStatusEmail(body.status, body.assigneeId, ctx.actorId) &&
+      (await notificationService.enabled());
 
+    const queued = { email: false };
     const outcome = await changeStatus({
       id: body.id,
       workspaceId: ctx.workspaceId,
@@ -148,18 +156,21 @@ export const submissionReviewService = {
       actorDisplayLabel: ctx.actorDisplayLabel,
       allowStatusUpdates: settings.allowStatusUpdates,
       comment: body.comment || undefined,
+      // The email's job commits with the change, so a change that rolls back emails no one.
+      onChanged: emails
+        ? async (tx) => {
+            queued.email = await enqueueStatusEmailJob(tx, {
+              workspaceId: ctx.workspaceId,
+              formId,
+              submissionId,
+              actorId: ctx.actorId,
+              statusChangeId: body.id,
+              attachComment: Boolean(body.attachCommentToEmail && body.comment),
+            });
+          }
+        : undefined,
     });
-    // After the commit, and only for a change this request made: a retry sends nothing again.
-    if (outcome === 'changed') {
-      await sendStatusEmail({
-        workspaceId: ctx.workspaceId,
-        submissionId,
-        actorId: ctx.actorId,
-        status: body.status,
-        assigneeId: body.assigneeId,
-        comment: body.attachCommentToEmail ? body.comment : undefined,
-      });
-    }
+    if (queued.email) nudgeJobs(JobType.submission_status_email);
     switch (outcome) {
       case 'missing':
         throw notFound();

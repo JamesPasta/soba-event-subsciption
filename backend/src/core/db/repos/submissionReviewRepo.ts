@@ -475,6 +475,11 @@ export const changeStatus = (input: {
   onlyFrom?: SubmissionReviewStatus;
   /** A comment saved with the change as a staff note, under the change's id. */
   comment?: string;
+  /**
+   * Runs in the change's transaction once the change is made, to queue what it sets off. A replay
+   * or a refused change never runs it.
+   */
+  onChanged?: (tx: Tx) => Promise<void>;
 }): Promise<ChangeStatusOutcome> =>
   db.transaction(async (tx) => {
     const [submission] = await tx
@@ -570,5 +575,6 @@ export const changeStatus = (input: {
         ...restored,
       })
       .where(eq(submissions.id, input.submissionId));
+    await input.onChanged?.(tx);
     return 'changed';
   });

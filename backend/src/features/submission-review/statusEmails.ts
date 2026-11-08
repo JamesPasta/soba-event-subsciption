@@ -1,10 +1,6 @@
 import { SubmissionReviewStatuses, type SubmissionReviewStatus } from '@soba/lib';
 import { env } from '../../core/config/env';
-import {
-  findStatusEmailFacts,
-  findUserEmail,
-  type StatusEmailFacts,
-} from '../../core/db/repos/submissionReviewRepo';
+import type { StatusEmailFacts } from '../../core/db/repos/submissionReviewRepo';
 import {
   DEFAULT_EMAIL_LANGUAGE,
   type EmailLanguage,
@@ -20,8 +16,6 @@ import {
   type FormsSubmissionPage,
   type SafeUrl,
 } from '../../core/integrations/notification/email/url';
-import { log } from '../../core/logging';
-import { notificationService } from '../notifications/service';
 import { ASSIGNED_EMAIL, COMPLETED_EMAIL, REVISING_EMAIL } from './statusEmailTemplates';
 
 /** Who a status email goes to: the assignee, or the people who submitted it. */
@@ -93,65 +87,16 @@ export const renderStatusEmail = (
     DEFAULT_EMAIL_LANGUAGE,
   );
 
-export interface StatusEmailInput {
-  workspaceId: string;
-  submissionId: string;
-  actorId: string;
-  status: SubmissionReviewStatus;
-  assigneeId: string | null;
-  /** The reviewer's comment, when they attached it to the email. */
-  comment?: string;
-}
-
-const recipients = async (
-  email: StatusEmail,
-  facts: StatusEmailFacts,
-  assigneeId: string | null,
-): Promise<string[]> => {
-  if (email.audience === StatusEmailAudience.submitters) return facts.submitterEmails;
-  const address = assigneeId ? await findUserEmail(assigneeId) : null;
-  return address ? [address] : [];
-};
-
 /**
- * Sends the email a committed status change calls for, through the notification service, which
- * audits the send and never throws. Nothing here undoes the change: a lookup that fails is logged,
- * and a status with no email, or no one to send it to, sends nothing. The person who made the
- * change is never emailed about it.
+ * Whether moving to `status` emails anyone. Assigning a submission to yourself does not: no one is
+ * emailed about a change they made.
  */
-export const sendStatusEmail = async (input: StatusEmailInput): Promise<void> => {
-  const email = STATUS_EMAILS[input.status];
-  if (!email) return;
-  if (email.audience === StatusEmailAudience.assignee && input.assigneeId === input.actorId) return;
-  try {
-    const facts = await findStatusEmailFacts(input.workspaceId, input.submissionId, input.actorId);
-    if (!facts) return;
-    const to = await recipients(email, facts, input.assigneeId);
-    if (to.length === 0) return;
-    const content = renderStatusEmail(email, facts, input.submissionId, input.comment);
-    // One email per address, so submitters do not see each other's addresses.
-    await Promise.all(
-      to.map((address) =>
-        notificationService.sendEmail(
-          {
-            workspaceId: input.workspaceId,
-            formId: facts.formId,
-            submissionId: input.submissionId,
-            actorId: input.actorId,
-          },
-          { recipients: { to: [address] }, content },
-        ),
-      ),
-    );
-  } catch (err) {
-    log.error(
-      {
-        workspaceId: input.workspaceId,
-        submissionId: input.submissionId,
-        status: input.status,
-        errorName: err instanceof Error ? err.name : 'Error',
-      },
-      'Status email not sent',
-    );
-  }
+export const sendsStatusEmail = (
+  status: SubmissionReviewStatus,
+  assigneeId: string | null,
+  actorId: string,
+): boolean => {
+  const email = STATUS_EMAILS[status];
+  if (!email) return false;
+  return email.audience !== StatusEmailAudience.assignee || assigneeId !== actorId;
 };
