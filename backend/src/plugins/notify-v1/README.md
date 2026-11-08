@@ -22,20 +22,19 @@ The adapter authenticates to Notify using only the configured `X-API-KEY`. At
 startup the backend logs whether a keyed `GET code-tables/channels` returns
 Notify's channel list, which checks the endpoint and the key without sending.
 
-Backend code sends email through the notification service, which checks the
-`notifications` feature, calls the active plugin and writes one
-`notification_audit` row per send. The content comes from the email kit, which
-renders a template in English and French; see
-[Notification emails](../../../../docs/notifications.md) for the templates and
-the rules every email follows:
+Emails are sent from jobs. A job's handler renders the email with the email kit,
+in English and French, and sends it through `sendEachAddress`, which calls the
+notification service once per address. The service checks the `notifications`
+feature, calls the active plugin and writes one `notification_audit` row per
+send. See [Notification emails](../../../../docs/notifications.md) for the
+templates, the job rules and the rules every email follows:
 
 ```ts
-import { notificationService } from '../../features/notifications/service';
-
 const content = renderSubmissionEmail(TEMPLATE, facts, DEFAULT_EMAIL_LANGUAGE);
-const { outcome } = await notificationService.sendEmail(
-  { workspaceId, formId, submissionId, actorId },
-  { recipients: { to: [address] }, content },
+await sendEachAddress(
+  { notifications: jobNotifications(job, actorId), signal, log },
+  addresses,
+  content,
 );
 ```
 

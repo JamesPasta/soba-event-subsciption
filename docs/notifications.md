@@ -5,12 +5,14 @@ them know the product as CHEFS, so every email says CHEFS.
 
 ## How a send works
 
-Backend code sends through `notificationService.sendEmail(context, email)`
-(`backend/src/features/notifications/service.ts`). It checks the `notifications` feature, calls the
-active notification plugin and writes one `notification_audit` row per call. It never throws: the
-outcome comes back in the result. `NOTIFICATION_DEFAULT_CODE` picks the plugin: `notification-noop`
-by default, `notify-v1` where Notify is set up; see the
-[Notify v1 README](../backend/src/plugins/notify-v1/README.md) for its settings.
+Every email is sent by a job; see [Sending from a job](#sending-from-a-job). The job sends through
+`sendEachAddress`, which calls `notificationService.sendEmail(context, email)`
+(`backend/src/features/notifications/service.ts`) once per address. The service checks the
+`notifications` feature, calls the active notification plugin and writes one `notification_audit`
+row per call, with the job's id. It never throws: the outcome comes back in the result.
+`NOTIFICATION_DEFAULT_CODE` picks the plugin: `notification-noop` by default, `notify-v1` where
+Notify is set up; see the [Notify v1 README](../backend/src/plugins/notify-v1/README.md) for its
+settings.
 
 Notify takes a finished subject and one body, typed `text` or `html`. SOBA renders every email
 itself; there are no provider templates. What Notify does with the body:
@@ -137,14 +139,54 @@ French copy is reviewed by a fluent French speaker before it merges.
   line up with Notify's header. No header or logo of our own, since Notify adds one; the footer is
   ours.
 
+## Sending from a job
+
+Code that causes an email never calls Notify. It queues a job in the transaction that saves what
+caused the email, and the job's handler renders the email and sends it. A change that rolls back
+emails no one, and a change that commits always leaves a job behind, which retries while Notify is
+slow or down. A failed email never undoes the change that caused it.
+
+- **One job per event,** with its type named `<resource>.<event>`, such as `submission.status-email`.
+  Its dedupe key is `<type>:<event id>`, so a retried request queues nothing new. After the commit,
+  `nudgeJobs` wakes the job's pool, so the email goes out within seconds.
+- **Params hold ids and choices, never content.** A status email's params are
+  `{ statusChangeId, attachComment }`. The handler reads the recipients and the comment when it
+  runs, so addresses and comments stay out of job rows and their backups.
+- **The handler checks the event still applies.** A status email ends cancelled when the submission's
+  status has moved on since the change, so a late retry or a re-run never sends an out-of-date email.
+- **Retry or stop:**
+
+  | the job                       | when                                                                                                                                                                 |
+  | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | throws, so it retries         | the provider fails without refusing the address, or times out; an audit row could not be written                                                                     |
+  | ends cancelled, with a reason | notifications are off; the event no longer applies; no one is left to send to; a recipient cannot be resolved, such as an assignee who can no longer review the form |
+
+  Cancel reasons show in the Jobs tabs, so they name no address, comment or form name.
+
+- **One send step,** `sendEachAddress` (`backend/src/core/integrations/notification/sendEachAddress.ts`):
+  1. Puts each address in lower case and drops duplicates.
+  2. Counts an address no provider would take as refused, without sending to it.
+  3. Skips the addresses this job already handled, and stops when none are left.
+  4. Checks that notifications are on.
+  5. Runs the policy's `checkBudgets`, if any, until the run has handled an address.
+  6. Sends to one address at a time. A refused address (400 or 422) is recorded and skipped; any
+     other failure throws.
+  7. Ends cancelled when a fresh list was refused at every address.
+- **Attribution.** `jobNotifications(job, actorId)` binds the service to the job. A send is
+  attributed to the person whose action caused it, and a re-run to whoever ran the job again. An
+  action a form is configured with, such as the notice, sends as the system user.
+- **Hourly limits** apply where staff choose the recipients: the notice checks its form, workspace
+  and environment limits before its run sends anything. Status emails go out one per person's
+  action and have none.
+
 ## Emails today
 
-| email                   | sent to                                              | link                                            | sent by                                                                                                     |
-| ----------------------- | ---------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| New submission (notice) | the addresses a form's "Email a notice" action lists | the submission in the designer                  | the action's job, queued by the submit (`plugins/post-submission-email-addresses`), as the system user      |
-| Assigned                | the reviewer the submission is assigned to           | the submission in the designer                  | the status-change request, after it commits (`features/submission-review/statusEmails.ts`), as the reviewer |
-| Revision requested      | the submission's owner and active collaborators      | the submission's `submit` page in the forms app | the status-change request, as the reviewer                                                                  |
-| Review complete         | the submission's owner and active collaborators      | the submission in the forms app                 | the status-change request, as the reviewer                                                                  |
+| email                   | sent to                                              | link                                            | sent by                                                                                                                          |
+| ----------------------- | ---------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| New submission (notice) | the addresses a form's "Email a notice" action lists | the submission in the designer                  | the action's job, queued by the submit (`plugins/post-submission-email-addresses`), as the system user                           |
+| Assigned                | the reviewer the submission is assigned to           | the submission in the designer                  | a `submission.status-email` job, queued with the status change (`features/submission-review/statusEmailJob.ts`), as the reviewer |
+| Revision requested      | the submission's owner and active collaborators      | the submission's `submit` page in the forms app | a `submission.status-email` job, as the reviewer                                                                                 |
+| Review complete         | the submission's owner and active collaborators      | the submission in the forms app                 | a `submission.status-email` job, as the reviewer                                                                                 |
 
 ## Adding an email
 
@@ -152,9 +194,20 @@ French copy is reviewed by a fluent French speaker before it merges.
    block of its own on `layout.ts`.
 2. Write the template beside the feature that sends it, in English and French.
 3. Build its link with a link helper, or add one to `url.ts` if the page is new.
-4. Render it with `DEFAULT_EMAIL_LANGUAGE` and send one email per address through
-   `notificationService.sendEmail`, leaving out the person who caused it.
-5. Test it: the full English body, a French subject and body, and the sender's recipients and
-   links. Unit tests use no real database.
-6. Send it to a safelisted mailbox through Notify test and look at it before it merges. Get the
+4. Add a `JobType` code (`backend/src/core/db/codes/index.ts`) and a job spec in
+   `backend/src/core/jobs/` with its pool, `maxAttempts`, `timeoutMs` and params schema. Keep the
+   spec apart from the handler, so queuing the job does not load the handler.
+5. Write the handler beside the feature. It loads the event and checks it still applies, resolves
+   the recipients without the person who caused it, renders with `DEFAULT_EMAIL_LANGUAGE`, and
+   calls `sendEachAddress` with `jobNotifications(job, actorId)`.
+6. Register the handler in `getJobRegistry` (`backend/src/core/jobs/catalog.ts`) and name the type:
+   `TYPE_NAMES` in `backend/src/core/services/jobViewService.ts` for the admin filter, and the
+   constant and `jobTypeLabel` in `frontend/src/features/jobs/jobs.ts` with `jobs.types` in
+   `en.json` and `fr.json`. Add it to `submissionJobTypes()` if it belongs to a submission.
+7. Queue it in the transaction that saves the event, with an enqueue function in
+   `backend/src/core/jobs/enqueue.ts`, and call `nudgeJobs` after the commit.
+8. Test it: the full English body, a French subject and body, the handler's recipients, cancel
+   reasons and attribution, and that the event queues the job once. Unit tests use no real
+   database.
+9. Send it to a safelisted mailbox through Notify test and look at it before it merges. Get the
    French reviewed.
