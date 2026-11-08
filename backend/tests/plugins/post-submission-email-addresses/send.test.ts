@@ -83,17 +83,17 @@ const run = (
   );
 
 describe('sendNotices', () => {
-  it('sends the notice to each address in turn, as plain text, and logs only counts', async () => {
+  it('sends the notice to each address in turn, as HTML, and logs only counts', async () => {
     const fake = fakeNotifications();
     const info = jest.fn();
     await run(['a@example.com', 'b@example.com'], fake.notifications, { info });
 
     expect(fake.recipients()).toEqual(['a@example.com', 'b@example.com']);
     expect(fake.emails[0].content).toMatchObject({
-      subject: 'Submission received: Permit application',
-      bodyType: 'text',
+      subject: 'Permit application Submission',
+      bodyType: 'html',
     });
-    expect(fake.emails[0].content.body).toContain('Confirmation ID: ABCD1234');
+    expect(fake.emails[0].content.body).toContain('<a href="https://soba.example/link">');
     expect(info).toHaveBeenCalledWith(
       { sent: 2, refused: 0, alreadyHandled: 0 },
       'Post-submission email sent',

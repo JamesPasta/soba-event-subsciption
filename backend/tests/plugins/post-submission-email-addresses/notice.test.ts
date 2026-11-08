@@ -1,4 +1,4 @@
-import { cleanName } from '../../../src/core/integrations/notification/emailText';
+import { cleanName, escapeHtml } from '../../../src/core/integrations/notification/emailText';
 import {
   buildNotice,
   designerLink,
@@ -42,6 +42,14 @@ describe('cleanName', () => {
   });
 });
 
+describe('escapeHtml', () => {
+  it('escapes markup and quotes and leaves other text alone', () => {
+    expect(escapeHtml(`<a href="x">Tom's & Co</a> café`)).toBe(
+      '&lt;a href=&quot;x&quot;&gt;Tom&#39;s &amp; Co&lt;/a&gt; café',
+    );
+  });
+});
+
 describe('designerLink', () => {
   it("points at the submission in the designer, whatever the base's trailing slash", () => {
     const expected = 'https://soba.example/designer/en/build/f1/submissions/s1';
@@ -55,27 +63,41 @@ describe('designerLink', () => {
 });
 
 describe('buildNotice', () => {
-  it('names the form, the confirmation ID, the link and the workspace', () => {
+  it('names the confirmation ID and the form, and links to the submission', () => {
     expect(buildNotice(submission, 'https://soba.example/link')).toEqual({
-      subject: 'Submission received: Permit application',
+      subject: 'Permit application Submission',
       body: [
-        'A submission to "Permit application" was received.',
-        '',
-        'Confirmation ID: ABCD1234',
-        '',
-        'View it (sign-in required): https://soba.example/link',
-        '',
-        'You are receiving this because the team for this form in the "Licensing" workspace set up this notice.',
+        '<p>Confirmation ID: <strong>ABCD1234</strong></p>',
+        '<p>There is a new Permit application submission. Please sign in to review it.</p>',
+        '<p><a href="https://soba.example/link">View this submission</a></p>',
       ].join('\n'),
+      bodyType: 'html',
     });
   });
 
-  it('leaves the link line out when there is no link', () => {
-    expect(buildNotice(submission, null).body).not.toContain('View it');
+  it('leaves the link out when there is no link', () => {
+    expect(buildNotice(submission, null).body).toBe(
+      [
+        '<p>Confirmation ID: <strong>ABCD1234</strong></p>',
+        '<p>There is a new Permit application submission. Please sign in to review it.</p>',
+      ].join('\n'),
+    );
   });
 
-  it('cleans the names it uses', () => {
+  it('cleans the form name', () => {
     const notice = buildNotice({ ...submission, formName: 'A\nB' }, null);
-    expect(notice.subject).toBe('Submission received: A B');
+    expect(notice.subject).toBe('A B Submission');
+  });
+
+  it('escapes the form name and the link in the body, not in the subject', () => {
+    const notice = buildNotice(
+      { ...submission, formName: '<b>Fees</b> & "Permits"' },
+      'https://soba.example/link?a=1&b="x"',
+    );
+    expect(notice.subject).toBe('<b>Fees</b> & "Permits" Submission');
+    expect(notice.body).toContain(
+      'There is a new &lt;b&gt;Fees&lt;/b&gt; &amp; &quot;Permits&quot; submission.',
+    );
+    expect(notice.body).toContain('href="https://soba.example/link?a=1&amp;b=&quot;x&quot;"');
   });
 });
