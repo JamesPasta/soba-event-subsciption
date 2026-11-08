@@ -79,7 +79,7 @@ const run = (
       } as unknown as Logger,
     },
     LIMITS,
-    'https://soba.example/link',
+    'https://soba.example/designer',
   );
 
 describe('sendNotices', () => {
@@ -90,10 +90,12 @@ describe('sendNotices', () => {
 
     expect(fake.recipients()).toEqual(['a@example.com', 'b@example.com']);
     expect(fake.emails[0].content).toMatchObject({
-      subject: 'Permit application Submission',
+      subject: 'Permit application Submission / Soumission : Permit application (ABCD1234)',
       bodyType: 'html',
     });
-    expect(fake.emails[0].content.body).toContain('<a href="https://soba.example/link">');
+    expect(fake.emails[0].content.body).toContain(
+      'href="https://soba.example/designer/en/build/f1/submissions/s1"',
+    );
     expect(info).toHaveBeenCalledWith(
       { sent: 2, refused: 0, alreadyHandled: 0 },
       'Post-submission email sent',

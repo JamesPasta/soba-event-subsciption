@@ -19,18 +19,6 @@ export const cleanName = (value: string): string =>
     .join('')
     .trimEnd();
 
-const HTML_ESCAPES = new Map([
-  ['&', '&amp;'],
-  ['<', '&lt;'],
-  ['>', '&gt;'],
-  ['"', '&quot;'],
-  ["'", '&#39;'],
-]);
-
-/** Text safe in HTML content and in a quoted attribute value. */
-export const escapeHtml = (value: string): string =>
-  value.replaceAll(/[&<>"']/g, (char) => HTML_ESCAPES.get(char) ?? char);
-
 export const withoutTrailingSlashes = (url: string): string => {
   let end = url.length;
   while (end > 0 && url[end - 1] === '/') end -= 1;

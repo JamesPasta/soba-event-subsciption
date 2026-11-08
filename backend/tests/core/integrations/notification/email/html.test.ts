@@ -12,6 +12,10 @@ describe('markup', () => {
     );
   });
 
+  it('escapes apostrophes and leaves other text as it is', () => {
+    expect(toHtmlString(markup`${"Tom's café, 100% sûr"}`)).toBe('Tom&#39;s café, 100% sûr');
+  });
+
   it('keeps markup it built and escapes each element of a list', () => {
     const bold = markup`<strong>${'A&B'}</strong>`;
     expect(toHtmlString(markup`<p>${bold}${['<i>', markup`<br>`, 'x']}</p>`)).toBe(

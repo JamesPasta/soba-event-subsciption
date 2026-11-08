@@ -1,5 +1,3 @@
-import { escapeHtml } from '../emailText';
-
 declare const safeHtml: unique symbol;
 
 /** Markup built by `markup`. Nothing else can make one, and a look-alike object is refused. */
@@ -16,6 +14,18 @@ export type HtmlValue =
   | undefined
   | false
   | readonly HtmlValue[];
+
+const HTML_ESCAPES = new Map([
+  ['&', '&amp;'],
+  ['<', '&lt;'],
+  ['>', '&gt;'],
+  ['"', '&quot;'],
+  ["'", '&#39;'],
+]);
+
+/** Text safe in HTML content and in a quoted attribute value. */
+const escapeHtml = (value: string): string =>
+  value.replaceAll(/[&<>"']/g, (char) => HTML_ESCAPES.get(char) ?? char);
 
 // Keyed by the frozen object `markup` returns; an object not in here was not built by `markup`.
 const built = new WeakMap<object, string>();

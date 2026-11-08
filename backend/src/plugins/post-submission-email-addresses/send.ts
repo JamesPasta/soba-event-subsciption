@@ -4,7 +4,7 @@ import { isRefusedSend } from '../../core/integrations/notification/sendOutcome'
 import type { PostSubmissionActionContext } from '../../core/integrations/post-submission-action/PostSubmissionActionPluginDefinition';
 import { JobCancelledError } from '../../core/jobs/settlement';
 import { exceededLimit, type HourlyLimits } from './limits';
-import { buildNotice, type Notice } from './notice';
+import { buildNotice } from './notice';
 
 const HOUR_SECONDS = 3600;
 
@@ -56,7 +56,7 @@ const checkBudgets = async (
 export const sendNotices = async (
   { options, submission, services, signal, log }: SendContext,
   limits: HourlyLimits,
-  link: string | null,
+  designerAppUrl: string | undefined,
 ): Promise<void> => {
   const { notifications } = services;
   const { recipients: handled, runStarted } = await notifications.handled();
@@ -65,7 +65,7 @@ export const sendNotices = async (
   if (!(await notifications.enabled())) throw new JobCancelledError(NOTIFICATIONS_OFF);
   if (!runStarted) await checkBudgets({ services, log }, remaining.length, limits);
 
-  const notice: Notice = buildNotice(submission, link);
+  const notice = buildNotice(submission, designerAppUrl);
   // One send at a time, so a failure stops the rest of the list.
   const sendFrom = async (index: number, tally: Tally): Promise<Tally> => {
     if (index === remaining.length) return tally;
