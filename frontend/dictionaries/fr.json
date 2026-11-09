@@ -411,6 +411,7 @@
     "types": {
       "submissionSubmitted": "Soumission reçue",
       "submissionExport": "Exportation des soumissions",
+      "submissionStatusChanged": "Statut modifié",
       "submissionStatusEmail": "Courriel de statut"
     },
     "detail": {

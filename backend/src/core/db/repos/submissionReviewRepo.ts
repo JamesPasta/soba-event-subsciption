@@ -333,6 +333,26 @@ export const findStatusEmailFacts = async (
   return { ...row, formName: row.formName ?? '', submitterEmails: emailsOf(submitters) };
 };
 
+/** True when the user is one of the submission's active submitters: its owner or a collaborator. */
+export const isActiveSubmitter = async (
+  executor: DbOrTx,
+  submissionId: string,
+  userId: string,
+): Promise<boolean> => {
+  const [row] = await executor
+    .select({ id: submissionParticipants.id })
+    .from(submissionParticipants)
+    .where(
+      and(
+        eq(submissionParticipants.submissionId, submissionId),
+        eq(submissionParticipants.userId, userId),
+        eq(submissionParticipants.status, SubmissionParticipantStatus.active),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+};
+
 /** A status change as its email needs it. */
 export interface StatusChangeForEmail {
   workspaceId: string;

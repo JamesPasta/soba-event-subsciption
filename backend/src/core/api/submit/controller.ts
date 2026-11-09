@@ -55,7 +55,12 @@ export const reviseOwnSubmission = asyncHandler(
     const { submission } = loadedSubmission(req);
     const ctx = req.coreContext!;
     await submissionReviewService.reviseOwn(
-      { ...ctx, submissionId: submission.id, fromStatusId: submission.statusId },
+      {
+        ...ctx,
+        formId: submission.formId,
+        submissionId: submission.id,
+        fromStatusId: submission.statusId,
+      },
       req.body,
     );
     const revised = await submissionsApiService.get(ctx, submission.id);

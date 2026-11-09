@@ -63,6 +63,14 @@ describe('rerunRefusal', () => {
     expect(received({ childrenQueuedAt: ago(40 * DAY) })).toBe(queuedAlready);
   });
 
+  it('treats a status-changed job like a submission-received one: once its reactions are queued', () => {
+    const changed = (overrides: Partial<RerunFacts>) =>
+      rerunRefusal(facts({ type: JobType.submission_status_changed, ...overrides }));
+    expect(changed({})).toBeNull();
+    expect(changed({ childCount: 1 })).toBe(queuedAlready);
+    expect(changed({ childrenQueuedAt: ago(40 * DAY) })).toBe(queuedAlready);
+  });
+
   // Its fan-out rolled back, so no dedupe key was taken and nothing was sent.
   it('runs a submission-received job again however old, when it never queued its actions', () => {
     expect(received({ finishedAt: ago(60 * DAY) })).toBeNull();

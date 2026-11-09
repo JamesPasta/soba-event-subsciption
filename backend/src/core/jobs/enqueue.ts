@@ -1,41 +1,17 @@
+import type { SubmissionReviewStatus } from '@soba/lib';
 import type { Tx } from '../db/client';
 import { JobType, SubmissionEventType, type SubmissionWriteEventCode } from '../db/codes';
 import { insertJob } from '../db/repos/jobRepo';
 import type { SubmissionRecord } from '../db/repos/submissionRepo';
 import { resolveSubmittedActions, type ScopedAction } from '../../features/post-submission/resolve';
+import type { StatusChangedJobParams } from '../../features/submission-review/params';
+import {
+  resolveStatusReactions,
+  type StatusReactionDefinition,
+} from '../../features/submission-review/statusReactions';
 import { getJobSettings } from './settings';
-import { submissionStatusEmailJob, type StatusEmailJobParams } from './submissionStatusEmail';
+import { submissionStatusChangedJob } from './submissionStatusChanged';
 import { submissionSubmittedJob } from './submissionSubmitted';
-
-/**
- * Queue the email a review status change sends, in the transaction that makes the change. One job
- * per change; true when this call queued it.
- */
-export const enqueueStatusEmailJob = async (
-  tx: Tx,
-  input: {
-    workspaceId: string;
-    formId: string;
-    submissionId: string;
-    actorId: string;
-  } & StatusEmailJobParams,
-): Promise<boolean> => {
-  const params: StatusEmailJobParams = {
-    statusChangeId: input.statusChangeId,
-    attachComment: input.attachComment,
-  };
-  const id = await insertJob(tx, {
-    type: JobType.submission_status_email,
-    workspaceId: input.workspaceId,
-    formId: input.formId,
-    submissionId: input.submissionId,
-    createdBy: input.actorId,
-    params,
-    dedupeKey: `${JobType.submission_status_email}:${input.statusChangeId}`,
-    maxAttempts: submissionStatusEmailJob.maxAttempts ?? getJobSettings().maxAttempts,
-  });
-  return id !== null;
-};
 
 /** A submit queues the submitted job where post-submission is available. A save never checks. */
 export const queuesSubmittedJob = async (
@@ -71,5 +47,42 @@ export const enqueueSubmittedJob = async (
     params: { actions: submitted },
     dedupeKey: `${JobType.submission_submitted}:${revisionId}`,
     maxAttempts: submissionSubmittedJob.maxAttempts ?? getJobSettings().maxAttempts,
+  });
+};
+
+/** A review status change as its job records it. */
+export interface StatusChangeEvent {
+  /** The change's id, which the client chose. */
+  id: string;
+  workspaceId: string;
+  formId: string;
+  submissionId: string;
+  status: SubmissionReviewStatus;
+  assigneeId: string | null;
+  actorId: string;
+  /** The reviewer chose to put their comment in the email. */
+  attachComment: boolean;
+}
+
+/**
+ * Queue the status-changed job in the transaction that makes the change. One job per change. Its
+ * params record which of `reactions` the change calls for now, so later changes do not alter them.
+ */
+export const enqueueStatusChangedJob = async (
+  tx: Tx,
+  change: StatusChangeEvent,
+  reactions: readonly StatusReactionDefinition[],
+): Promise<void> => {
+  const actions = await resolveStatusReactions(tx, change, reactions);
+  const params: StatusChangedJobParams = { statusChangeId: change.id, actions };
+  await insertJob(tx, {
+    type: JobType.submission_status_changed,
+    workspaceId: change.workspaceId,
+    formId: change.formId,
+    submissionId: change.submissionId,
+    createdBy: change.actorId,
+    params,
+    dedupeKey: `${JobType.submission_status_changed}:${change.id}`,
+    maxAttempts: submissionStatusChangedJob.maxAttempts ?? getJobSettings().maxAttempts,
   });
 };

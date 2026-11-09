@@ -62,10 +62,16 @@ export interface RerunFacts {
   leaseMs: number;
 }
 
+/** Jobs whose run queues child jobs: an event's fan-out. */
+const FAN_OUT_TYPES: ReadonlySet<string> = new Set([
+  JobType.submission_submitted,
+  JobType.submission_status_changed,
+]);
+
 /**
- * Why a job may not run again, or null when it may. A submission-received job that queued its
- * actions would queue new action jobs once retention freed their dedupe keys, and those would have
- * handled nobody yet, so their emails would go to every address again.
+ * Why a job may not run again, or null when it may. A fan-out that queued its actions would queue
+ * new action jobs once retention freed their dedupe keys, and those would have handled nobody yet,
+ * so their emails would go to every address again.
  */
 export const rerunRefusal = (facts: RerunFacts): string | null => {
   // An export is the person's own request, under their limit; they start a new one.
@@ -76,10 +82,7 @@ export const rerunRefusal = (facts: RerunFacts): string | null => {
     return 'Only a dead or cancelled job can be run again';
   }
   if (!facts.registered) return 'This environment does not run jobs of this type';
-  if (
-    facts.type === JobType.submission_submitted &&
-    (facts.childCount > 0 || facts.childrenQueuedAt !== null)
-  ) {
+  if (FAN_OUT_TYPES.has(facts.type) && (facts.childCount > 0 || facts.childrenQueuedAt !== null)) {
     return 'Its actions were queued already; run their jobs again instead';
   }
   const finishedMs = facts.finishedAt ? facts.now.getTime() - facts.finishedAt.getTime() : 0;
@@ -284,6 +287,7 @@ export const getStaffJobDetail = async (scope: JobScope, id: string): Promise<St
 const TYPE_NAMES: Record<string, string> = {
   [JobType.submission_submitted]: 'Submission received',
   [JobType.submission_export]: 'Submission export',
+  [JobType.submission_status_changed]: 'Status changed',
   [JobType.submission_status_email]: 'Status email',
 };
 

@@ -20,12 +20,11 @@ import {
 } from '../../db/repos/submissionReviewRepo';
 import { getSubmissionRecordById } from '../../db/repos/submissionRepo';
 import { getPublicUser } from '../../services/publicUser';
-import { notificationService } from '../../../features/notifications/service';
 import { canReviewForm } from '../../../features/submission-review/assignee';
-import { sendsStatusEmail } from '../../../features/submission-review/statusEmails';
+import { availableStatusReactions } from '../../../features/submission-review/statusReactions';
 import { JobType } from '../../db/codes';
 import { nudgeJobs } from '../../jobs';
-import { enqueueStatusEmailJob } from '../../jobs/enqueue';
+import { enqueueStatusChangedJob } from '../../jobs/enqueue';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../errors';
 import type { SubmissionsContextInput } from './serviceFactory';
 
@@ -140,11 +139,7 @@ export const submissionReviewService = {
     if (body.status === SubmissionReviewStatuses.revising) {
       await assertRevisable(ctx.workspaceId, submissionId);
     }
-    const emails =
-      sendsStatusEmail(body.status, body.assigneeId, ctx.actorId) &&
-      (await notificationService.enabled());
-
-    const queued = { email: false };
+    const reactions = await availableStatusReactions();
     const outcome = await changeStatus({
       id: body.id,
       workspaceId: ctx.workspaceId,
@@ -156,21 +151,23 @@ export const submissionReviewService = {
       actorDisplayLabel: ctx.actorDisplayLabel,
       allowStatusUpdates: settings.allowStatusUpdates,
       comment: body.comment || undefined,
-      // The email's job commits with the change, so a change that rolls back emails no one.
-      onChanged: emails
-        ? async (tx) => {
-            queued.email = await enqueueStatusEmailJob(tx, {
-              workspaceId: ctx.workspaceId,
-              formId,
-              submissionId,
-              actorId: ctx.actorId,
-              statusChangeId: body.id,
-              attachComment: Boolean(body.attachCommentToEmail && body.comment),
-            });
-          }
-        : undefined,
+      onChanged: (tx) =>
+        enqueueStatusChangedJob(
+          tx,
+          {
+            id: body.id,
+            workspaceId: ctx.workspaceId,
+            formId,
+            submissionId,
+            status: body.status,
+            assigneeId: body.assigneeId,
+            actorId: ctx.actorId,
+            attachComment: Boolean(body.attachCommentToEmail && body.comment),
+          },
+          reactions,
+        ),
     });
-    if (queued.email) nudgeJobs(JobType.submission_status_email);
+    if (outcome === 'changed') nudgeJobs(JobType.submission_status_changed);
     switch (outcome) {
       case 'missing':
         throw notFound();
@@ -201,9 +198,14 @@ export const submissionReviewService = {
    * client chose, from the status the route read. The route has applied reviseStatusOf to the caller.
    */
   async reviseOwn(
-    input: SubmissionsContextInput & { submissionId: string; fromStatusId: string | null },
+    input: SubmissionsContextInput & {
+      formId: string;
+      submissionId: string;
+      fromStatusId: string | null;
+    },
     body: ReviseSubmissionBody,
   ): Promise<void> {
+    const reactions = input.fromStatusId ? await availableStatusReactions() : [];
     const outcome = input.fromStatusId
       ? await changeStatus({
           id: body.id,
@@ -215,8 +217,24 @@ export const submissionReviewService = {
           actorId: input.actorId,
           actorDisplayLabel: input.actorDisplayLabel,
           onlyFrom: SubmissionReviewStatuses.submitted,
+          onChanged: (tx) =>
+            enqueueStatusChangedJob(
+              tx,
+              {
+                id: body.id,
+                workspaceId: input.workspaceId,
+                formId: input.formId,
+                submissionId: input.submissionId,
+                status: SubmissionReviewStatuses.revising,
+                assigneeId: null,
+                actorId: input.actorId,
+                attachComment: false,
+              },
+              reactions,
+            ),
         })
       : 'not_allowed';
+    if (outcome === 'changed') nudgeJobs(JobType.submission_status_changed);
     if (outcome === 'missing') throw notFound();
     if (outcome === 'taken') {
       throw new ConflictError('Status change id is already used', ApiErrorCodes.status_id_taken);
