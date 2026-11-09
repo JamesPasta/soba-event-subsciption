@@ -141,19 +141,37 @@ French copy is reviewed by a fluent French speaker before it merges.
 
 ## Sending from a job
 
-Code that causes an email never calls Notify. It queues a job in the transaction that saves what
-caused the email, and the job's handler renders the email and sends it. A change that rolls back
-emails no one, and a change that commits always leaves a job behind, which retries while Notify is
-slow or down. A failed email never undoes the change that caused it.
+Code that causes an email never calls Notify, and never queues the email itself. It records an
+event: a job queued in the transaction that saves what happened. When the event job runs, its
+fan-out queues one job for each reaction recorded with the event, and the email is one of those
+reactions. A change that rolls back records no event, and a change that commits always leaves one
+behind, which retries while Notify is slow or down. A failed email never undoes the change that
+caused it.
 
-- **One job per event,** with its type named `<resource>.<event>`, such as `submission.status-email`.
-  Its dedupe key is `<type>:<event id>`, so a retried request queues nothing new. After the commit,
-  `nudgeJobs` wakes the job's pool, so the email goes out within seconds.
-- **Params hold ids and choices, never content.** A status email's params are
-  `{ statusChangeId, attachComment }`. The handler reads the recipients and the comment when it
-  runs, so addresses and comments stay out of job rows and their backups.
-- **The handler checks the event still applies.** A status email ends cancelled when the submission's
-  status has moved on since the change, so a late retry or a re-run never sends an out-of-date email.
+| event                       | recorded by                                          | its reactions                                                                                                                          |
+| --------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `submission.submitted`      | a submit (`submissionService`)                       | the post-submission actions the form has on, such as "Email a notice" (`features/post-submission`)                                     |
+| `submission.status-changed` | a review status change (`updateStatus`, `reviseOwn`) | the entries in `STATUS_REACTIONS` that the change calls for (`features/submission-review/statusReactions.ts`): today, the status email |
+
+- **One event job per event,** with its type named `<resource>.<event>`. Its dedupe key is
+  `<type>:<event id>`, so a retried request records nothing new. After the commit, `nudgeJobs` wakes
+  the pool, so the reactions run within seconds. Dev-data seeding records no events.
+- **Reactions are recorded with the event.** Which ones are available here, such as whether
+  notifications are on, is checked before the transaction. Which ones the event calls for is
+  decided inside it, and the event's `params.actions` records them, so later settings changes don't
+  alter them. The Jobs tabs show them as "Actions recorded". A new reaction to an existing event is
+  a new entry in that event's list; the code that records the event does not change.
+- **The fan-out queues the reactions.** In one transaction it marks the event's children queued and
+  inserts one job per recorded reaction, with dedupe key `<reaction type>:<event id>`, the event as
+  parent and the event's creator as its own. Once the children are queued, the event can't be run
+  again; their jobs can.
+- **Params hold ids and choices, never content.** A status-changed event's params are
+  `{ statusChangeId, actions }`, and its status email's are `{ statusChangeId, attachComment }`.
+  The reaction reads the recipients and the comment when it runs, so addresses and comments stay out
+  of job rows and their backups.
+- **The reaction checks the event still applies.** A status email ends cancelled when the
+  submission's status has moved on since the change, so a late retry or a re-run never sends an
+  out-of-date email.
 - **Retry or stop:**
 
   | the job                       | when                                                                                                                                                                 |
@@ -181,12 +199,12 @@ slow or down. A failed email never undoes the change that caused it.
 
 ## Emails today
 
-| email                   | sent to                                              | link                                            | sent by                                                                                                                          |
-| ----------------------- | ---------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| New submission (notice) | the addresses a form's "Email a notice" action lists | the submission in the designer                  | the action's job, queued by the submit (`plugins/post-submission-email-addresses`), as the system user                           |
-| Assigned                | the reviewer the submission is assigned to           | the submission in the designer                  | a `submission.status-email` job, queued with the status change (`features/submission-review/statusEmailJob.ts`), as the reviewer |
-| Revision requested      | the submission's owner and active collaborators      | the submission's `submit` page in the forms app | a `submission.status-email` job, as the reviewer                                                                                 |
-| Review complete         | the submission's owner and active collaborators      | the submission in the forms app                 | a `submission.status-email` job, as the reviewer                                                                                 |
+| email                   | sent to                                              | link                                            | sent by                                                                                                                                              |
+| ----------------------- | ---------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New submission (notice) | the addresses a form's "Email a notice" action lists | the submission in the designer                  | the action's job, queued by the `submission.submitted` fan-out (`plugins/post-submission-email-addresses`), as the system user                       |
+| Assigned                | the reviewer the submission is assigned to           | the submission in the designer                  | a `submission.status-email` job, queued by the `submission.status-changed` fan-out (`features/submission-review/statusEmailJob.ts`), as the reviewer |
+| Revision requested      | the submission's owner and active collaborators      | the submission's `submit` page in the forms app | a `submission.status-email` job, as the reviewer; none when a submitter sends their own submission back                                              |
+| Review complete         | the submission's owner and active collaborators      | the submission in the forms app                 | a `submission.status-email` job, as the reviewer                                                                                                     |
 
 ## Adding an email
 
@@ -204,10 +222,18 @@ slow or down. A failed email never undoes the change that caused it.
    `TYPE_NAMES` in `backend/src/core/services/jobViewService.ts` for the admin filter, and the
    constant and `jobTypeLabel` in `frontend/src/features/jobs/jobs.ts` with `jobs.types` in
    `en.json` and `fr.json`. Add it to `submissionJobTypes()` if it belongs to a submission.
-7. Queue it in the transaction that saves the event, with an enqueue function in
-   `backend/src/core/jobs/enqueue.ts`, and call `nudgeJobs` after the commit.
-8. Test it: the full English body, a French subject and body, the handler's recipients, cancel
-   reasons and attribution, and that the event queues the job once. Unit tests use no real
-   database.
+7. Hang it off its event as a reaction. For an existing event, add an entry to the event's list,
+   such as `STATUS_REACTIONS`, with its job spec, whether it can run here, and the rule that decides
+   which events call for it and the options to record. For a new kind of event, add the event the
+   way `submission.submitted` and `submission.status-changed` are built:
+   - a `JobType` code and a spec
+   - an enqueue function in `backend/src/core/jobs/enqueue.ts`, run in the transaction that saves
+     the event, which records the reactions
+   - `nudgeJobs` after the commit
+   - a fan-out registered in the catalog
+   - its names in the Jobs tabs, and the fan-out re-run rule in `jobViewService.ts`
+8. Test it: the full English body, a French subject and body, the reaction's rule, the handler's
+   recipients, cancel reasons and attribution, and that the event records the reaction once. Unit
+   tests use no real database.
 9. Send it to a safelisted mailbox through Notify test and look at it before it merges. Get the
    French reviewed.
