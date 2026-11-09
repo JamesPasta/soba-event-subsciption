@@ -68,6 +68,8 @@ const FAN_OUT_TYPES: ReadonlySet<string> = new Set([
   JobType.submission_status_changed,
 ]);
 
+const isFanOut = (type: string): boolean => FAN_OUT_TYPES.has(type);
+
 /**
  * Why a job may not run again, or null when it may. A fan-out that queued its actions would queue
  * new action jobs once retention freed their dedupe keys, and those would have handled nobody yet,
@@ -82,7 +84,7 @@ export const rerunRefusal = (facts: RerunFacts): string | null => {
     return 'Only a dead or cancelled job can be run again';
   }
   if (!facts.registered) return 'This environment does not run jobs of this type';
-  if (FAN_OUT_TYPES.has(facts.type) && (facts.childCount > 0 || facts.childrenQueuedAt !== null)) {
+  if (isFanOut(facts.type) && (facts.childCount > 0 || facts.childrenQueuedAt !== null)) {
     return 'Its actions were queued already; run their jobs again instead';
   }
   const finishedMs = facts.finishedAt ? facts.now.getTime() - facts.finishedAt.getTime() : 0;
@@ -134,6 +136,21 @@ const addressesOf = (params: Record<string, unknown>): string[] | null => {
   const to = optionsOf(params)?.to;
   if (!Array.isArray(to) || !to.every((address) => typeof address === 'string')) return null;
   return [...new Set(to as string[])];
+};
+
+/**
+ * Where a job's emails stand. A job whose options list its addresses is counted against that list.
+ * One that reads its recipients when it runs, such as a status email, is counted against the
+ * addresses it has tried so far. Null when there is nothing to count.
+ */
+export const emailCountsOf = (
+  params: Record<string, unknown>,
+  sends: readonly JobNotificationSend[],
+): JobEmailCounts | null => {
+  const listed = addressesOf(params);
+  if (listed) return countEmails(listed, sends);
+  if (sends.length === 0) return null;
+  return countEmails([...new Set(sends.flatMap((send) => send.recipients.to))], sends);
 };
 
 const recordedActionsOf = (params: Record<string, unknown>): string[] =>
@@ -215,18 +232,17 @@ export interface LoadedJob {
 const loadJob = async (scope: JobScope, id: string): Promise<LoadedJob> => {
   const row = await getJob(scope, id);
   if (!row) throw new NotFoundError(NOT_FOUND);
-  const addresses = addressesOf(row.params);
   const [parent, children, sends, outputs] = await Promise.all([
     row.parentJobId ? getJobSummary(scope, row.parentJobId) : Promise.resolve(null),
     listChildJobs(scope, row.id),
-    addresses ? listJobNotificationSends(row.id) : Promise.resolve(null),
+    listJobNotificationSends(row.id),
     listJobOutputs([row.id]),
   ]);
   return {
     row,
     parent,
     children,
-    emailCounts: addresses && sends ? countEmails(addresses, sends) : null,
+    emailCounts: emailCountsOf(row.params, sends),
     output: outputs.get(row.id) ?? null,
   };
 };
@@ -311,8 +327,7 @@ export const rerunJob = async (scope: JobScope, id: string, actorId: string): Pr
   if (!row) throw new NotFoundError(NOT_FOUND);
   const definition = getJobRegistry().get(row.type);
   const settings = getJobSettings();
-  const children =
-    row.type === JobType.submission_submitted ? await listChildJobs(scope, row.id) : [];
+  const children = isFanOut(row.type) ? await listChildJobs(scope, row.id) : [];
   const refusal = rerunRefusal({
     status: row.status,
     type: row.type,

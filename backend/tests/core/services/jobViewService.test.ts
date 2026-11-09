@@ -4,6 +4,7 @@ import { LEASE_EXPIRED } from '../../../src/core/db/repos/jobRepo';
 import type { JobNotificationSend } from '../../../src/core/db/repos/notificationAuditRepo';
 import {
   countEmails,
+  emailCountsOf,
   redactAddresses,
   rerunRefusal,
   toJobDetail,
@@ -133,6 +134,40 @@ describe('countEmails', () => {
       refused: 0,
       pending: 1,
     });
+  });
+});
+
+describe('emailCountsOf', () => {
+  const send = (
+    to: string,
+    outcome: JobNotificationSend['outcome'],
+    httpStatus: number | null = null,
+  ): JobNotificationSend => ({ outcome, httpStatus, recipients: { to: [to] }, createdAt: now });
+  const sends = [
+    send('a@example.com', 'accepted'),
+    send('b@example.com', 'error', 400),
+    send('c@example.com', 'error', 503),
+  ];
+
+  it('counts a job whose options list its addresses against that list', () => {
+    const params = { options: { to: ['a@example.com', 'd@example.com'] } };
+    expect(emailCountsOf(params, sends)).toEqual({
+      addresses: 2,
+      sent: 1,
+      refused: 0,
+      pending: 1,
+    });
+  });
+
+  it('counts a job that reads its recipients when it runs against the addresses it tried', () => {
+    const params = { statusChangeId: 'change-1', options: { attachComment: false } };
+    expect(emailCountsOf(params, sends)).toEqual({
+      addresses: 3,
+      sent: 1,
+      refused: 1,
+      pending: 1,
+    });
+    expect(emailCountsOf(params, [])).toBeNull();
   });
 });
 
