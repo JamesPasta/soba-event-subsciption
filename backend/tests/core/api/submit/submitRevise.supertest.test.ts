@@ -11,6 +11,16 @@ jest.mock('../../../../src/core/db/repos/submissionReviewRepo', () => ({
   ...jest.requireActual('../../../../src/core/db/repos/submissionReviewRepo'),
   changeStatus: (...args: unknown[]) => mockChangeStatus(...args),
 }));
+// Which reactions exist reads feature flags; the revise only passes them to its event.
+const REACTIONS = ['reactions-available-here'];
+jest.mock('../../../../src/features/submission-review/statusReactions', () => ({
+  availableStatusReactions: () => Promise.resolve(REACTIONS),
+}));
+const mockEnqueueStatusChanged = jest.fn();
+jest.mock('../../../../src/core/jobs/enqueue', () => ({
+  ...jest.requireActual('../../../../src/core/jobs/enqueue'),
+  enqueueStatusChangedJob: (...args: unknown[]) => mockEnqueueStatusChanged(...args),
+}));
 
 import express from 'express';
 import request from 'supertest';
@@ -81,6 +91,32 @@ it('sends the owner’s submission back to revise, from the status it read', asy
       actorId: 'u1',
       onlyFrom: SubmissionReviewStatuses.submitted,
     }),
+  );
+});
+
+it('records the revise as a status-changed event in its transaction, with no comment for an email', async () => {
+  mockChangeStatus.mockImplementation(
+    async (input: { onChanged?: (tx: unknown) => Promise<void> }) => {
+      await input.onChanged?.('tx');
+      return 'changed';
+    },
+  );
+
+  const res = await request(buildApp('signedIn')).post(REVISE_PATH).send(BODY);
+
+  expect(res.status).toBe(200);
+  expect(mockEnqueueStatusChanged).toHaveBeenCalledWith(
+    'tx',
+    expect.objectContaining({
+      id: BODY.id,
+      formId: 'f1',
+      submissionId: 's1',
+      status: SubmissionReviewStatuses.revising,
+      assigneeId: null,
+      actorId: 'u1',
+      attachComment: false,
+    }),
+    REACTIONS,
   );
 });
 
