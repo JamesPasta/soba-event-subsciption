@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import reducer, {
   addNotification,
   removeNotification,
@@ -32,19 +32,19 @@ describe('notificationSlice', () => {
       expect(state.notifications).toHaveLength(3);
     });
 
-    it('logs to console.error when consoleError is provided', () => {
-      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const err = new Error('something failed');
-      reducer(emptyState, addNotification({ text: 'Oops', consoleError: err }));
-      expect(spy).toHaveBeenCalledWith('Oops', err);
-      spy.mockRestore();
+    it('mints the id with the action, so replaying an action stores the same id', () => {
+      const action = addNotification({ text: 'Once' });
+      expect(reducer(emptyState, action)).toEqual(reducer(emptyState, action));
     });
 
-    it('does not log to console.error when consoleError is absent', () => {
-      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      reducer(emptyState, addNotification({ text: 'Fine' }));
-      expect(spy).not.toHaveBeenCalled();
-      spy.mockRestore();
+    it('stores only the id, text and type', () => {
+      const payload = { text: 'Oops', type: 'error', consoleError: new Error('failed') } as const;
+      const state = reducer(emptyState, addNotification(payload));
+      expect(state.notifications[0]).toStrictEqual({
+        id: expect.any(String),
+        text: 'Oops',
+        type: 'error',
+      });
     });
 
     it('supports all notification types', () => {

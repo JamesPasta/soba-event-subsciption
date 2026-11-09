@@ -109,6 +109,11 @@ export function joinUrl(base: string, segment: string): string {
   return `${stripTrailingSlashes(base)}/${segment.replace(/^\/+/, '')}`;
 }
 
+export function withoutQuery(url: string): string {
+  const index = url.indexOf('?');
+  return index < 0 ? url : url.slice(0, index);
+}
+
 /**
  * Minimal fetch wrapper for outbound service calls: joins the base URL, injects a bearer
  * token when a provider is supplied, and turns non-2xx responses into HttpClientError.
@@ -150,9 +155,42 @@ export class HttpClient {
       },
       deadline,
     );
+    return this.readBinary(path, res, deadline);
+  }
+
+  /** PUT a JSON body and return the raw response bytes. */
+  async putJsonForBinary(
+    path: string,
+    body: unknown,
+    deadline: number = this.deadline(),
+  ): Promise<BinaryResponse> {
+    const res = await this.send(
+      path,
+      {
+        method: 'PUT',
+        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json' },
+      },
+      deadline,
+    );
+    return this.readBinary(path, res, deadline);
+  }
+
+  /** GET a path and return the raw response bytes. */
+  async getForBinary(path: string, deadline: number = this.deadline()): Promise<BinaryResponse> {
+    const res = await this.send(path, { method: 'GET' }, deadline);
+    return this.readBinary(path, res, deadline);
+  }
+
+  /** GET a path, resolving on 2xx and throwing HttpClientError on non-2xx (e.g. health/liveness). */
+  async get(path: string, deadline: number = this.deadline()): Promise<void> {
+    await this.send(path, { method: 'GET' }, deadline);
+  }
+
+  private async readBinary(path: string, res: Response, deadline: number): Promise<BinaryResponse> {
     // The fetch signal expires at the same deadline, so a stalled body aborts with it.
     const data = await this.withTimeout(
-      this.buildUrl(path),
+      withoutQuery(this.buildUrl(path)),
       Math.max(0, deadline - Date.now()),
       () => res.arrayBuffer(),
     );
@@ -160,11 +198,6 @@ export class HttpClient {
       data: Buffer.from(data),
       contentType: res.headers.get('content-type') ?? undefined,
     };
-  }
-
-  /** GET a path, resolving on 2xx and throwing HttpClientError on non-2xx (e.g. health/liveness). */
-  async get(path: string, deadline: number = this.deadline()): Promise<void> {
-    await this.send(path, { method: 'GET' }, deadline);
   }
 
   private buildUrl(path: string): string {
@@ -208,19 +241,24 @@ export class HttpClient {
 
   private async send(path: string, init: RequestInit, deadline: number): Promise<Response> {
     const url = this.buildUrl(path);
+    // Query strings can carry search terms that identify people; logs and errors get the path.
+    const logUrl = withoutQuery(url);
     const headers = await this.buildHeaders(
       deadline,
       init.headers as Record<string, string> | undefined,
     );
-    log.debug({ method: init.method, url, timeoutMs: this.timeoutMs }, 'outbound http request');
+    log.debug(
+      { method: init.method, url: logUrl, timeoutMs: this.timeoutMs },
+      'outbound http request',
+    );
 
-    const armedMs = this.remainingMs(deadline, url);
-    const res = await this.withTimeout(url, armedMs, () =>
+    const armedMs = this.remainingMs(deadline, logUrl);
+    const res = await this.withTimeout(logUrl, armedMs, () =>
       fetch(url, { ...init, headers, signal: AbortSignal.timeout(armedMs) }),
     );
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new HttpClientError(res.status, res.statusText, text, url);
+      throw new HttpClientError(res.status, res.statusText, text, logUrl);
     }
     return res;
   }

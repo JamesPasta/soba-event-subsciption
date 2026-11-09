@@ -44,9 +44,9 @@ For each pull request deployment, SOBA adds:
 
 - `soba-pr-<N>-backend`
 - `soba-pr-<N>-frontend`
-- `soba-pr-<N>-formio`
-- `soba-pr-<N>-mongodb`
 - `soba-pr-<N>-temporal-worker`
+
+PR deployments use the dev release's Form.io (`soba-dev-formio`) and its MongoDB.
 
 Each PR also gets a dedicated Temporal namespace inside the shared server:
 
@@ -85,7 +85,7 @@ Why this was done:
 
 What the dedicated worker image does:
 
-- Uses `node:lts-slim`
+- Uses `node:24-slim`
 - Installs backend dependencies
 - Builds the backend TypeScript output
 - Starts `backend/dist/temporal-worker.js`
@@ -122,7 +122,7 @@ The SOBA Helm chart under `deployments/helm/soba` now includes:
   - `TEMPORAL_TASK_QUEUE`
 - a `templates/temporal/deployment-worker.yaml` that deploys the SOBA worker as its own Deployment, with:
   - secret wiring that matches the backend (DB via `existingSecretName`/`secretKeyRef`, Form.io gated behind Vault)
-  - HTTP health endpoints (`/readyz`, `/healthz`) on each worker's `healthPort` (for example `9090` and `9091`) backed by readiness and liveness probes
+  - HTTP health endpoints (`/readyz`, `/healthz`) on each worker's `healthPort` (default `9090`) backed by readiness and liveness probes
 
 Current enablement pattern:
 
@@ -207,7 +207,7 @@ The current PR flow is:
    - `temporal.namespace = soba-pr-<N>`
    - `temporalWorkersImage.repository = ghcr.io/<repo>/temporal-worker`
    - `temporalWorkersImage.tag = sha-<short_sha>`
-8. Wait for `backend`, `frontend`, `formio`, `mongodb`, and `temporal-worker`
+8. Wait for `backend`, `frontend`, and `temporal-worker`
 9. Run Playwright tests
 
 This is the most complete and correct Temporal deployment path in the repository today.

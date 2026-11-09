@@ -22,7 +22,7 @@
     {
       "label": "Start MinIO Container",
       "type": "shell",
-      "command": "docker rm -f soba-minio || true && docker run -d --name soba-minio -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadminpassword minio/minio server /data --console-address ':9001' && echo 'Waiting for MinIO to initialize...' && sleep 3 && docker exec soba-minio mc alias set myminio http://127.0.0.1:9000 minioadmin minioadminpassword && docker exec soba-minio mc mb --ignore-existing myminio/soba-bucket",
+      "command": "docker rm -f soba-minio || true && docker run -d --name soba-minio -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadminpassword pgsty/minio:latest server /data --console-address ':9001' && echo 'Waiting for MinIO to initialize...' && sleep 3 && docker exec soba-minio mc alias set myminio http://127.0.0.1:9000 minioadmin minioadminpassword && docker exec soba-minio mc mb --ignore-existing myminio/soba-bucket",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",

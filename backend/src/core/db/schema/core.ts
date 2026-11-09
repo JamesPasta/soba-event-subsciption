@@ -82,6 +82,8 @@ export const userIdentities = sobaSchema.table(
     subject: text('subject').notNull(),
     externalUserId: text('external_user_id'),
     idpAttributes: jsonb('idp_attributes'),
+    /** Null until the person signs in with this identity; set when sign-in creates it. */
+    firstSignInAt: timestamp('first_sign_in_at', { withTimezone: true }),
     ...auditColumns(),
   },
   (table) => ({
@@ -93,14 +95,20 @@ export const userIdentities = sobaSchema.table(
       table.userId,
       table.identityProviderCode,
     ),
+    // Sign-in and user search match subjects without case.
+    providerLowerSubjectIdx: index('user_identity_provider_lower_subject_idx').on(
+      table.identityProviderCode,
+      sql`lower(${table.subject})`,
+    ),
     userIdx: index('user_identity_user_idx').on(table.userId),
   }),
 );
 
 /**
  * SOBA platform admins (super powers, cross-workspace tasks).
- * One row per user; source is either 'idp' (refreshed on login from IdP claims) or 'direct' (manually added).
- * IdP-sourced rows are refreshed on each login: if the IdP no longer reports admin, the row is removed.
+ * One row per user; source is either 'idp' (from IdP claims) or 'direct' (manually added).
+ * IdP-sourced rows are checked against the claim on each request and written only when it differs: if
+ * the IdP no longer reports admin, the row is removed.
  */
 export const sobaAdmins = sobaSchema.table(
   'soba_admin',
@@ -108,11 +116,11 @@ export const sobaAdmins = sobaSchema.table(
     userId: uuid('user_id')
       .primaryKey()
       .references(() => appUsers.id),
-    /** 'idp' = granted from IdP on login (e.g. role: soba_admin); 'direct' = manually added. */
+    /** 'idp' = granted from IdP claims (e.g. role: soba_admin); 'direct' = manually added. */
     source: text('source').notNull(),
-    /** When source='idp', which IdP plugin granted admin (plugin code, e.g. bcgov-sso); used for refresh/revoke on login. Not an FK so plugin code is not required in identity_provider (token provider may be azureidir/idir etc.). */
+    /** When source='idp', which IdP plugin granted admin (plugin code, e.g. bcgov-sso); used to repoint or revoke on each request. Not an FK so plugin code is not required in identity_provider (token provider may be azureidir/idir etc.). */
     identityProviderCode: text('identity_provider_code'),
-    /** When source='idp', last time we synced this row from IdP. */
+    /** When source='idp', when the IdP last granted or moved this row. */
     syncedAt: timestamp('synced_at', { withTimezone: true }),
     ...auditColumns(),
   },
@@ -120,6 +128,9 @@ export const sobaAdmins = sobaSchema.table(
     idpIdx: index('soba_admin_identity_provider_idx').on(table.identityProviderCode),
   }),
 );
+
+/** Constraint name a workspace-name unique violation is matched on. */
+export const WORKSPACE_KIND_ORG_NAME_UNIQUE = 'workspace_kind_org_name_uq';
 
 export const workspaces = sobaSchema.table(
   'workspace',
@@ -134,9 +145,14 @@ export const workspaces = sobaSchema.table(
     ...auditColumns(),
   },
   (table) => ({
-    // Names are unique per kind (e.g. two 'team' workspaces can't share a name). Not status-scoped
-    // like the group/form name indexes because workspaces are never soft-deleted.
-    kindNameUnique: uniqueIndex('workspace_kind_name_uq').on(table.kind, table.name),
+    // Names are unique per kind and organization, case-insensitively (two ministries can each have
+    // a 'Health' workspace, but not twice within one). Not status-scoped like the group/form name
+    // indexes because workspaces are never soft-deleted.
+    kindOrgNameUnique: uniqueIndex(WORKSPACE_KIND_ORG_NAME_UNIQUE).on(
+      table.kind,
+      table.org,
+      sql`lower(${table.name})`,
+    ),
     parentIdx: index('workspace_parent_idx').on(table.parentWorkspaceId),
   }),
 );

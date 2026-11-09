@@ -1,4 +1,6 @@
-import { test as base, expect } from "@playwright/test";
+import { test as base } from './test';
+
+export { expect } from '@playwright/test';
 
 type MyFixtures = {
   title: string;
@@ -10,5 +12,3 @@ export const test = base.extend<MyFixtures>({
     await use(value);
   },
 });
-
-export { expect };

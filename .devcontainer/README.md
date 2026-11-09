@@ -9,7 +9,7 @@ Open the repo in VS Code and **Reopen in Container**.
 - `docker-compose.devcontainer.yml` — the workspace container (`app`) the dev container runs in.
 - `docker-compose.yml` — the sidecars. Started separately, reached over `host.docker.internal`.
 - `.env` — optional, gitignored, per-developer resource caps (see below).
-- `post-create.sh` / `post-start.sh` — pnpm setup and env-file sync.
+- `post-create.sh` / `post-start.sh` — pnpm setup and env-file sync; `post-start.sh` also builds the shared lib (`lib/dist`).
 
 ## First run
 
@@ -44,6 +44,33 @@ Reach the sidecars over `host.docker.internal` — the `app` service sets `extra
 | Postgres | `postgresql://postgres:postgres@host.docker.internal:5432/postgres` |
 | MongoDB  | `mongodb://host.docker.internal:27017`                              |
 | Form.io  | `http://host.docker.internal:3001`                                  |
+
+## Postgres major version
+
+The Postgres sidecar runs 18 on the `postgres18_data` volume; 17 used `postgres_data`, and nothing here removes it. The first `pnpm dev:services:up` after the switch starts 18 empty, and Temporal recreates its own databases. Either start fresh with `pnpm db:init` (and `pnpm db:dev-data` if you use it), or carry the `soba` database across. The sidecars run on the devcontainer's own Docker, which may not survive a rebuild, so take the dump before rebuilding.
+
+Run these from the repo root, where you run the sidecars' `docker compose`; `*.dump` is gitignored. While the 17 sidecar is still running, dump `soba` from it:
+
+```bash
+docker exec soba-dev-services-postgres-1 pg_dump -U postgres -Fc soba > soba-17.dump
+```
+
+If that sidecar is gone but `docker volume ls` still lists `soba-dev-services_postgres_data`, start a throwaway 17 server on the volume, dump through it, and stop it:
+
+```bash
+docker run --rm -d --name soba-pg17 -v soba-dev-services_postgres_data:/var/lib/postgresql/data postgres:17-alpine
+docker exec soba-pg17 sh -c 'until pg_isready -qU postgres; do sleep 1; done; pg_dump -U postgres -Fc soba' > soba-17.dump
+docker stop soba-pg17
+```
+
+Then start 18 with `pnpm dev:services:up`, restore the dump, and let `pnpm db:init` apply any migrations and seed data newer than it:
+
+```bash
+docker exec -i soba-dev-services-postgres-1 pg_restore -U postgres -d postgres --create --exit-on-error < soba-17.dump
+pnpm db:init
+```
+
+The restore stops if 18 already has a `soba` database, for example after `pnpm dev:db:up`. Drop it first with `docker exec soba-dev-services-postgres-1 dropdb -U postgres --force soba`. Once the app works on 18, delete the dump and the old volume (`docker volume rm soba-dev-services_postgres_data`).
 
 ## Per-developer resource limits
 

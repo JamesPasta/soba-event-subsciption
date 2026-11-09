@@ -9,6 +9,9 @@
 # Dev data owner file: a developer's real app_user + user_identity (see backend/src/features/dev-data)
 .devdata-owner
 
+# Local database dumps, such as one taken to move the Postgres sidecar to a new major version
+*.dump
+
 # Personal shell config (copy from .devcontainer/bashrc.example to ~/.bashrc in the container)
 .bashrc
 .bashrc.local
@@ -25,3 +28,11 @@ integration/test-results/
 integration/playwright-report/
 integration/.playwright/
 integration/.cache/
+
+# Subcharts fetched by `helm dependency build`; Chart.lock pins the versions
+deployments/helm/*/charts/
+
+lib/dist
+
+# JetBrains IDE settings
+.idea/

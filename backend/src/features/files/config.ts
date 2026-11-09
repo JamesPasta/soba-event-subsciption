@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { FilesConfigMetaResponse } from '@soba/lib';
 import { env } from '../../core/config/env';
 
 /**
@@ -29,15 +30,11 @@ export const BLOCKED_FILE_EXTENSIONS: readonly string[] = [
   '.rb',
 ];
 
-export interface FilesConfig {
-  /** Max upload size in MB (mirrors the multer limit; from FILES_MAX_FILE_SIZE_MB). */
-  maxFileSizeMb: number;
-  /** Extensions the client should block regardless of the form's fileTypes. */
-  blockedExtensions: string[];
-}
-
-/** Client-facing files config: the upload size limit and the always-blocked extensions. */
-export function getFilesConfig(): FilesConfig {
+/**
+ * Client-facing files config: the upload size limit (mirrors the multer limit, from
+ * FILES_MAX_FILE_SIZE_MB) and the extensions blocked regardless of a form's fileTypes.
+ */
+export function getFilesConfig(): FilesConfigMetaResponse {
   return {
     maxFileSizeMb: env.getFilesMaxFileSizeMb(),
     blockedExtensions: [...BLOCKED_FILE_EXTENSIONS],

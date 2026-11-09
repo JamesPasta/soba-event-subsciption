@@ -5,7 +5,14 @@ import json from '@eslint/json';
 import css from '@eslint/css';
 import pluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import sonarjs from 'eslint-plugin-sonarjs';
+import unicorn from 'eslint-plugin-unicorn';
 import { defineConfig, globalIgnores } from 'eslint/config';
+import { sonarParityRules, sonarParityTestRules } from '../eslint.sonar-parity.mjs';
+
+const TEST_FILES = ['tests/**/*.test.ts'];
+const typeInformation = {
+  parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+};
 
 export default defineConfig([
   {
@@ -25,7 +32,15 @@ export default defineConfig([
   },
   { files: ['**/*.css'], plugins: { css }, language: 'css/css', extends: ['css/recommended'] },
   {
-    // Minimal SonarCloud parity for the smells that have bitten us, at Sonar Way thresholds.
+    files: ['src/**/*.ts', 'tests/**/*.ts', 'temporal-worker.ts'],
+    ignores: TEST_FILES,
+    plugins: { sonarjs, unicorn },
+    languageOptions: typeInformation,
+    rules: { ...sonarjs.configs.recommended.rules, ...sonarParityRules },
+  },
+  { files: TEST_FILES, languageOptions: typeInformation, rules: sonarParityTestRules },
+  {
+    // Sonar Way thresholds; after the recommended set so these settings win.
     files: ['**/*.{ts,mts,cts}'],
     plugins: { sonarjs },
     rules: {

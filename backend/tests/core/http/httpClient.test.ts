@@ -7,6 +7,7 @@ import {
   defaultTimeoutMs,
   joinUrl,
   routeTimeoutMs,
+  withoutQuery,
 } from '../../../src/core/http/httpClient';
 
 const binaryResponse = (body: number[], contentType = 'application/pdf') =>
@@ -39,6 +40,19 @@ describe('HttpClient', () => {
     expect(init.body).toBe(JSON.stringify({ a: 1 }));
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+
+  it('GETs a path and returns the raw bytes', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(binaryResponse([4, 5], 'application/json'));
+    global.fetch = fetchMock;
+
+    const res = await new HttpClient({ baseUrl: 'http://svc.test/api' }).getForBinary('items');
+
+    expect(res).toEqual({ data: Buffer.from([4, 5]), contentType: 'application/json' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://svc.test/api/items');
+    expect(init.method).toBe('GET');
+    expect(init.body).toBeUndefined();
   });
 
   it('adds a single slash when the path has none', async () => {
@@ -93,6 +107,30 @@ describe('HttpClient', () => {
 
     expect(err).toBeInstanceOf(HttpClientError);
     expect(err).toMatchObject({ status: 422, body: 'bad template', url: 'http://svc.test/x' });
+  });
+
+  it('sends the query string but keeps it off the error url', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      text: () => Promise.resolve(''),
+    } as unknown as Response);
+    global.fetch = fetchMock;
+
+    const client = new HttpClient({ baseUrl: 'http://svc.test' });
+    const err = await client.getForBinary('/users?email=alice%40example.com').catch((e) => e);
+
+    expect(fetchMock.mock.calls[0][0]).toBe('http://svc.test/users?email=alice%40example.com');
+    expect(err).toBeInstanceOf(HttpClientError);
+    expect(err.url).toBe('http://svc.test/users');
+  });
+});
+
+describe('withoutQuery', () => {
+  it('drops the query string and leaves a URL without one alone', () => {
+    expect(withoutQuery('http://svc.test/users?email=a&lastName=b')).toBe('http://svc.test/users');
+    expect(withoutQuery('http://svc.test/users')).toBe('http://svc.test/users');
   });
 });
 

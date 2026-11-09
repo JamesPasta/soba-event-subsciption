@@ -14,7 +14,8 @@ export interface IdpMapPayloadResult {
   idpAttributes: IdpAttributes;
   /**
    * If true, the IdP indicates this user is a SOBA platform admin (e.g. role: soba_admin).
-   * Used to refresh soba_admin table on login. Omit or false when IdP does not convey admin.
+   * Applied to the soba_admin table on each request. Omit when the IdP does not convey admin; false
+   * revokes this IdP's grant.
    */
   sobaAdmin?: boolean;
 }
@@ -33,35 +34,8 @@ export interface IdpPluginDefinition {
   createClaimMapper(config: PluginConfigReader): IdpClaimMapper;
 }
 
-/** Shared token extraction for use by plugins or composite auth. */
+/** The bearer token from the Authorization header, or null. No other transport is read. */
 export function getToken(req: Request): string | null {
-  try {
-    if (!req || !req.headers) return null;
-
-    const authHeader = Array.isArray(req.headers.authorization)
-      ? req.headers.authorization[0]
-      : req.headers.authorization;
-    if (authHeader && typeof authHeader === 'string') {
-      const parts = authHeader.split(' ');
-      if (parts.length === 2 && parts[0].toLowerCase() === 'bearer') {
-        return parts[1];
-      }
-    }
-
-    const tokenHeader =
-      (req.get && req.get('X-Jwt-Token')) ||
-      (req.headers['x-jwt-token'] as string) ||
-      (req.headers['X-Jwt-Token'] as string);
-    if (tokenHeader && typeof tokenHeader === 'string') {
-      return tokenHeader;
-    }
-
-    const q = req.query as Record<string, string | undefined>;
-    if (q?.token && typeof q.token === 'string') return q.token;
-    if (q?.['x-jwt-token'] && typeof q['x-jwt-token'] === 'string') return q['x-jwt-token'];
-
-    return null;
-  } catch {
-    return null;
-  }
+  const parts = req.headers.authorization?.split(' ') ?? [];
+  return parts.length === 2 && parts[0].toLowerCase() === 'bearer' && parts[1] ? parts[1] : null;
 }

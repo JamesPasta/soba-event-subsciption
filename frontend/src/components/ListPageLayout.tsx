@@ -12,6 +12,11 @@ export function ListPageToolbar({ children, align = 'between' }: Readonly<ListPa
   return <div className={align === 'end' ? styles.toolbarEnd : styles.toolbar}>{children}</div>;
 }
 
+/** A list's filters, between its toolbar and its table. */
+export function ListPageFilters({ children }: Readonly<{ children: ReactNode }>) {
+  return <div className={styles.filters}>{children}</div>;
+}
+
 export function ListPageAuthGate({ children }: Readonly<{ children: ReactNode }>) {
   return <div className={styles.authGate}>{children}</div>;
 }

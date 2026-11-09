@@ -25,6 +25,7 @@ describe('useListQuery', () => {
     sessionStorage.clear();
     search.value = '';
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it('starts on the first page with the list default sort', () => {
@@ -88,6 +89,16 @@ describe('useListQuery', () => {
     expect(written.get('forms.page')).toBe('3');
     expect(written.get('forms.workspace')).toBe('ws1');
     expect(written.get('forms.sort')).toBe('name:asc');
+  });
+
+  it('keeps the base path in the URL it writes', () => {
+    vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/chefs');
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+    const { result } = renderHook(() => useListQuery(FORMS_LIST_QUERY));
+
+    act(() => result.current.setPage(2));
+
+    expect(replaceState.mock.calls.at(-1)?.[2]).toBe('/chefs/en/forms?forms.page=2');
   });
 
   // Typing is not a search. Every term reaches the server only because the user asked for it.

@@ -1,6 +1,7 @@
 import { PluginConfigReader } from '../../core/config/pluginConfig';
 import {
   DocumentGenerationAdapter,
+  DocumentRenderRequest,
   DocumentRenderResult,
 } from '../../core/integrations/document-generation/DocumentGenerationAdapter';
 import { HttpClient, joinUrl } from '../../core/http/httpClient';
@@ -24,7 +25,7 @@ export class CdogsV3Adapter implements DocumentGenerationAdapter {
     });
   }
 
-  render(payload: Record<string, unknown>): Promise<DocumentRenderResult> {
-    return postBinaryOrThrow(this.http, RENDER_PATH, toCdogsRenderBody(payload), SERVICE);
+  render(request: DocumentRenderRequest): Promise<DocumentRenderResult> {
+    return postBinaryOrThrow(this.http, RENDER_PATH, toCdogsRenderBody(request), SERVICE);
   }
 }

@@ -1,13 +1,9 @@
+import type { FeatureAvailabilityResponse } from '@soba/lib';
 import { getSobaApiBaseUrl } from '@/src/shared/config/runtimeConfig';
 
 export interface FeatureScopeQuery {
   workspaceId?: string;
   formId?: string;
-}
-
-interface FeatureAvailabilityResponse {
-  code: string;
-  available: boolean;
 }
 
 /**
@@ -25,10 +21,13 @@ export async function fetchFeatureAvailability(
   if (scope.formId) params.set('formId', scope.formId);
 
   try {
-    const res = await fetch(`${getSobaApiBaseUrl()}/meta/feature-availability?${params.toString()}`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
+    const res = await fetch(
+      `${getSobaApiBaseUrl()}/meta/feature-availability?${params.toString()}`,
+      {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      },
+    );
     if (!res.ok) return false;
     const body = (await res.json()) as FeatureAvailabilityResponse;
     return body.available === true;

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 // use fs.promises.mkdir with recursive instead of fs-extra
 import type {
   StorageEngineAdapter,
@@ -9,6 +10,8 @@ import type {
   GetFileResult,
 } from '../../core/integrations/storage-engine/StorageEngineAdapter';
 import type { PluginConfigReader } from '../../core/config/pluginConfig';
+import { storedObjectName } from '../../core/integrations/storage-engine/storageKey';
+import { log } from '../../core/logging';
 
 function engineRefFor(relPath: string) {
   return `local:${relPath}`;
@@ -47,22 +50,19 @@ function createLocalStorageAdapter(config: PluginConfigReader): StorageEngineAda
 
     async uploadFile(input: UploadFileInput): Promise<UploadFileResult> {
       await ensureBase();
-      const subdir = input.workspaceId ? path.join(basePath, input.workspaceId) : basePath;
+      const subdir = path.join(basePath, input.prefix, input.workspaceId);
       await fs.promises.mkdir(subdir, { recursive: true });
-      const filename = `${Date.now()}-${input.workspaceId}-${path.basename(
-        input.filename || 'file',
-      )}`;
-      const dest = path.join(subdir, filename);
+      const dest = path.join(subdir, storedObjectName());
 
       if (input.buffer) {
         await fs.promises.writeFile(dest, input.buffer);
       } else if (input.stream) {
-        const out = fs.createWriteStream(dest);
-        await new Promise<void>((resolve, reject) => {
-          input.stream!.pipe(out);
-          out.on('finish', () => resolve());
-          out.on('error', (e) => reject(e));
-        });
+        try {
+          await pipeline(input.stream, fs.createWriteStream(dest));
+        } catch (err) {
+          await fs.promises.rm(dest, { force: true });
+          throw err;
+        }
       } else if (input.sourceUrl) {
         // sourceUrl ingestion is not implemented in this adapter.
         throw new Error('sourceUrl uploads are not supported by storage-local adapter');
@@ -104,8 +104,11 @@ function createLocalStorageAdapter(config: PluginConfigReader): StorageEngineAda
       if (!full) return;
       try {
         await fs.promises.unlink(full);
-      } catch {
-        // ignore
+      } catch (err) {
+        // Already gone is the outcome a delete wants. The error code only: the path holds the name.
+        const code = (err as { code?: unknown }).code;
+        if (code !== 'ENOENT')
+          log.warn({ plugin: 'storage-local', code }, 'Stored file not deleted');
       }
     },
   };

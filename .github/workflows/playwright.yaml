@@ -12,12 +12,26 @@ on:
         required: false
         type: string
     secrets:
-      Username:
+      keycloakUsername:
         required: true
-      Password:
+      keycloakPassword:
         required: true
       MFA_CODE:
         required: true
+  workflow_dispatch:
+    inputs:
+      DEP_ENV:
+        description: dev, test, or a PR number
+        required: true
+        default: dev
+        type: string
+      pr_branch:
+        description: Ref to take the tests from
+        required: true
+        default: develop
+        type: string
+
+permissions: {}
 
 jobs:
   playwright-run:
@@ -30,19 +44,19 @@ jobs:
           fetch-depth: 0
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
         working-directory: ./integration/playwright
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps
+        run: ./node_modules/.bin/playwright install --with-deps
         working-directory: ./integration/playwright
 
       - name: Run Playwright tests
-        run: npx playwright test
+        run: npm test
         working-directory: ./integration/playwright
         env:
-          KEYCLOAK_USERNAME: ${{ secrets.Username }}
-          KEYCLOAK_PASSWORD: ${{ secrets.Password }}
+          KEYCLOAK_USERNAME: ${{ secrets.keycloakUsername }}
+          KEYCLOAK_PASSWORD: ${{ secrets.keycloakPassword }}
           MFA_CODE: ${{ secrets.MFA_CODE }}
           DEP_ENV: ${{ inputs.DEP_ENV }}
           BASE_URL: ${{ inputs.BASE_URL }}

@@ -2,6 +2,7 @@
  * IdP plugin selection and auth middleware wiring.
  */
 import { Request, Response, NextFunction } from 'express';
+import { ApiErrorCodes } from '@soba/lib';
 import { authEnv } from '../config/authEnv';
 import { createPluginConfigReader } from '../config/pluginConfig';
 import type { IdpPluginDefinition, IdpClaimMapper } from './IdpPlugin';
@@ -69,6 +70,7 @@ export function createIdpAuthMiddleware(): (
         if (statusErr?.status === 401) return next(err);
         res.status(401).json({
           error: 'Unauthorized',
+          code: ApiErrorCodes.unauthenticated,
           message: 'Error occurred during authentication',
           statusCode: 401,
         });

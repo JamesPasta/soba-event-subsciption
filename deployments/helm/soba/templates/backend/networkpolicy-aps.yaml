@@ -1,0 +1,23 @@
+{{- if .Values.gatewayNetworkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "soba.fullname" . }}-aps
+  labels:
+    {{- include "soba.labels" (dict "root" . "component" "backend") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "soba.selectorLabels" (dict "root" . "component" "backend") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: {{ required "gatewayNetworkPolicy.namespaceName is required" .Values.gatewayNetworkPolicy.namespaceName | quote }}
+              environment: {{ required "gatewayNetworkPolicy.environment is required" .Values.gatewayNetworkPolicy.environment | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.backend.service.port }}
+{{- end }}

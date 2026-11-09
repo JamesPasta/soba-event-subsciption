@@ -13,6 +13,7 @@ on:
     paths:
       - "backend/**"
       - "frontend/**"
+      - "lib/**"
       - ".github/workflows/release-to-test.yaml"
       - ".github/workflows/build-images.yaml"
       - ".github/workflows/playwright.yaml"
@@ -104,22 +105,79 @@ jobs:
 
       - name: Deploy Crunchy
         id: crunchy
-        uses: bcgov/action-crunchy@7ee9c0bdec27f5251a8239373f51db1e01c7c4d9 # v2.1.0
+        uses: bcgov/actions-openshift/crunchy@46f2614322f7ba1a5ad88a7e4e1b98569c80dcf7 # v0.6.0
         with:
-          oc_namespace: ${{ secrets.OC_NAMESPACE }}
+          oc_server: ${{ vars.OC_SERVER }}
+          oc_namespace: ${{ vars.OC_NAMESPACE }}
           oc_token: ${{ secrets.OC_TOKEN }}
-          values_file: deployments/helm/action-crunchy/values.yml
-          release_name: pg-soba
-          ref: v2.0.0
+          values_file: deployments/helm/action-crunchy/values-test.yaml
+          release_name: pg-soba-test
 
-  deploy:
-    name: Deploy SOBA to Test
-    needs: [set-vars, build, deploy-crunchy]
+  deploy-mongodb:
+    name: Deploy MongoDB
+    needs: [set-vars]
     permissions:
       contents: read
     environment:
       name: test
-      url: https://${{ env.ACRONYM }}-test-designer.${{ vars.OC_DOMAIN }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.set-vars.outputs.ref }}
+
+      - name: Install OpenShift CLI
+        uses: redhat-actions/openshift-tools-installer@e3b32c2ab7b064b2ce189121c4a49f509a99a7b4 # v3.0
+        with:
+          oc: ${{ env.OC_VERSION }}
+
+      - name: Log in to OpenShift
+        uses: redhat-actions/oc-login@2a1614bc977c054c8786c8e35fc9534bd0ddc156 # v2.0.1
+        with:
+          openshift_server_url: ${{ vars.OC_SERVER }}
+          openshift_token: ${{ secrets.OC_TOKEN }}
+          insecure_skip_tls_verify: true
+          namespace: ${{ vars.OC_NAMESPACE }}
+
+      - name: Validate MongoDB auth secret
+        env:
+          NAMESPACE: ${{ vars.OC_NAMESPACE }}
+        run: |
+          set -euo pipefail
+          oc -n "$NAMESPACE" get secret soba-test-mongodb-auth -o json |
+            jq -e '.data["mongodb-passwords"] != null' >/dev/null
+
+      - name: Recover pending Helm release
+        # Checkouts that predate the action skip recovery.
+        if: hashFiles('.github/actions/recover-helm-release/action.yaml') != ''
+        uses: ./.github/actions/recover-helm-release
+        with:
+          release: soba-test-mongodb
+          namespace: ${{ vars.OC_NAMESPACE }}
+
+      - name: Deploy MongoDB
+        env:
+          NAMESPACE: ${{ vars.OC_NAMESPACE }}
+        run: |
+          set -euo pipefail
+          helm repo add bitnami https://charts.bitnami.com/bitnami --force-update
+          helm dependency build deployments/helm/action-mongodb
+          helm upgrade --install "soba-test-mongodb" deployments/helm/action-mongodb \
+            --namespace "$NAMESPACE" \
+            --wait \
+            --timeout 660s \
+            -f deployments/helm/action-mongodb/values-test.yaml
+
+  deploy:
+    name: Deploy SOBA to Test
+    needs: [set-vars, build, deploy-crunchy, deploy-mongodb]
+    permissions:
+      contents: read
+    environment:
+      name: test
+      url: https://${{ env.ACRONYM }}-test.${{ vars.OC_DOMAIN }}/designer
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -139,15 +197,15 @@ jobs:
           openshift_server_url: ${{ vars.OC_SERVER }}
           openshift_token: ${{ secrets.OC_TOKEN }}
           insecure_skip_tls_verify: true
-          namespace: ${{ secrets.OC_NAMESPACE }}
+          namespace: ${{ vars.OC_NAMESPACE }}
 
       - name: Get DB config from Crunchy secret
         id: db
         env:
-          NAMESPACE: ${{ secrets.OC_NAMESPACE }}
+          NAMESPACE: ${{ vars.OC_NAMESPACE }}
           CLUSTER: ${{ needs.deploy-crunchy.outputs.cluster }}
         run: |
-          SECRET_NAME="${CLUSTER}-pguser-app"
+          SECRET_NAME="${CLUSTER}-pguser-appproxy"
           echo "secret_name=$SECRET_NAME" >> "$GITHUB_OUTPUT"
 
       # Pipeline performance fix: Revert if needed.
@@ -155,18 +213,38 @@ jobs:
         uses: ./.github/actions/wait-for-postgres
         with:
           secret_name: ${{ steps.db.outputs.secret_name }}
-          namespace: ${{ secrets.OC_NAMESPACE }}
+          secret_key: pgbouncer-uri
+          namespace: ${{ vars.OC_NAMESPACE }}
           label: test database
       # Pipeline performance fix: Revert if needed.
+
+      - name: Recover pending Helm release
+        # Checkouts that predate the action skip recovery.
+        if: hashFiles('.github/actions/recover-helm-release/action.yaml') != ''
+        uses: ./.github/actions/recover-helm-release
+        with:
+          release: soba-test
+          namespace: ${{ vars.OC_NAMESPACE }}
 
       - name: Generate values override and deploy
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
-          NAMESPACE: ${{ secrets.OC_NAMESPACE }}
+          NAMESPACE: ${{ vars.OC_NAMESPACE }}
           TAG: sha-${{ needs.build.outputs.short_sha }}
           SHORT_SHA: ${{ needs.build.outputs.short_sha }}
           DOMAIN: ${{ vars.OC_DOMAIN }}
+          VAULT_AUTH_PATH: ${{ vars.VAULT_AUTH_PATH }}
+          VAULT_NAMESPACE: ${{ vars.VAULT_NAMESPACE }}
+          VAULT_ROLE: ${{ vars.VAULT_ROLE_NONPROD }}
+          VAULT_SECRET_PATH: ${{ vars.VAULT_SECRET_PATH }}
+          VAULT_SERVICE_ACCOUNT_NAME: ${{ vars.VAULT_SERVICE_ACCOUNT_NAME }}
         run: |
+          set -euo pipefail
+          : "${VAULT_AUTH_PATH:?Set the VAULT_AUTH_PATH variable.}"
+          : "${VAULT_NAMESPACE:?Set the VAULT_NAMESPACE variable.}"
+          : "${VAULT_ROLE:?Set the VAULT_ROLE_NONPROD variable.}"
+          : "${VAULT_SECRET_PATH:?Set VAULT_SECRET_PATH on the test environment.}"
+          : "${VAULT_SERVICE_ACCOUNT_NAME:?Set the VAULT_SERVICE_ACCOUNT_NAME variable.}"
           REPO_LC=$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
 
           # Version /meta reports, e.g. 2.0.0-beta.0+test.a1b2c3d. Empty if unreadable: the
@@ -195,7 +273,13 @@ jobs:
             domain: "${DOMAIN}"
           database:
             existingSecretName: "${{ steps.db.outputs.secret_name }}"
-            existingSecretKey: "uri"
+            existingSecretKey: "pgbouncer-uri"
+          mongodb:
+            internal:
+              enabled: false
+            external:
+              host: "soba-test-mongodb-0.soba-test-mongodb-headless"
+              authSecretName: soba-test-mongodb-auth
           OVERRIDE
 
           # Pipeline performance fix: Revert if needed.
@@ -205,27 +289,13 @@ jobs:
             --wait-for-jobs \
             --timeout 660s \
             -f deployments/helm/soba/values-test.yaml \
-            -f /tmp/values-override.yaml
+            -f /tmp/values-override.yaml \
+            --set-string "vault.authPath=${VAULT_AUTH_PATH}" \
+            --set-string "vault.namespace=${VAULT_NAMESPACE}" \
+            --set-string "vault.role=${VAULT_ROLE}" \
+            --set-string "vault.secretPath=${VAULT_SECRET_PATH}" \
+            --set-string "vault.serviceAccountName=${VAULT_SERVICE_ACCOUNT_NAME}"
           # Pipeline performance fix: Revert if needed.
-
-          REVISION=$(helm status "soba-test" -n "${NAMESPACE}" -o json | jq -r '.version')
-          oc get jobs -n "${NAMESPACE}" -o name \
-            | grep "soba-test-migrate-" \
-            | grep -v -- "-migrate-${REVISION}$" \
-            | xargs -r oc delete -n "${NAMESPACE}" 2>/dev/null || true
-
-          echo "Waiting for backend rollout..."
-          oc rollout status deployment/soba-test-backend -n "${NAMESPACE}" --timeout=300s
-
-          echo "Waiting for frontend rollouts (designer + forms)..."
-          oc rollout status deployment/soba-test-frontend-designer -n "${NAMESPACE}" --timeout=300s
-          oc rollout status deployment/soba-test-frontend-forms -n "${NAMESPACE}" --timeout=300s
-
-          echo "Waiting for formio rollout..."
-          oc rollout status deployment/soba-test-formio -n "${NAMESPACE}" --timeout=300s
-
-          echo "Waiting for mongodb rollout..."
-          oc rollout status statefulset/soba-test-mongodb -n "${NAMESPACE}" --timeout=300s
 
       # Pipeline performance fix: Revert if needed.
       # Temporarily disabled openshift diagnostics; uncomment to restore.
@@ -234,9 +304,21 @@ jobs:
       #   uses: ./.github/actions/openshift-diagnostics
       #   with:
       #     release: soba-test
-      #     namespace: ${{ secrets.OC_NAMESPACE }}
+      #     namespace: ${{ vars.OC_NAMESPACE }}
       #     database_secret_name: ${{ steps.db.outputs.secret_name }}
       # Pipeline performance fix: Revert if needed.
+
+  gateway:
+    name: Verify Test through APS gateway
+    needs: [deploy]
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/gateway-proxy-check.yaml
+    with:
+      environment: test
+      release: soba-test
+    secrets: inherit
 
   Tests:
     name: Integration Tests
@@ -246,6 +328,6 @@ jobs:
       DEP_ENV: test
       pr_branch: ${{ needs.set-vars.outputs.ref }}
     secrets:
-      Username: ${{ secrets.keycloakUsername }}
-      Password: ${{ secrets.keycloakPassword }}
+      keycloakUsername: ${{ secrets.keycloakUsername }}
+      keycloakPassword: ${{ secrets.keycloakPassword }}
       MFA_CODE: ${{ secrets.MFA_CODE }}

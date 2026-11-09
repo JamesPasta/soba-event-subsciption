@@ -4,10 +4,8 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { SWRConfig, useSWRConfig } from 'swr';
 
-const fetchWorkspaces = vi.fn();
 const fetchCurrentUser = vi.fn();
 vi.mock('@/src/shared/api/sobaApi', () => ({
-  fetchWorkspaces: (...args: unknown[]) => fetchWorkspaces(...args),
   fetchCurrentUser: (...args: unknown[]) => fetchCurrentUser(...args),
 }));
 
@@ -29,21 +27,17 @@ function wrapper({ children }: { children: React.ReactNode }) {
   );
 }
 
-const WORKSPACES = [{ id: 'ws1', kind: 'personal', role: 'owner' }];
 const USER = {
   actor: { id: 'user-1', displayLabel: 'User', status: 'active' },
   profile: { displayName: 'User', email: null, preferredUsername: null },
   preferences: { defaultWorkspaceId: null },
-  capabilities: { canCreateWorkspace: true },
+  capabilities: {
+    canCreateWorkspace: true,
+    hasWorkspaces: true,
+    formCreate: 'allowed',
+    isSobaAdmin: false,
+  },
 };
-
-function respond({ writableFails = false } = {}) {
-  fetchWorkspaces.mockImplementation((_token: string, options: { requiredPermission?: string } = {}) => {
-    if (options.requiredPermission && writableFails) return Promise.reject(new Error('boom'));
-    return Promise.resolve({ items: WORKSPACES });
-  });
-  fetchCurrentUser.mockResolvedValue(USER);
-}
 
 describe('useAppSession', () => {
   beforeEach(() => {
@@ -51,10 +45,10 @@ describe('useAppSession', () => {
     store = makeStore();
     store.dispatch(setToken('token'));
     store.dispatch(setAuthenticated(true));
-    respond();
+    fetchCurrentUser.mockResolvedValue(USER);
   });
 
-  it('is ready only once every bootstrap read has answered', async () => {
+  it('is ready once the current user has answered', async () => {
     const { result } = renderHook(() => useAppSession(), { wrapper });
     expect(result.current.sessionReady).toBe(false);
     await waitFor(() => expect(result.current.sessionReady).toBe(true));
@@ -63,10 +57,8 @@ describe('useAppSession', () => {
     expect(result.current.canCreateWorkspace).toBe(true);
   });
 
-  // Every read that can fail the session has to gate readiness too, or its failure is swallowed
-  // and the app renders degraded with no retry.
-  it('fails the session when only the writable-workspaces read fails', async () => {
-    respond({ writableFails: true });
+  it('fails the session when the current user read fails', async () => {
+    fetchCurrentUser.mockRejectedValue(new Error('boom'));
     const { result } = renderHook(() => useAppSession(), { wrapper });
     await waitFor(() => expect(result.current.sessionFailed).toBe(true));
     expect(result.current.sessionReady).toBe(false);
@@ -81,9 +73,9 @@ describe('useAppSession', () => {
     );
     await waitFor(() => expect(result.current.session.sessionLoadedOnce).toBe(true));
 
-    fetchWorkspaces.mockRejectedValue(new Error('boom'));
+    fetchCurrentUser.mockRejectedValue(new Error('boom'));
     await act(async () => {
-      await result.current.mutate(['workspaces']).catch(() => undefined);
+      await result.current.mutate(['me']).catch(() => undefined);
     });
 
     await waitFor(() => expect(result.current.session.sessionFailed).toBe(true));
@@ -91,17 +83,15 @@ describe('useAppSession', () => {
     expect(result.current.session.sessionReady).toBe(false);
   });
 
-  // Every read that gates the session has to be waited for, or the app renders before one of them
-  // has answered.
-  it('is not ready while only the writable-workspaces read is pending', async () => {
-    fetchWorkspaces.mockImplementation((_token: string, options: { requiredPermission?: string } = {}) =>
-      options.requiredPermission ? new Promise(() => {}) : Promise.resolve({ items: WORKSPACES }),
-    );
+  // A user in more workspaces than any picker shows still has workspaces, so this never reads one.
+  it('takes workspace presence from the current user', async () => {
+    fetchCurrentUser.mockResolvedValue({
+      ...USER,
+      capabilities: { ...USER.capabilities, hasWorkspaces: false },
+    });
     const { result } = renderHook(() => useAppSession(), { wrapper });
-
-    await waitFor(() => expect(result.current.hasWorkspaces).toBe(true));
-    expect(result.current.sessionReady).toBe(false);
-    expect(result.current.sessionLoadedOnce).toBe(false);
+    await waitFor(() => expect(result.current.sessionReady).toBe(true));
+    expect(result.current.hasWorkspaces).toBe(false);
   });
 
   it('reports no onboarding need when the user has workspaces', async () => {
@@ -111,8 +101,10 @@ describe('useAppSession', () => {
   });
 
   it('needs onboarding with no workspaces and no way to create one', async () => {
-    fetchWorkspaces.mockResolvedValue({ items: [] });
-    fetchCurrentUser.mockResolvedValue({ ...USER, capabilities: { canCreateWorkspace: false } });
+    fetchCurrentUser.mockResolvedValue({
+      ...USER,
+      capabilities: { ...USER.capabilities, hasWorkspaces: false, canCreateWorkspace: false },
+    });
     const { result } = renderHook(() => useAppSession(), { wrapper });
     await waitFor(() => expect(result.current.needsOnboarding).toBe(true));
   });

@@ -28,7 +28,7 @@ const FormioForm = dynamic<FormProps>(
   },
 );
 
-export function DynamicForm(props: FormProps) {
+export function DynamicForm(props: Readonly<FormProps>) {
   return (
     <FormioV5FormChrome>
       <FormioForm {...props} />

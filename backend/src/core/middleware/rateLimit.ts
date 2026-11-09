@@ -1,10 +1,11 @@
 import rateLimit, { type Options } from 'express-rate-limit';
+import { ApiErrorCodes } from '@soba/lib';
 import { env } from '../config/env';
 
 const defaults: Partial<Options> = {
   standardHeaders: 'draft-7',
   legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later' },
+  message: { error: 'Too many requests, please try again later', code: ApiErrorCodes.rate_limited },
 };
 
 /**
@@ -25,6 +26,16 @@ export const apiRateLimit = rateLimit({
   ...defaults,
   windowMs: env.getRateLimitApiWindowMs() ?? 60_000,
   max: env.getRateLimitApiMax() ?? 60,
+});
+
+/**
+ * Limiter for document rendering (print).
+ * Env: RATE_LIMIT_RENDER_WINDOW_MS (default 60 000), RATE_LIMIT_RENDER_MAX (default 30).
+ */
+export const renderRateLimit = rateLimit({
+  ...defaults,
+  windowMs: env.getRateLimitRenderWindowMs() ?? 60_000,
+  max: env.getRateLimitRenderMax() ?? 30,
 });
 
 /**

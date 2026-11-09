@@ -6,7 +6,6 @@ export interface Notification {
   id: string;
   text: string;
   type?: NotificationType;
-  consoleError?: unknown;
 }
 
 export type NotificationState = {
@@ -23,14 +22,14 @@ const slice = createSlice({
   name: 'notification',
   initialState,
   reducers: {
-    addNotification(state, action: PayloadAction<Omit<Notification, 'id'>>) {
-      const id = String(++nextId);
-      state.notifications.push({ id, ...action.payload });
-      if (action.payload.consoleError) {
-        // The single sanctioned logging sink for the app (see no-console rule).
-        // eslint-disable-next-line no-console
-        console.error(action.payload.text, action.payload.consoleError);
-      }
+    addNotification: {
+      reducer(state, action: PayloadAction<Notification>) {
+        state.notifications.push(action.payload);
+      },
+      // The id is minted when the action is created, so the reducer stays pure.
+      prepare({ text, type }: Omit<Notification, 'id'>) {
+        return { payload: { id: String(++nextId), text, type } };
+      },
     },
     removeNotification(state, action: PayloadAction<string>) {
       state.notifications = state.notifications.filter((n) => n.id !== action.payload);

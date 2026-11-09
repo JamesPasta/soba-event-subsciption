@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
+import { withBasePath } from '@/src/shared/config/basePath';
 import {
   isNavArrival,
   listQueryParams,
@@ -132,9 +133,11 @@ export function useListQuery(
         }
       }
       const qs = params.toString();
+      // usePathname omits the base path and replaceState takes the URL as given.
+      const url = withBasePath(pathname);
       // Next keeps useSearchParams in sync with replaceState. A router navigation would re-run the
       // page's server component for what is only a client-side query change.
-      window.history.replaceState(null, '', qs ? `${pathname}?${qs}` : pathname);
+      window.history.replaceState(null, '', qs ? `${url}?${qs}` : url);
       // Recorded from the choice, not from the URL: reading it back would race the replaceState
       // above and record the pre-change query.
       rememberListQuery(spec, set);

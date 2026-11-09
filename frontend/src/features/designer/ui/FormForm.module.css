@@ -3,11 +3,11 @@
  * Handling floating actions and UI layout for the form designer page.
  */
 
-.floatingActions {
-  position: fixed;
-  bottom: var(--layout-margin-xlarge);
-  left: var(--layout-margin-xlarge);
-  z-index: 1050;
+.stickyActions {
+  position: sticky;
+  top: var(--app-header-height);
+  z-index: 20;
+  background: #f8f8f8;
 }
 
 .designerWrapper {

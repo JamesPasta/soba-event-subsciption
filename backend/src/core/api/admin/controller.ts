@@ -1,18 +1,41 @@
 import { Response } from 'express';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
+import type {
+  DocumentGenerationAuditItem,
+  FeatureScopeItem,
+  ListDocumentGenerationAuditsResponse,
+  ListFeatureScopesResponse,
+  ListJobsResponse,
+  ListJobTypesResponse,
+  ListSobaAdminsResponse,
+  SobaAdminItem,
+} from '@soba/lib';
+import { listJobs, type JobScope } from '../../db/repos/jobViewRepo';
+import {
+  getJobDetail,
+  listJobTypes,
+  rerunJob,
+  stopJob,
+  toJobListItem,
+} from '../../services/jobViewService';
 import {
   listSobaAdmins,
   addDirectSobaAdmin,
   removeDirectSobaAdmin,
+  type SobaAdminListRow,
 } from '../../db/repos/sobaAdminRepo';
 import {
   getFeatureScopeById,
   listFeatureScopes,
   removeFeatureScope,
   upsertFeatureScope,
+  type FeatureScopeRecord,
 } from '../../db/repos/featureScopeRepo';
-import { listDocumentGenerationAudits } from '../../db/repos/documentGenerationAuditRepo';
+import {
+  listDocumentGenerationAudits,
+  type DocumentGenerationAuditRecord,
+} from '../../db/repos/documentGenerationAuditRepo';
 import { getFeatureGateCached } from '../../db/repos/featureRepo';
 import { findAppUserById } from '../../db/repos/appUserRepo';
 import { db } from '../../db/client';
@@ -23,10 +46,12 @@ import { asyncHandler } from '../shared/asyncHandler';
 import {
   AddSobaAdminBodySchema,
   FeatureScopeIdParamsSchema,
+  JobIdParamsSchema,
   ListFeatureScopesQuerySchema,
   ListDocumentGenerationAuditsQuerySchema,
   ListSobaAdminsQuerySchema,
   UpsertFeatureScopeBodySchema,
+  type ListJobsQuery,
 } from './schema';
 import type { Request } from 'express';
 
@@ -36,18 +61,32 @@ type ListFeatureScopesQuery = z.infer<typeof ListFeatureScopesQuerySchema>;
 type ListDocumentGenerationAuditsQuery = z.infer<typeof ListDocumentGenerationAuditsQuerySchema>;
 type ListSobaAdminsQuery = z.infer<typeof ListSobaAdminsQuerySchema>;
 
-type FeatureScopeRow = NonNullable<Awaited<ReturnType<typeof getFeatureScopeById>>>;
+const toSobaAdminItem = (row: SobaAdminListRow): SobaAdminItem => ({
+  userId: row.userId,
+  source: row.source,
+  identityProviderCode: row.identityProviderCode,
+  syncedAt: row.syncedAt != null ? row.syncedAt.toISOString() : null,
+  displayLabel: row.displayLabel,
+});
 
-const toFeatureScopeItem = (row: FeatureScopeRow) => ({
+const toFeatureScopeItem = (row: FeatureScopeRecord): FeatureScopeItem => ({
   id: row.id,
   featureCode: row.featureCode,
-  scopeType: row.scopeType,
+  // Text columns. Every write goes through UpsertFeatureScopeBodySchema, which only allows these.
+  scopeType: row.scopeType as FeatureScopeItem['scopeType'],
   scopeId: row.scopeId,
-  status: row.status,
+  status: row.status as FeatureScopeItem['status'],
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
   createdBy: row.createdBy,
   updatedBy: row.updatedBy,
+});
+
+const toDocumentGenerationAuditItem = (
+  row: DocumentGenerationAuditRecord,
+): DocumentGenerationAuditItem => ({
+  ...row,
+  createdAt: row.createdAt.toISOString(),
 });
 
 export const listSobaAdminsHandler = asyncHandler(async (req: Request, res: Response) => {
@@ -56,17 +95,12 @@ export const listSobaAdminsHandler = asyncHandler(async (req: Request, res: Resp
     offset: query.offset,
     limit: query.limit,
     sort: query.sort,
+    locale: req.sortLocale!,
     source: query.source,
     q: query.q,
   });
-  res.json({
-    items: items.map((r) => ({
-      userId: r.userId,
-      source: r.source,
-      identityProviderCode: r.identityProviderCode,
-      syncedAt: r.syncedAt != null ? r.syncedAt.toISOString() : null,
-      displayLabel: r.displayLabel,
-    })),
+  const body: ListSobaAdminsResponse = {
+    items: items.map(toSobaAdminItem),
     page: {
       offset: query.offset,
       limit: query.limit,
@@ -77,7 +111,8 @@ export const listSobaAdminsHandler = asyncHandler(async (req: Request, res: Resp
       q: query.q,
     },
     sort: query.sort,
-  });
+  };
+  res.json(body);
 });
 
 export const addSobaAdminHandler = asyncHandler(
@@ -139,7 +174,7 @@ export const upsertFeatureScopeHandler = asyncHandler(
 export const listFeatureScopesHandler = asyncHandler(async (req: Request, res: Response) => {
   const query = req.query as unknown as ListFeatureScopesQuery;
   const { items, total } = await listFeatureScopes(query);
-  res.json({
+  const body: ListFeatureScopesResponse = {
     items: items.map(toFeatureScopeItem),
     page: { offset: query.offset, limit: query.limit, total },
     filters: {
@@ -148,7 +183,8 @@ export const listFeatureScopesHandler = asyncHandler(async (req: Request, res: R
       status: query.status,
     },
     sort: query.sort,
-  });
+  };
+  res.json(body);
 });
 
 export const getFeatureScopeHandler = asyncHandler(
@@ -177,14 +213,59 @@ export const listDocumentGenerationAuditsHandler = asyncHandler(
       limit: query.limit,
       sort: query.sort,
     });
-    res.json({
-      items: items.map((row) => ({
-        ...row,
-        createdAt: row.createdAt.toISOString(),
-      })),
+    const body: ListDocumentGenerationAuditsResponse = {
+      items: items.map(toDocumentGenerationAuditItem),
       page: { offset: query.offset, limit: query.limit, total },
       filters: { workspaceId: query.workspaceId, formId: query.formId },
       sort: query.sort,
-    });
+    };
+    res.json(body);
   },
 );
+
+type JobIdParams = z.infer<typeof JobIdParamsSchema>;
+
+const EVERY_JOB: JobScope = { kind: 'all' };
+
+export const listJobsHandler = asyncHandler(async (req: Request, res: Response) => {
+  const query = req.query as unknown as ListJobsQuery;
+  const filters = {
+    status: query.status,
+    type: query.type,
+    workspaceId: query.workspaceId,
+    formId: query.formId,
+    submissionId: query.submissionId,
+  };
+  const { items, total } = await listJobs(EVERY_JOB, {
+    ...filters,
+    offset: query.offset,
+    limit: query.limit,
+    sort: query.sort,
+  });
+  const body: ListJobsResponse = {
+    items: items.map(toJobListItem),
+    page: { offset: query.offset, limit: query.limit, total },
+    filters,
+    sort: query.sort,
+  };
+  res.json(body);
+});
+
+export const listJobTypesHandler = (_req: Request, res: Response) => {
+  const body: ListJobTypesResponse = { items: listJobTypes() };
+  res.json(body);
+};
+
+export const getJobHandler = asyncHandler(async (req: Request<JobIdParams>, res: Response) => {
+  res.json(await getJobDetail(req.params.jobId));
+});
+
+export const rerunJobHandler = asyncHandler(async (req: Request<JobIdParams>, res: Response) => {
+  await rerunJob(EVERY_JOB, req.params.jobId, req.actorId!);
+  res.json(await getJobDetail(req.params.jobId));
+});
+
+export const stopJobHandler = asyncHandler(async (req: Request<JobIdParams>, res: Response) => {
+  const { stopped } = await stopJob(EVERY_JOB, req.params.jobId, req.actorId!);
+  res.status(stopped ? 200 : 202).json(await getJobDetail(req.params.jobId));
+});

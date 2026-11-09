@@ -122,15 +122,7 @@ export const dataGrid = (key: string, label: string, components: Component[]): C
   components,
 });
 
-export const submitButton = (): Component => ({
-  type: 'button',
-  key: 'submit',
-  label: 'Submit',
-  action: 'submit',
-  disableOnInvalid: true,
-  input: true,
-  tableView: false,
-});
+export { submitButton } from '@soba/lib';
 
 /** The definition shape the engine expects. */
 export const formSchema = (title: string, components: Component[]): Record<string, unknown> => ({

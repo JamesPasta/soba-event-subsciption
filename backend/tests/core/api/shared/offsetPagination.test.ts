@@ -1,23 +1,9 @@
 import { z } from 'zod';
 import {
-  makeSortEnum,
   offsetQueryFields,
   rejectedCursorField,
   MAX_LIST_OFFSET,
 } from '../../../../src/core/api/shared/offsetPagination';
-
-describe('makeSortEnum', () => {
-  const schema = makeSortEnum(['name', 'status']);
-
-  it('accepts a declared token', () => {
-    expect(schema.parse('status:desc')).toBe('status:desc');
-  });
-
-  it('rejects an undeclared field and an undeclared direction', () => {
-    expect(schema.safeParse('createdAt:desc').success).toBe(false);
-    expect(schema.safeParse('name:sideways').success).toBe(false);
-  });
-});
 
 describe('offsetQueryFields', () => {
   const schema = z.object(offsetQueryFields);

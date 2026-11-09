@@ -11,27 +11,33 @@ const quoteIdentifier = (identifier: string) => `"${identifier.replace(/"/g, '""
 // Pipeline performance fix: Revert if needed.
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const withRetry = async <T>(label: string, task: () => Promise<T>): Promise<T> => {
+const withRetry = <T>(label: string, task: () => Promise<T>): Promise<T> => {
   const attempts = env.getDbMigrationReadyAttempts();
   const sleepMs = env.getDbMigrationReadySleepMs();
 
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+  const tryAttempt = async (attempt: number): Promise<T> => {
     try {
       return await task();
     } catch (error) {
-      lastError = error;
       console.error(`${label} failed on attempt ${attempt}/${attempts}`, error);
-      if (attempt < attempts) {
-        await sleep(sleepMs);
-      }
+      if (attempt >= attempts) throw error;
+      await sleep(sleepMs);
+      return tryAttempt(attempt + 1);
     }
-  }
-
-  throw lastError;
+  };
+  return tryAttempt(1);
 };
 
-const ensureDatabaseExists = async () => {
+// Role defaults reach new sessions only, so this runs before `pool` connects. Through PgBouncer a
+// changed value can take up to server_lifetime to reach every server connection.
+const applyRoleTimeouts = async (adminPool: Pool) => {
+  await adminPool.query(
+    `ALTER ROLE CURRENT_USER SET statement_timeout = ${env.getDbStatementTimeoutMs()}`,
+  );
+  await adminPool.query(`ALTER ROLE CURRENT_USER SET lock_timeout = ${env.getDbLockTimeoutMs()}`);
+};
+
+const setUpDatabase = async () => {
   const databaseUrl = env.getDatabaseUrl();
 
   const targetUrl = new URL(databaseUrl);
@@ -49,11 +55,10 @@ const ensureDatabaseExists = async () => {
     max: 1,
     connectionTimeoutMillis: env.getDbConnectionTimeoutMs(),
     query_timeout: env.getDbQueryTimeoutMs(),
-    statement_timeout: env.getDbStatementTimeoutMs(),
-    lock_timeout: env.getDbLockTimeoutMs(),
   });
 
   try {
+    await applyRoleTimeouts(adminPool);
     const exists = await adminPool.query('SELECT 1 FROM pg_database WHERE datname = $1', [
       targetDbName,
     ]);
@@ -69,7 +74,7 @@ const ensureDatabaseExists = async () => {
 };
 
 const run = async () => {
-  await withRetry('Database setup', ensureDatabaseExists);
+  await withRetry('Database setup', setUpDatabase);
   await withRetry('Database readiness check', async () => {
     await pool.query('SELECT 1');
   });

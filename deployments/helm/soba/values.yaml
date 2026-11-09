@@ -3,12 +3,15 @@ global:
   namespace: ""
   # Set true to remove "keep" policy on Secrets/PVCs (e.g. PR teardown)
   forceCleanup: false
-  # Optional shared subpath for frontend Route/Ingress + liveness (blank = root).
-  # Per-frontend host is set via frontend.apps.<name>.host, not here.
-  routePath: ""
-  # Owning PR number when a PR reuses a deployment slot; read on teardown so a
-  # closing PR does not uninstall a newer PR that has since taken the slot.
+  # PR number a deployment belongs to, for provenance when several PR releases share a namespace.
   prNumber: ""
+
+# Opt-in access from APS to backend pods only. namespaceName is the APS namespace label (Silver:
+# 264e6f, Gold: b8840c); environment is test or prod, matching the APS instance publishing the route.
+gatewayNetworkPolicy:
+  enabled: false
+  namespaceName: ""
+  environment: ""
 
 # -- Backend (Express API) ------------------------------------------------
 backend:
@@ -33,6 +36,9 @@ backend:
       memory: 256Mi
   service:
     port: 4000
+  # URL path the API is served under. The app serves it, so Routes, probes and the advertised API
+  # URLs all use it as-is. Every environment shares this path; the host keeps deployments apart.
+  basePath: /chefs
   route:
     enabled: true
     tls:
@@ -41,15 +47,31 @@ backend:
     # Router tuning for the API host; see README.
     annotations:
       # Inactivity timeout. The router's 30s default is tight for the synchronous CDOGS
-      # call under /submit/submissions/:id/{preview,print}, which cannot be scoped below.
+      # call under /{submit,design}/submissions/:id/print, which cannot be scoped below.
       haproxy.router.openshift.io/timeout: "60s"
       # The router sets a session cookie on edge routes whether or not we ask; this just
       # names it. sobaFetch sends no credentials, so nothing returns it on this host.
       router.openshift.io/cookie_name: "soba-affinity"
-    # Path-scoped Routes on the same host, annotations merged over the ones above.
+    # Path-scoped Routes on the same host, annotations merged over the ones above. Paths are
+    # relative to backend.basePath, which the template prepends.
     extraPaths:
       - name: files
         path: /api/v1/submit/files
+        annotations:
+          # Upload is silent through the clamd scan (clamav.timeoutMs, 60s).
+          haproxy.router.openshift.io/timeout: "300s"
+      - name: files-api
+        path: /api/v1/files
+        annotations:
+          # Upload is silent through the clamd scan (clamav.timeoutMs, 60s).
+          haproxy.router.openshift.io/timeout: "300s"
+      - name: templates
+        path: /api/v1/templates
+        annotations:
+          # Upload is silent through the clamd scan (clamav.timeoutMs, 60s).
+          haproxy.router.openshift.io/timeout: "300s"
+      - name: print-upload
+        path: /api/v1/design/print-upload
         annotations:
           # Upload is silent through the clamd scan (clamav.timeoutMs, 60s).
           haproxy.router.openshift.io/timeout: "300s"
@@ -78,7 +100,13 @@ backend:
   # feature_status code (enabled, disabled, experimental, deprecated), quoted. Anything else fails
   # the render. dev-data must stay off in production.
   features:
+    api-keys: ""
     dev-data: ""
+    notifications: ""
+    post-submission: ""
+    post-submission-email: ""
+    submission-export: ""
+    user-search: ""
 
   # -- configmap-app: general application config
   config:
@@ -116,7 +144,65 @@ backend:
     # Virus scan plugin. Deployments scan for real against the shared clamav
     # (see the clamav block below); local dev overrides to virusscan-noop via .env.
     virusScanDefaultCode: virusscan-clamav
+    # Tenant engine behind GET /me/tenants. tenant-noop returns no tenants and calls nothing.
+    tenantEngineDefaultCode: tenant-noop
+    credentialIssuerDefaultCode: credential-issuer-noop
+    # Workflow engine. workflow-noop starts nothing and calls nothing.
+    workflowEngineDefaultCode: workflow-noop
+    # Notification plugin. notification-noop sends nothing and calls nothing.
+    notificationDefaultCode: notification-noop
+    # notificationDefaultCode: notify-v1
+    # User search plugins, comma-separated, in merge order. Empty enables none.
+    # user-search-soba searches Soba's own users and needs no config. css-v1 injects the CSS
+    # credentials from Vault, so the secret must hold them.
+    userSearchPlugins: user-search-soba
+    # Post-submission action plugins this environment runs, comma-separated. Empty runs none.
+    postSubmissionActionPlugins: ""
+    # post-submission-email-addresses: emails allowed per hour, per form, per workspace and for the
+    # whole environment, each from 100 to 1000000. "" uses the defaults (500, 2000 and 5000).
+    postSubmissionEmailFormHourlyLimit: ""
+    postSubmissionEmailWorkspaceHourlyLimit: ""
+    postSubmissionEmailEnvironmentHourlyLimit: ""
     sobaSystemSubject: soba-system
+    # On SIGTERM the backend keeps serving for shutdownDelayMs, or until running jobs drain if that
+    # takes longer (see jobs.drainMs), then closes the server and exits by shutdownTimeoutMs; keep
+    # that under the pod's 30 s grace period. "" uses the defaults in code (5000 and 28000).
+    shutdownDelayMs: ""
+    shutdownTimeoutMs: ""
+    # Queued or running submission exports one form may have (default 2).
+    submissionExportActiveLimit: ""
+
+  # -- configmap-app: background job runner (JOB_*). "" uses the default in code.
+  jobs:
+    # Pools this pod runs, comma-separated (light, heavy). Default: both.
+    pools: ""
+    lightPollMs: ""
+    heavyPollMs: ""
+    lightLeaseMs: ""
+    heavyLeaseMs: ""
+    lightConcurrency: ""
+    heavyConcurrency: ""
+    lightTimeoutMs: ""
+    heavyTimeoutMs: ""
+    maxAttempts: ""
+    backoffBaseMs: ""
+    backoffMaxMs: ""
+    sweepIntervalMs: ""
+    retentionBatch: ""
+    succeededRetentionDays: ""
+    deadRetentionDays: ""
+    # Shutdown waits drainMs for running jobs, then abortGraceMs for aborted ones to stop, then up to
+    # 3 s for their outcomes to be written; only then does the server close. Startup fails unless
+    # that total is under config.shutdownTimeoutMs; the defaults (15 + 2 + 3 s of 28 s) leave 8 s.
+    drainMs: ""
+    abortGraceMs: ""
+    # Least time between a running job's progress writes (at least 1000).
+    progressIntervalMs: ""
+    # Largest result file a job may store, in bytes (default 200 MiB). A larger one fails the job.
+    resultMaxBytes: ""
+    # Days a job's result file is kept (default 7), and result files removed per sweep.
+    resultRetentionDays: ""
+    resultSweepBatch: ""
 
   # -- Shared temp storage PVC (RWX so it survives horizontal scaling).
   # Only provisioned/mounted when config.tempStorageDefaultCode is
@@ -127,44 +213,118 @@ backend:
     size: 1Gi
     storageClassName: ""
 
-  # -- configmap-storage: files feature + storage profiles (STORAGE_* + FILES_*)
+  # -- configmap-storage: files and templates features + storage profiles (STORAGE_* + FILES_* +
+  # TEMPLATES_*)
   storage:
     # Active storage profiles (comma-separated). Each needs a *Backend below.
     profiles: "default"
     # Backend for the 'default' profile. 'storage-memory' is in-process and ephemeral — no PVC,
-    # no external service, lost on restart, per-replica. Fine for ephemeral (PR/dev) namespaces.
-    # For durable, multi-replica environments override to 'storage-s3' and set the endpoint/
-    # bucket below (credentials come from a Secret).
+    # no external service, lost on restart, per-replica. Fine for ephemeral (PR) namespaces, and
+    # refused with more than one replica or with autoscaling.
+    # 'storage-local' keeps files on the RWX PVC below (localVolume, defaultBasePath).
+    # For durable, multi-replica environments override to 'storage-s3' and set the endpoint, bucket
+    # and prefix below (credentials come from a Secret).
     defaultBackend: storage-memory
     # Profile the /files API reads/writes, and the max upload size it accepts (MB).
     filesStorageProfile: "default"
     filesMaxFileSizeMb: "10"
+    # Profile the /templates API reads/writes, and the max upload size it accepts (MB).
+    templatesStorageProfile: "default"
+    templatesMaxFileSizeMb: "10"
+    # Key prefixes the features store under within their profiles. Empty uses the defaults in code
+    # (attachments, templates).
+    filesStoragePrefix: ""
+    templatesStoragePrefix: ""
+    # Profile and key prefix for files background jobs produce, such as submission exports. Empty
+    # uses the defaults in code (default, job-results).
+    jobResultsStorageProfile: ""
+    jobResultsStoragePrefix: ""
 
-    # storage-local only: writable filesystem path for the default profile. Rendered only when set.
+    # storage-local only: where the file store PVC is mounted and the default profile writes.
+    # Required for storage-local.
     defaultBasePath: ""
+    # storage-local only: the file store PVC, created only when defaultBackend is storage-local.
+    # ReadWriteMany, shared by every replica.
+    localVolume:
+      accessMode: ReadWriteMany
+      size: 1Gi
+      storageClassName: ""
 
     # storage-s3 only — non-credential keys, rendered only when set. ACCESS_KEY/SECRET_KEY are
-    # NOT here; supply them via a Secret. A full URL endpoint (https://host:port) also carries the
-    # port and SSL flag, so defaultPort/defaultUseSsl can stay empty in that case.
+    # NOT here; supply them via a Secret. A URL endpoint sets the SSL flag, and its port when it has
+    # one, else defaultPort, else the scheme's default (443 or 80); defaultUseSsl is ignored. A host
+    # endpoint takes defaultUseSsl, and defaultPort or 9000.
     defaultEndpoint: ""
     defaultBucketName: ""
     defaultPort: ""
     defaultUseSsl: ""
+    # Root every object in the default profile is stored under. Required for storage-s3. Unique per
+    # environment, not inside another environment's root, and fixed once files are stored.
+    defaultPrefix: ""
+    # Vault key infix for the S3 secrets: S3_<infix>_ACCESS_KEY_ID, _ACCESS_SECRET_KEY, _BUCKET_NAME
+    # and _ENDPOINT (infix e.g. PR, DEV, TEST, UAT, PROD). Used only with storage-s3 and vault.enabled.
+    s3VaultKeyInfix: ""
 
   # -- configmap-formio: PLUGIN_FORMIO_V5_* (non-secret values)
   formio:
     routesAllowed: "true"
     proxyPath: /formio-v5
     # apiBaseUrl is auto-constructed from the formio service/external URL
+    # -- outbound deadline in ms; empty uses the backend default (30000)
+    timeoutMs: ""
 
   # -- configmap-document-generation: PLUGIN_CDOGS_* + default backend code
   documentGeneration:
+    # -- renders one pod runs at once; empty uses the backend default (2)
+    maxConcurrent: ""
     cdogsV2:
       endpoint: ""
       tokenUrl: ""
       # -- outbound deadline in ms; empty uses the backend default (30000)
       timeoutMs: ""
     cdogsV3:
+      # -- gold cluster-local service; does not resolve from other clusters
+      endpoint: http://common-document-generation-service-master.b82f30-prod:3000
+      # -- outbound deadline in ms; empty uses the backend default (30000)
+      timeoutMs: ""
+
+  # -- configmap-user-search: PLUGIN_CSS_V1_* + enabled plugin codes
+  userSearch:
+    cssV1:
+      apiBaseUrl: ""
+      # -- CSS environment searched: dev, test or prod
+      environment: ""
+      tokenUrl: ""
+      # -- outbound deadline in ms; empty uses the backend default (30000)
+      timeoutMs: ""
+
+  # -- Credential issuer; URLs and the gateway ID are configured per deployment. Credentials and the
+  # product environment appId come from Vault.
+  credentialIssuer:
+    apsCredentialIssuerV3:
+      apiBaseUrl: ""
+      gatewayId: ""
+      tokenUrl: ""
+      timeoutMs: "5000"
+
+  # -- configmap-tenant-engine: PLUGIN_CSTAR_V1_* + default engine code
+  tenantEngine:
+    cstarV1:
+      apiBaseUrl: ""
+      # -- outbound deadline in ms; empty uses the backend default (30000)
+      timeoutMs: "5000"
+
+  # -- configmap-workflow-engine: PLUGIN_CS_WORKFLOW_V1_* + default engine code
+  workflowEngine:
+    csWorkflowV1:
+      apiBaseUrl: ""
+      # -- outbound deadline in ms; empty uses the backend default (30000)
+      timeoutMs: "5000"
+
+  # -- configmap-notification: PLUGIN_NOTIFY_V1_* + default notification code
+  notification:
+    notifyV1:
+      # -- Notify base URL including /api/v1
       endpoint: ""
       # -- outbound deadline in ms; empty uses the backend default (30000)
       timeoutMs: ""
@@ -185,6 +345,8 @@ backend:
     apiMax: "60"
     publicWindowMs: "60000"
     publicMax: "200"
+    renderWindowMs: "60000"
+    renderMax: "30"
 
 # -- Frontend (Next.js) ---------------------------------------------------
 frontend:
@@ -192,6 +354,8 @@ frontend:
     repository: ghcr.io/bcgov/soba/frontend
     tag: latest
     pullPolicy: IfNotPresent
+  # Host shared by every app; they are told apart by routePath. Blank = <fullname>.<domain>.
+  host: ""
   replicas: 1
   livenessProbe:
     initialDelaySeconds: 15
@@ -234,18 +398,19 @@ frontend:
     targetCPUUtilizationPercentage: 80
   # Optional: override SOBA_API_INTERNAL_URL (Next SSR → API). Default: in-cluster http://<release>-backend.<namespace>.svc.cluster.local:<port>/api/v1
   internalApiBaseUrl: ""
-  # Named frontend apps: one Deployment/Service/Route/ConfigMap each, same image, mode set by
-  # featuresAllowed (codes from GET /meta/features, or * / all). Host defaults to <fullname>-<name>.<domain>.
+  # Named frontend apps: one Deployment/Service/Route/ConfigMap each, mode set by featuresAllowed
+  # (codes from GET /meta/features, or * / all) and URL by routePath. They share one host and one
+  # image repository; the tag carries the app name, because basePath is baked per build.
   # All other frontend.* settings (image, probes, resources, route.tls, autoscaling) are shared.
   apps:
     designer:
       enabled: true
-      featuresAllowed: "workspaces,design-mode,meta,marketing"
-      host: ""
+      featuresAllowed: "design-mode,files,meta,marketing,templates,user-search,submission-export,api-keys"
+      routePath: /designer
     forms:
       enabled: true
-      featuresAllowed: "submit-mode,files,meta"
-      host: ""
+      featuresAllowed: "submit-mode,files,meta,templates"
+      routePath: /forms
 
 # -- Database (external Postgres) -----------------------------------------
 database:
@@ -259,7 +424,7 @@ database:
   host: ""
   port: "5432"
   user: postgres
-  password: ""
+  # password: unset generates one in the db secret
   name: soba
   adminDatabase: postgres
   poolMax: "10"
@@ -282,9 +447,11 @@ formio:
     # Pull official images through Google's Docker Hub mirror to avoid the anonymous pull-rate
     # limit on the cluster (same image, matching digest).
     repository: mirror.gcr.io/formio/formio
-    tag: 4.6.0
+    tag: 4.11.0
     pullPolicy: IfNotPresent
   replicas: 1
+  # Heap cap kept below the memory limit so Node GCs before the container is OOM-killed.
+  nodeOptions: "--max-old-space-size=384"
   resources:
     requests:
       cpu: 50m
@@ -303,7 +470,7 @@ formio:
     timeoutSeconds: 5
   admin:
     email: formio@soba.gov.bc.ca
-    password: ""
+    # password: unset generates one in the formio secret
   jwtSecret: ""
 
 # -- MongoDB (backing store for Form.io) -----------------------------------
@@ -312,6 +479,13 @@ mongodb:
     enabled: true
   external:
     uri: ""
+    host: ""
+    authSecretName: ""
+    port: 27017
+    username: formio
+    database: formio-ce
+    authSource: formio-ce
+    replicaSet: rs0
   image:
     # Google's Docker Hub mirror — avoids the anonymous pull-rate limit on the cluster (same
     # image, matching digest).
@@ -397,20 +571,6 @@ temporalWorkers:
     replicas: 1
     # Port for the worker's HTTP health endpoints (/readyz, /healthz)
     healthPort: 9090
-    resources:
-      requests:
-        cpu: 25m
-        memory: 128Mi
-      limits:
-        cpu: 100m
-        memory: 512Mi
-
-  - name: temporal-worker-document-generation
-    enabled: false
-    taskQueue: "document-generation"
-    replicas: 1
-    # Keep a different health port from the main worker in the same namespace.
-    healthPort: 9091
     resources:
       requests:
         cpu: 25m

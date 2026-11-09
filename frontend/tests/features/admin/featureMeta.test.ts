@@ -49,7 +49,7 @@ describe('getAdminFeatureMeta', () => {
   });
 
   it('uses backend platformAllowed state instead of the frontend feature allowlist', () => {
-    vi.stubEnv('NEXT_PUBLIC_SOBA_FEATURES_ALLOWED', 'workspaces,design-mode,submit-mode');
+    vi.stubEnv('NEXT_PUBLIC_SOBA_FEATURES_ALLOWED', 'design-mode,submit-mode');
 
     expect(getAdminFeatureMeta(meta)).toEqual({
       documentGenerationEnabled: true,

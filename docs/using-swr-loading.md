@@ -112,7 +112,7 @@ Existing hooks, in `src/shared/api/`:
 - `useWorkspaces`, `useWritableWorkspaces`, `useWorkspace`, `useRefreshWorkspaces`,
   `useRefreshWorkspace`
 - `useCurrentUser`, `useRefreshCurrentUser`
-- `useFormDraft` (in `src/features/designer/`) for a form, its versions and the selected
+- `useForm` (in `src/features/designer/`) for a form, its versions and the selected
   version's schema
 - `useFormSubmissions` (in `src/features/designer/`) for one form's submissions, read by the
   designer tab and the submissions page
@@ -149,13 +149,17 @@ A paged list should be re-read after a write (`mutate` / `refresh`). Patching `i
 cache leaves `page.total` and the sort order stale. How lists are declared and linked is in
 `docs/server-paged-lists.md`.
 
-To forget a key rather than patch it, go through the cache: `mutate(key, undefined)` reads
-as "revalidate", not "forget", and leaves the old value in place.
+To forget a key rather than patch it, call `mutate(key, undefined)`. It clears the value and
+SWR's request marker, so the next mount reads the key again.
 
 ```ts
-const { cache } = useSWRConfig();
-cache.delete(unstable_serialize(key));
+const { mutate } = useSWRConfig();
+mutate(key, undefined).catch(() => undefined);
 ```
+
+Do not add `{ revalidate: false }`: the marker stays, so a mount inside the dedupe window, or
+while a read is still out, skips its own read and never gets data. `cache.delete` also leaves
+the marker; it suits only a key no later mount reuses, as in `useFillRead`.
 
 ## Editing a loaded record
 
@@ -244,11 +248,12 @@ Resolving too early scopes the request to nothing.
 
 ## Screens with their own loading
 
-`FormioV5SubmissionFillClient` and `StartSubmission`.
+`FormioV5SubmissionFillClient` and `FormioV5NewSubmissionClient`.
 
-The fill client holds answers the user has typed that no server has seen, and Form.io
-resets the live webform when the submission prop is not deep-equal to what is on screen. A
-revalidating cache over it discards work. `StartSubmission` is a fire-once idempotent POST.
+Both hold answers the user has typed that no server has seen, and Form.io resets the live
+webform when the submission prop is not deep-equal to what is on screen. A revalidating
+cache over them discards work, so their reads are session reads keyed per mount, and each
+keeps the load it mounted with.
 
 ## Testing
 

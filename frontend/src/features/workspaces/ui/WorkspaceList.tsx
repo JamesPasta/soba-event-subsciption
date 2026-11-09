@@ -11,14 +11,14 @@ import { useDictionary } from '@/app/[lang]/Providers';
 import { useRouter, usePathname } from 'next/navigation';
 import { getLocaleFromPath } from '@/src/shared/util/locale';
 import { useWorkspaceList } from '@/src/shared/api/useWorkspaces';
-import { loadErrorMessage } from '@/src/shared/api/loadErrorMessage';
 import { useCurrentUser } from '@/src/shared/api/useCurrentUser';
 import {
   FORMS_LIST_QUERY,
   listLink,
   WORKSPACES_LIST_QUERY,
 } from '@/src/shared/list/listQueryMemory';
-import { PAGE_SIZE_OPTIONS, useListQuery } from '@/src/shared/list/useListQuery';
+import { useListQuery } from '@/src/shared/list/useListQuery';
+import { useDataTable } from '@/src/shared/list/useDataTable';
 import type { WorkspaceItem } from '@/src/types/workspaces';
 import { WorkspaceRoleBadge } from './WorkspaceRoleBadge';
 import { isWorkspaceManageRole } from '../workspaceRoles';
@@ -26,21 +26,17 @@ import { isWorkspaceManageRole } from '../workspaceRoles';
 const WorkspaceActionButtons = ({
   workspace,
   onAction,
-  showFormsAction,
   dictActions,
 }: {
   workspace: WorkspaceItem;
   onAction: (name: string, id: string) => void;
-  showFormsAction?: boolean;
   dictActions: { manage: string; forms: string };
 }) => {
   const actions = [];
   if (isWorkspaceManageRole(workspace.role)) {
     actions.push({ name: 'manage', title: dictActions.manage });
   }
-  if (showFormsAction) {
-    actions.push({ name: 'forms', title: dictActions.forms });
-  }
+  actions.push({ name: 'forms', title: dictActions.forms });
 
   return (
     <div className="d-flex gap-2 justify-content-start">
@@ -57,7 +53,7 @@ const WorkspaceActionButtons = ({
   );
 };
 
-function WorkspaceList({ showFormsAction = true }: Readonly<{ showFormsAction?: boolean }>) {
+function WorkspaceList() {
   const dict = useDictionary();
   const dictWorkspaces = dict.workspaces;
   const { authenticated, initializing } = useKeycloak();
@@ -67,35 +63,14 @@ function WorkspaceList({ showFormsAction = true }: Readonly<{ showFormsAction?: 
 
   const locale = getLocaleFromPath(pathname);
 
-  const listQuery = useListQuery(WORKSPACES_LIST_QUERY);
-  const {
-    workspaces,
-    total,
-    isLoading: workspacesLoading,
-    error: workspacesError,
-  } = useWorkspaceList({
-    offset: listQuery.offset,
-    limit: listQuery.pageSize,
-    sort: listQuery.sort,
-    q: listQuery.q,
+  const query = useListQuery(WORKSPACES_LIST_QUERY);
+  const workspacesResult = useWorkspaceList({
+    offset: query.offset,
+    limit: query.pageSize,
+    sort: query.sort,
+    q: query.q,
   });
-
-  const error = useMemo(
-    () =>
-      workspacesError
-        ? loadErrorMessage(workspacesError, {
-            sessionExpired: dict.general.sessionExpired,
-            noAccess: dict.general.noAccess,
-            failed: dictWorkspaces.listLoadError,
-          })
-        : null,
-    [
-      workspacesError,
-      dict.general.sessionExpired,
-      dict.general.noAccess,
-      dictWorkspaces.listLoadError,
-    ],
-  );
+  const { table } = useDataTable(query, workspacesResult, dictWorkspaces.listLoadError);
   const { data: currentUser } = useCurrentUser();
 
   const handleSelect = useCallback(
@@ -148,7 +123,6 @@ function WorkspaceList({ showFormsAction = true }: Readonly<{ showFormsAction?: 
           <WorkspaceActionButtons
             workspace={workspace}
             onAction={handleAction}
-            showFormsAction={showFormsAction}
             dictActions={dictWorkspaces.actions}
           />
         ),
@@ -161,10 +135,9 @@ function WorkspaceList({ showFormsAction = true }: Readonly<{ showFormsAction?: 
         ),
       },
     ],
-    [handleSelect, handleAction, dictWorkspaces, showFormsAction],
+    [handleSelect, handleAction, dictWorkspaces],
   );
 
-  const loading = workspacesLoading;
   const showCreateAction = currentUser?.capabilities?.canCreateWorkspace === true;
 
   if (!authenticated && !initializing) {
@@ -175,9 +148,9 @@ function WorkspaceList({ showFormsAction = true }: Readonly<{ showFormsAction?: 
     <>
       <ListPageToolbar>
         <ListPageSearchField
-          value={listQuery.searchInput}
-          onChange={listQuery.setSearchInput}
-          onSubmit={listQuery.commitSearch}
+          value={query.searchInput}
+          onChange={query.setSearchInput}
+          onSubmit={query.commitSearch}
           testIdPrefix="workspaces"
         />
         {showCreateAction ? (
@@ -192,22 +165,13 @@ function WorkspaceList({ showFormsAction = true }: Readonly<{ showFormsAction?: 
       </ListPageToolbar>
 
       <DataTable<WorkspaceItem>
-        data={workspaces}
+        {...table}
+        loading={table.loading || initializing}
         columns={columns}
-        loading={loading || initializing}
-        error={error}
         emptyMessage={dictWorkspaces.empty}
         loadingMessage={dict.general.loading}
         itemName="items"
         caption={dictWorkspaces.tableHeading}
-        pageSize={listQuery.pageSize}
-        currentPage={listQuery.page}
-        totalItems={total}
-        onPageChange={listQuery.setPage}
-        onPageSizeChange={listQuery.setPageSize}
-        pageSizeOptions={PAGE_SIZE_OPTIONS}
-        sort={listQuery.sort}
-        onSortChange={listQuery.setSort}
         keyExtractor={(workspace) => workspace.id}
       />
     </>

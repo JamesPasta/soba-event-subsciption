@@ -1,0 +1,80 @@
+# UAT environment — production-like sizing and external service topology.
+backend:
+  features:
+    dev-data: "disabled"
+    notifications: "disabled"
+    post-submission: "enabled"
+    post-submission-email: "enabled"
+    submission-export: "disabled"
+    user-search: "disabled"
+  replicas: 3
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 75
+  # Files and templates in S3; credentials and bucket come from Vault.
+  storage:
+    defaultBackend: storage-s3
+    defaultPrefix: uat
+    s3VaultKeyInfix: UAT
+  config:
+    nodeEnv: production
+    logLevel: warn
+    documentGenerationDefaultCode: cdogs-v2
+    # Email jobs end cancelled while notifications are disabled. Sending needs the notifications
+    # feature enabled, notificationDefaultCode notify-v1, notification.notifyV1.endpoint, and
+    # PLUGIN_NOTIFY_V1_API_KEY in the Vault secret.
+    postSubmissionActionPlugins: post-submission-email-addresses
+  notification:
+    notifyV1:
+      # Keeps one slow send well inside an email job's lease and timeout.
+      timeoutMs: "10000"
+  documentGeneration:
+    cdogsV2:
+      endpoint: https://cdogs.api.gov.bc.ca/api
+      tokenUrl: https://loginproxy.gov.bc.ca/auth/realms/comsvcauth/protocol/openid-connect/token
+
+frontend:
+  replicas: 3
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 75
+
+formio:
+  internal:
+    enabled: true
+  replicas: 2
+  nodeOptions: "--max-old-space-size=2048"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: 1
+      memory: 3Gi
+
+mongodb:
+  internal:
+    enabled: false
+  external:
+    uri: ""
+
+vault:
+  enabled: true

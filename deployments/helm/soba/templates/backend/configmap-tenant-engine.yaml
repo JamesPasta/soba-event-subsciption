@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "soba.fullname" . }}-backend-tenant-engine
+  labels:
+    {{- include "soba.labels" (dict "root" . "component" "backend") | nindent 4 }}
+data:
+  TENANT_ENGINE_DEFAULT_CODE: {{ .Values.backend.config.tenantEngineDefaultCode | quote }}
+  {{- with .Values.backend.tenantEngine.cstarV1.apiBaseUrl }}
+  PLUGIN_CSTAR_V1_API_BASE_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.backend.tenantEngine.cstarV1.timeoutMs }}
+  PLUGIN_CSTAR_V1_TIMEOUT_MS: {{ . | quote }}
+  {{- end }}

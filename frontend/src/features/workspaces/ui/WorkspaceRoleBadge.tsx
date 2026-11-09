@@ -12,13 +12,10 @@ function formatRoleLabel(role: string): string {
   return role.charAt(0).toUpperCase() + role.slice(1);
 }
 
-export function WorkspaceRoleBadge({ role, 'data-testid': testId }: Readonly<WorkspaceRoleBadgeProps>) {
+export function WorkspaceRoleBadge({
+  role,
+  'data-testid': testId,
+}: Readonly<WorkspaceRoleBadgeProps>) {
   const label = formatRoleLabel(role || '');
-  return (
-    <StatusTag
-      label={label}
-      variant={workspaceRoleToVariant(role)}
-      data-testid={testId}
-    />
-  );
+  return <StatusTag label={label} variant={workspaceRoleToVariant(role)} data-testid={testId} />;
 }

@@ -3,6 +3,7 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import type { AppDispatch } from '../store';
 import { loadFrontendRuntimeConfig } from '@/src/shared/config/runtimeConfig';
+import { getBasePath, withBasePath } from '@/src/shared/config/basePath';
 import { disableFormioBrowserAuth } from '@/src/features/formio-v5/disableFormioBrowserAuth';
 import type { RefreshOutcome } from '@/src/shared/auth/tokenRefresh';
 
@@ -68,7 +69,7 @@ export const initKeycloak = createAsyncThunk<InitResult, void, { rejectValue: st
         onLoad: 'check-sso',
         silentCheckSsoRedirectUri:
           typeof window !== 'undefined'
-            ? window.location.origin + '/silent-check-sso.html'
+            ? window.location.origin + withBasePath('/silent-check-sso.html')
             : undefined,
         checkLoginIframe: false,
       });
@@ -164,9 +165,10 @@ export const login = () => async (dispatch: AppDispatch) => {
     // fallback to direct login redirect
     try {
       const opts = {
-        redirectUri: typeof window !== 'undefined' ? window.location.origin : undefined,
+        redirectUri:
+          typeof window !== 'undefined' ? window.location.origin + getBasePath() : undefined,
       };
-      kc?.login(opts);
+      await kc?.login(opts);
     } catch {
       // no-op
     }
@@ -176,7 +178,7 @@ export const login = () => async (dispatch: AppDispatch) => {
 export const logout = () => (dispatch: AppDispatch) => {
   const kc: Keycloak.KeycloakInstance | null = kcInstance;
   if (kc) {
-    kc.logout();
+    void kc.logout();
   }
   kcInstance = null;
   disableFormioBrowserAuth();

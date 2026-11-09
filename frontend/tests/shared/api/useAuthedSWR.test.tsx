@@ -8,6 +8,7 @@ import { setAuthenticated, setToken } from '@/lib/slices/keycloakSlice';
 import { useAuthedSWR, useMaybeAuthedSWR } from '@/src/shared/api/useAuthedSWR';
 import { swrConfig } from '@/src/shared/api/swrConfig';
 import { SessionExpiredError } from '@/src/shared/api/sobaFetch';
+import { act } from 'react';
 
 // Keycloak itself never initializes here; the slice is driven directly so the hook runs against the
 // real store it reads in production.
@@ -43,7 +44,9 @@ describe('useAuthedSWR', () => {
 
   it('does not fetch when signed out', async () => {
     const fetcher = vi.fn().mockResolvedValue('data');
-    renderHook(() => useAuthedSWR(['forms'], fetcher), { wrapper });
+    await act(async () => {
+      renderHook(() => useAuthedSWR(['forms'], fetcher), { wrapper });
+    });
     await waitFor(() => expect(fetcher).not.toHaveBeenCalled());
   });
 
@@ -52,14 +55,18 @@ describe('useAuthedSWR', () => {
   it('does not fetch while the token is missing', async () => {
     signIn(undefined);
     const fetcher = vi.fn().mockResolvedValue('data');
-    renderHook(() => useAuthedSWR(['forms'], fetcher), { wrapper });
+    await act(async () => {
+      renderHook(() => useAuthedSWR(['forms'], fetcher), { wrapper });
+    });
     await waitFor(() => expect(fetcher).not.toHaveBeenCalled());
   });
 
   it('does not fetch when the caller reports the key is not ready', async () => {
     signIn('token-1');
     const fetcher = vi.fn().mockResolvedValue('data');
-    renderHook(() => useAuthedSWR(null, fetcher), { wrapper });
+    await act(async () => {
+      renderHook(() => useAuthedSWR(null, fetcher), { wrapper });
+    });
     await waitFor(() => expect(fetcher).not.toHaveBeenCalled());
   });
 

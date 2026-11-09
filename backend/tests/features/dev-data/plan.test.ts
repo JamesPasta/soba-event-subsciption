@@ -120,13 +120,6 @@ describe('dev data plan', () => {
       expect(allForms.some((f) => !f.published)).toBe(true);
     });
 
-    it('only leaves unpublished forms unprovisioned, and does leave some', () => {
-      for (const form of allForms) {
-        if (form.published) expect(form.provisioned).toBe(true);
-      }
-      expect(allForms.some((f) => !f.provisioned)).toBe(true);
-    });
-
     it('plans anonymous submissions only where the audience is public', () => {
       const anonymous = allSubmissions.filter((s) => s.submission.submitter.kind === 'anonymous');
       expect(anonymous.length).toBeGreaterThan(0);
@@ -137,7 +130,7 @@ describe('dev data plan', () => {
 
     it('covers every audience mode and every submission end state', () => {
       expect(new Set(plan.workspaces.map((w) => w.audience))).toEqual(
-        new Set(['public', 'protected', 'none']),
+        new Set(['public', 'protected', 'members']),
       );
       expect(new Set(allSubmissions.map((s) => plannedSubmissionState(s.submission)))).toEqual(
         new Set(['opened', 'draft', 'submitted']),

@@ -3,6 +3,17 @@ import rTracer from 'cls-rtracer';
 import { v7 as uuidv7 } from 'uuid';
 import { log } from './logger';
 
+// User search filters are names, email addresses and guids. Express routes paths without regard to case.
+const UNLOGGED_QUERY_PATH = /\/user-search(\/|$)/i;
+
+/** The request URL to log, without the query string on paths whose filters identify people. */
+export function urlForLog(url: string | undefined): string | undefined {
+  const index = url?.indexOf('?') ?? -1;
+  if (!url || index < 0) return url;
+  const path = url.slice(0, index);
+  return UNLOGGED_QUERY_PATH.test(path) ? path : url;
+}
+
 export const httpLogger = pinoHttp({
   logger: log,
   autoLogging: true,
@@ -38,7 +49,7 @@ export const httpLogger = pinoHttp({
       return {
         id: req.id,
         method: req.method,
-        url: req.url,
+        url: urlForLog(req.url),
         remoteAddress: req.socket?.remoteAddress,
         headers: req.headers,
       };

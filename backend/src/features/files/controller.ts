@@ -1,66 +1,49 @@
 import { Request, Response } from 'express';
+import { ApiErrorCodes } from '@soba/lib';
 import { filesService } from './service';
 import { isBlockedExtension } from './config';
 import { resolveCaller } from '../../core/middleware/actor';
 import { accessDenial } from '../../core/middleware/formSubmitAccess';
+import { checkedFileName, getUploadedFile } from '../../core/middleware/parseUpload';
+import { storedOrThrow } from '../../core/services/fileStore';
+import { sendStoredFile } from '../../core/api/shared/sendStoredFile';
 import {
-  InternalError,
   NotFoundError,
   ServiceUnavailableError,
-  UnprocessableEntityError,
   UnsupportedMediaTypeError,
-  ValidationError,
 } from '../../core/errors';
 
-/** Minimal shape of a multer memory-storage file (this project has no @types/multer). */
-interface UploadedFile {
-  originalname: string;
-  mimetype: string;
-  size: number;
-  buffer: Buffer;
-}
+const FILE_NOT_FOUND = 'File not found';
+const FILE_UNAVAILABLE = 'File content unavailable';
 
 export async function uploadFileHandler(req: Request, res: Response): Promise<void> {
-  // requireUploadAccess has resolved + authorized the submission's workspace into coreContext.
+  // requireUploadAccess has checked submissionId, then resolved + authorized its workspace into
+  // coreContext.
   const ctx = req.coreContext!;
 
-  const files = (req as Request & { files?: UploadedFile[] }).files;
-  const uploaded = Array.isArray(files) ? files[0] : undefined;
-  if (!uploaded) {
-    throw new ValidationError('no file');
-  }
-
-  const filename =
-    (req.body?.fileName as string) || (req.body?.name as string) || uploaded.originalname;
-  const submissionId = (req.body?.submissionId as string) || null;
+  const uploaded = getUploadedFile(req);
+  const filename = checkedFileName(
+    (req.body?.fileName as string) || (req.body?.name as string) || uploaded.originalname,
+  );
+  const submissionId = req.body.submissionId as string;
 
   // Always reject blocked extensions, regardless of the form's designer-configured fileTypes.
   // Check both the stored name and the real uploaded name (they can differ via fileNameTemplate).
   if (isBlockedExtension(uploaded.originalname) || isBlockedExtension(filename)) {
-    throw new UnsupportedMediaTypeError('File type not allowed');
+    throw new UnsupportedMediaTypeError('File type not allowed', ApiErrorCodes.file_type_blocked);
   }
 
-  const profile = req.header('storageProfile') || undefined;
-
-  const record = await filesService.upload({
-    workspaceId: ctx.workspaceId,
-    actorId: ctx.actorId,
-    filename,
-    contentType: uploaded.mimetype,
-    size: uploaded.size,
-    buffer: uploaded.buffer,
-    submissionId,
-    useProfile: profile,
-  });
-
-  // Virus scan rejections (antivirus feature on): infected is a client-side content problem;
-  // scan-unavailable is fail-closed — the scanner couldn't clear the file, so we don't store it.
-  if (record === 'infected') {
-    throw new UnprocessableEntityError('File failed virus scan');
-  }
-  if (record === 'scan-unavailable') {
-    throw new ServiceUnavailableError('Virus scanning unavailable');
-  }
+  const record = storedOrThrow(
+    await filesService.upload({
+      workspaceId: ctx.workspaceId,
+      actorId: ctx.actorId,
+      filename,
+      contentType: uploaded.mimetype,
+      size: uploaded.size,
+      buffer: uploaded.buffer,
+      submissionId,
+    }),
+  );
 
   // The chefs provider builds each file's URL as `${filesUrl}/${id}`, so it only needs the id
   // (name/size/type are used for the Form.io file value).
@@ -76,29 +59,31 @@ export async function uploadFileHandler(req: Request, res: Response): Promise<vo
 export async function downloadFileHandler(req: Request, res: Response): Promise<void> {
   const result = await filesService.getForCaller(req.params.id, resolveCaller(req));
   if (result === 'notfound') {
-    throw new NotFoundError('File not found');
+    throw new NotFoundError(FILE_NOT_FOUND, ApiErrorCodes.file_not_found);
   }
   if (result === 'denied') {
-    throw accessDenial(req, 'Not authorized to access this file');
+    throw accessDenial(req, 'Not authorized to access this file', ApiErrorCodes.read_denied);
   }
-  const { record, file } = result;
-  res.setHeader(
-    'Content-Type',
-    record.contentType ?? file.contentType ?? 'application/octet-stream',
-  );
-  const size = record.size ?? file.size;
-  if (size != null) res.setHeader('Content-Length', String(size));
-  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(record.filename)}"`);
+  if (result === 'unavailable') {
+    throw new ServiceUnavailableError(FILE_UNAVAILABLE, ApiErrorCodes.file_unavailable);
+  }
+  await sendStoredFile(res, result.record, result.file, 'inline');
+}
 
-  if (file.downloadStream) {
-    file.downloadStream.pipe(res);
-    return;
+/** Staff download of a submission's file. */
+export async function downloadSubmissionFileHandler(req: Request, res: Response): Promise<void> {
+  const result = await filesService.getForSubmission(
+    req.coreContext!.workspaceId,
+    req.params.id,
+    req.params.fileId,
+  );
+  if (result === 'notfound') {
+    throw new NotFoundError(FILE_NOT_FOUND, ApiErrorCodes.file_not_found);
   }
-  if (file.publicUrl) {
-    res.redirect(file.publicUrl);
-    return;
+  if (result === 'unavailable') {
+    throw new ServiceUnavailableError(FILE_UNAVAILABLE, ApiErrorCodes.file_unavailable);
   }
-  throw new InternalError('no download available');
+  await sendStoredFile(res, result.record, result.file, 'attachment');
 }
 
 export async function deleteFileHandler(req: Request, res: Response): Promise<void> {
@@ -108,7 +93,7 @@ export async function deleteFileHandler(req: Request, res: Response): Promise<vo
     return;
   }
   if (outcome === 'notfound') {
-    throw new NotFoundError('File not found');
+    throw new NotFoundError(FILE_NOT_FOUND, ApiErrorCodes.file_not_found);
   }
-  throw accessDenial(req, 'Not authorized to access this file');
+  throw accessDenial(req, 'Not authorized to access this file', ApiErrorCodes.write_denied);
 }

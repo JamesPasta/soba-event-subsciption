@@ -62,8 +62,8 @@ function sizingFor(size: SizeName): Sizing {
   };
 }
 
-/** Form submitters group setup. 'protected' is the bootstrap default. */
-export type PlannedAudience = 'public' | 'protected' | 'none';
+/** The workspace's audience. 'protected' is a new workspace's default. */
+export type PlannedAudience = 'public' | 'protected' | 'members';
 
 export type PlannedSubmitter =
   | { kind: 'target' }
@@ -82,8 +82,6 @@ export interface PlannedForm {
   name: string;
   description: string;
   fixtureCode: string;
-  /** False leaves the version at engineSyncStatus 'pending' with no schema ref. */
-  provisioned: boolean;
   published: boolean;
   submissions: PlannedSubmission[];
 }
@@ -204,10 +202,10 @@ function disclaimerAcceptedFor(sizing: Sizing, index: number): boolean {
 const publicIndexes = (sizing: Sizing): Set<number> =>
   new Set([1, Math.floor(sizing.memberWorkspaces / 2)]);
 
-const noAudienceIndex = (sizing: Sizing): number => sizing.memberWorkspaces - 1;
+const membersOnlyIndex = (sizing: Sizing): number => sizing.memberWorkspaces - 1;
 
 function audienceFor(sizing: Sizing, index: number): PlannedAudience {
-  if (index === noAudienceIndex(sizing)) return 'none';
+  if (index === membersOnlyIndex(sizing)) return 'members';
   return publicIndexes(sizing).has(index) ? 'public' : 'protected';
 }
 
@@ -222,10 +220,6 @@ function formCountFor(sizing: Sizing, index: number, anchor: PlannedAnchor | nul
 
 /** Two in three get published. Only a published version can take submissions. */
 const publishedFor = (formIndex: number): boolean => formIndex % 3 !== 2;
-
-/** Publishing needs a ready version, so only unpublished forms stay unprovisioned. */
-const provisionedFor = (formIndex: number): boolean =>
-  publishedFor(formIndex) || formIndex % 6 !== 5;
 
 function submissionCountFor(args: {
   sizing: Sizing;
@@ -320,7 +314,6 @@ function buildForms(args: {
       name: formName(args.workspaceIndex, formIndex, args.anchor),
       description: `Generated ${fixtureCodeFor(formIndex, args.anchor)} form for development.`,
       fixtureCode: fixtureCodeFor(formIndex, args.anchor),
-      provisioned: provisionedFor(formIndex),
       published,
       submissions: buildSubmissions({ ...args, formIndex, published }),
     };

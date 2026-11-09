@@ -5,9 +5,10 @@
  * virus scan).
  * Storage is discovered here too but selected per profile (see getStorageAdapter).
  */
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
+import { PostSubmissionActionScopeSchema } from '@soba/lib';
 import { env } from '../../config/env';
 import { log } from '../../logging';
 import {
@@ -39,6 +40,17 @@ import type {
   StorageEngineReadinessResult,
   StoragePluginDefinition,
 } from '../storage-engine/StorageEngineAdapter';
+import type { CredentialIssuerPluginDefinition } from '../credential-issuer/CredentialIssuerPluginDefinition';
+import type { TenantEnginePluginDefinition } from '../tenant/TenantEnginePluginDefinition';
+import type { WorkflowEnginePluginDefinition } from '../workflow/WorkflowEnginePluginDefinition';
+import type {
+  NotificationAdapter,
+  NotificationPluginDefinition,
+  NotificationReadinessResult,
+} from '../notification/NotificationAdapter';
+import { reportReadinessByKey } from './readiness';
+import type { UserSearchPluginDefinition } from '../user-search/UserSearchPluginDefinition';
+import type { PostSubmissionActionPluginDefinition } from '../post-submission-action/PostSubmissionActionPluginDefinition';
 
 // --- Definition schemas -----------------------------------------------------
 
@@ -48,7 +60,7 @@ const AdapterPluginDefinitionSchema = z.object({
   createAdapter: z.any(),
 });
 
-// form-engine and document-generation share this { code, metadata, createAdapter } shape.
+// Registry-backed integrations share this { code, metadata, createAdapter } shape.
 const MetadataPluginDefinitionSchema = z.object({
   code: z.string().min(1),
   metadata: z.object({
@@ -72,6 +84,32 @@ const IdpPluginDefinitionSchema = z.object({
   createClaimMapper: z.any(),
 });
 
+const hasParsers = (value: unknown): boolean =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as { parse?: unknown }).parse === 'function' &&
+  typeof (value as { safeParse?: unknown }).safeParse === 'function';
+
+// The code is also a job type and a URL segment, so it is lowercase words joined by dashes.
+const PostSubmissionActionPluginDefinitionSchema = z.object({
+  code: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  metadata: z.object({
+    code: z.string(),
+    name: z.string(),
+    description: z.string().optional(),
+    version: z.string().optional(),
+  }),
+  featureCode: z.string().min(1).optional(),
+  scopes: z.array(PostSubmissionActionScopeSchema).min(1),
+  optionsSchema: z.custom(hasParsers, 'Expected a schema with parse and safeParse'),
+  job: z.object({
+    pool: z.enum(['light', 'heavy']),
+    maxAttempts: z.number().int().positive().optional(),
+    timeoutMs: z.number().int().positive().optional(),
+    run: z.custom((value) => typeof value === 'function', 'Expected a function'),
+  }),
+});
+
 // --- Discovery --------------------------------------------------------------
 
 interface CachedPlugin {
@@ -86,6 +124,12 @@ interface CachedPlugin {
   virusScanDefinition?: VirusScanPluginDefinition;
   storageDefinition?: StoragePluginDefinition;
   idpDefinition?: IdpPluginDefinition;
+  credentialIssuerDefinition?: CredentialIssuerPluginDefinition;
+  tenantEngineDefinition?: TenantEnginePluginDefinition;
+  workflowEngineDefinition?: WorkflowEnginePluginDefinition;
+  notificationDefinition?: NotificationPluginDefinition;
+  userSearchDefinition?: UserSearchPluginDefinition;
+  postSubmissionActionDefinition?: PostSubmissionActionPluginDefinition;
 }
 
 // Each CachedPlugin definition field, the module export it comes from, and the schema that
@@ -137,6 +181,36 @@ const DEFINITION_KINDS: ReadonlyArray<{
     schema: AdapterPluginDefinitionSchema,
   },
   { field: 'idpDefinition', exportKey: 'idpPluginDefinition', schema: IdpPluginDefinitionSchema },
+  {
+    field: 'credentialIssuerDefinition',
+    exportKey: 'credentialIssuerPluginDefinition',
+    schema: MetadataPluginDefinitionSchema,
+  },
+  {
+    field: 'tenantEngineDefinition',
+    exportKey: 'tenantEnginePluginDefinition',
+    schema: MetadataPluginDefinitionSchema,
+  },
+  {
+    field: 'workflowEngineDefinition',
+    exportKey: 'workflowEnginePluginDefinition',
+    schema: MetadataPluginDefinitionSchema,
+  },
+  {
+    field: 'notificationDefinition',
+    exportKey: 'notificationPluginDefinition',
+    schema: MetadataPluginDefinitionSchema,
+  },
+  {
+    field: 'userSearchDefinition',
+    exportKey: 'userSearchPluginDefinition',
+    schema: MetadataPluginDefinitionSchema,
+  },
+  {
+    field: 'postSubmissionActionDefinition',
+    exportKey: 'postSubmissionActionPluginDefinition',
+    schema: PostSubmissionActionPluginDefinitionSchema,
+  },
 ];
 
 let cache: CachedPlugin[] | null = null;
@@ -246,6 +320,9 @@ export interface FeatureGatedPlugin {
 export function getFeatureGatedPluginCodes(): FeatureGatedPlugin[] {
   const gated: FeatureGatedPlugin[] = [];
   for (const { field } of DEFINITION_KINDS) {
+    // An action plugin is on where POST_SUBMISSION_ACTION_PLUGINS lists it; its feature only narrows
+    // which forms it runs for.
+    if (field === 'postSubmissionActionDefinition') continue;
     for (const def of definitionsOf(field)) {
       const d = def as { code?: unknown; featureCode?: unknown };
       if (typeof d.code === 'string' && typeof d.featureCode === 'string' && d.featureCode) {
@@ -278,6 +355,12 @@ export function getPluginCatalog(): PluginCatalogEntry[] {
       p.virusScanDefinition?.code ??
       p.storageDefinition?.code ??
       p.idpDefinition?.code ??
+      p.credentialIssuerDefinition?.code ??
+      p.tenantEngineDefinition?.code ??
+      p.workflowEngineDefinition?.code ??
+      p.notificationDefinition?.code ??
+      p.userSearchDefinition?.code ??
+      p.postSubmissionActionDefinition?.code ??
       p.dir;
     return {
       code,
@@ -327,6 +410,60 @@ export function getDocumentGenerationPluginDefinitions(): DocumentGenerationPlug
   return definitionsOf('documentGenerationDefinition');
 }
 
+export interface TenantEnginePluginCatalogEntry {
+  code: string;
+  name: string;
+  version?: string;
+}
+
+export function getTenantEnginePluginCatalog(): TenantEnginePluginCatalogEntry[] {
+  return getTenantEnginePluginDefinitions().map((d) => ({
+    code: d.code,
+    name: d.metadata.name,
+    version: d.metadata.version,
+  }));
+}
+
+export function getTenantEnginePluginDefinitions(): TenantEnginePluginDefinition[] {
+  return definitionsOf('tenantEngineDefinition');
+}
+
+export interface WorkflowEnginePluginCatalogEntry {
+  code: string;
+  name: string;
+  version?: string;
+}
+
+export function getWorkflowEnginePluginCatalog(): WorkflowEnginePluginCatalogEntry[] {
+  return getWorkflowEnginePluginDefinitions().map((d) => ({
+    code: d.code,
+    name: d.metadata.name,
+    version: d.metadata.version,
+  }));
+}
+
+export function getWorkflowEnginePluginDefinitions(): WorkflowEnginePluginDefinition[] {
+  return definitionsOf('workflowEngineDefinition');
+}
+
+export interface UserSearchPluginCatalogEntry {
+  code: string;
+  name: string;
+  version?: string;
+}
+
+export function getUserSearchPluginCatalog(): UserSearchPluginCatalogEntry[] {
+  return getUserSearchPluginDefinitions().map((d) => ({
+    code: d.code,
+    name: d.metadata.name,
+    version: d.metadata.version,
+  }));
+}
+
+export function getUserSearchPluginDefinitions(): UserSearchPluginDefinition[] {
+  return definitionsOf('userSearchDefinition');
+}
+
 export function getCachePluginDefinitions(): CachePluginDefinition[] {
   return definitionsOf('cacheDefinition');
 }
@@ -355,11 +492,61 @@ export function getIdpPluginDefinitions(): IdpPluginDefinition[] {
   return definitionsOf('idpDefinition');
 }
 
+export function getNotificationPluginDefinitions(): NotificationPluginDefinition[] {
+  return definitionsOf('notificationDefinition');
+}
+
+export interface CredentialIssuerPluginCatalogEntry {
+  code: string;
+  name: string;
+  version?: string;
+}
+
+export function getCredentialIssuerPluginDefinitions(): CredentialIssuerPluginDefinition[] {
+  return definitionsOf('credentialIssuerDefinition');
+}
+
+export function getCredentialIssuerPluginCatalog(): CredentialIssuerPluginCatalogEntry[] {
+  return getCredentialIssuerPluginDefinitions().map((definition) => ({
+    ...definition.metadata,
+    code: definition.code,
+  }));
+}
+
+let postSubmissionActions: PostSubmissionActionPluginDefinition[] | null = null;
+
+/** One definition per code, since each code is a job type: a later folder with a taken code is skipped. */
+function uniquePostSubmissionActions(): PostSubmissionActionPluginDefinition[] {
+  const byCode = new Map<string, PostSubmissionActionPluginDefinition>();
+  for (const plugin of discoverAndCache()) {
+    const definition = plugin.postSubmissionActionDefinition;
+    if (definition && byCode.has(definition.code)) {
+      log.warn(
+        { plugin: plugin.dir, code: definition.code },
+        '[PluginRegistry] duplicate post-submission action code, skipping',
+      );
+    } else if (definition) {
+      byCode.set(definition.code, definition);
+    }
+  }
+  return [...byCode.values()];
+}
+
+export function getPostSubmissionActionPluginDefinitions(): PostSubmissionActionPluginDefinition[] {
+  postSubmissionActions ??= uniquePostSubmissionActions();
+  return postSubmissionActions;
+}
+
 // --- Selectable adapters (singleton by code) --------------------------------
 
-// Active plugin code per selectable kind. The adapter getters and /meta/plugins both resolve
+// Active plugin code per selectable kind. Adapter getters, dedicated registries and /meta/plugins resolve
 // through this, so they can't drift. Storage is not here — it is selected per profile.
 const SELECTABLE_PLUGIN_DEFAULTS = {
+  credentialIssuer: {
+    label: 'credential-issuer',
+    configured: () => env.getCredentialIssuerDefaultCode(),
+    fallback: 'credential-issuer-noop',
+  },
   cache: { label: 'cache', configured: () => env.getCacheDefaultCode(), fallback: 'cache-memory' },
   messagebus: {
     label: 'messagebus',
@@ -380,6 +567,11 @@ const SELECTABLE_PLUGIN_DEFAULTS = {
     label: 'virus-scan',
     configured: () => env.getVirusScanDefaultCode(),
     fallback: 'virusscan-noop',
+  },
+  notification: {
+    label: 'notification',
+    configured: () => env.getNotificationDefaultCode(),
+    fallback: 'notification-noop',
   },
 } as const;
 
@@ -453,6 +645,20 @@ export const getVirusScanAdapter = lazyAdapter<VirusScanAdapter>(
   'virusScan',
   getVirusScanPluginDefinitions,
 );
+export const getNotificationAdapter = lazyAdapter<NotificationAdapter>(
+  'notification',
+  getNotificationPluginDefinitions,
+);
+
+/**
+ * Readiness of the active notification plugin, keyed by its code. Never throws: a plugin that cannot
+ * be created (missing config) yields { ok: false, message }; one with no readinessCheck is ok.
+ */
+export function checkNotificationReadiness(): Promise<Record<string, NotificationReadinessResult>> {
+  return reportReadinessByKey([resolveActivePluginCode('notification')], () =>
+    getNotificationAdapter().readinessCheck?.(),
+  );
+}
 
 // --- Storage (discovered above, but selected per profile) -------------------
 
@@ -490,17 +696,8 @@ export function getStorageAdapter(profile: string = 'default'): StorageEngineAda
  * that is unreachable or misconfigured yields { ok: false, message }; one with no readinessCheck
  * yields { ok: true }.
  */
-export async function checkStorageReadiness(): Promise<
-  Record<string, StorageEngineReadinessResult>
-> {
-  const results: Record<string, StorageEngineReadinessResult> = {};
-  for (const profile of Object.keys(getStorageProfilesConfig())) {
-    try {
-      const adapter = getStorageAdapter(profile);
-      results[profile] = (await adapter.readinessCheck?.()) ?? { ok: true };
-    } catch (err) {
-      results[profile] = { ok: false, message: err instanceof Error ? err.message : String(err) };
-    }
-  }
-  return results;
+export function checkStorageReadiness(): Promise<Record<string, StorageEngineReadinessResult>> {
+  return reportReadinessByKey(Object.keys(getStorageProfilesConfig()), (profile) =>
+    getStorageAdapter(profile).readinessCheck?.(),
+  );
 }

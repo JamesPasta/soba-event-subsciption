@@ -74,11 +74,45 @@ spec:
               . /vault/secrets/soba-formio
               export ROOT_EMAIL="{{ .Values.formio.admin.email }}"
               export PLUGIN_FORMIO_V5_ADMIN_USERNAME="{{ .Values.formio.admin.email }}"
+              {{- if and (not .Values.mongodb.internal.enabled) .Values.mongodb.external.authSecretName }}
+              NODE_CONFIG="$(node -e '
+                const fs = require("node:fs");
+                const password = fs.readFileSync("/var/run/secrets/soba/mongodb/password", "utf8");
+                if (!password) throw new Error("MongoDB password is empty");
+                const mongo = "mongodb://" + encodeURIComponent(process.env.SOBA_MONGODB_USERNAME) + ":" + encodeURIComponent(password) + "@" + process.env.SOBA_MONGODB_HOST + ":" + process.env.SOBA_MONGODB_PORT + "/" + encodeURIComponent(process.env.SOBA_MONGODB_DATABASE) + "?replicaSet=" + encodeURIComponent(process.env.SOBA_MONGODB_REPLICA_SET) + "&authSource=" + encodeURIComponent(process.env.SOBA_MONGODB_AUTH_SOURCE);
+                process.stdout.write(JSON.stringify({mongo, port: Number(process.env.SOBA_FORMIO_PORT), jwt: {secret: process.env.FORMIO_JWT_SECRET}, reservedForms: ["submissions", "submission", "exists", "export", "role", "current", "logout", "import", "form", "access", "health"]}));
+              ')" || exit 1
+              export NODE_CONFIG
+              {{- else }}
               export NODE_CONFIG='{"mongo":{{ include "soba.mongodbUri" . | toJson }},"port":{{ .Values.formio.service.port }},"jwt":{"secret":"'"${FORMIO_JWT_SECRET}"'"},"reservedForms":["submissions","submission","exists","export","role","current","logout","import","form","access","health"]}'
+              {{- end }}
               exec node --no-node-snapshot main
+          {{- if and (not .Values.mongodb.internal.enabled) .Values.mongodb.external.authSecretName }}
+          env:
+            - name: SOBA_MONGODB_HOST
+              value: {{ required "mongodb.external.host is required for authenticated MongoDB" .Values.mongodb.external.host | quote }}
+            - name: SOBA_MONGODB_PORT
+              value: {{ .Values.mongodb.external.port | quote }}
+            - name: SOBA_MONGODB_USERNAME
+              value: {{ .Values.mongodb.external.username | quote }}
+            - name: SOBA_MONGODB_DATABASE
+              value: {{ .Values.mongodb.external.database | quote }}
+            - name: SOBA_MONGODB_AUTH_SOURCE
+              value: {{ .Values.mongodb.external.authSource | quote }}
+            - name: SOBA_MONGODB_REPLICA_SET
+              value: {{ .Values.mongodb.external.replicaSet | quote }}
+            - name: SOBA_FORMIO_PORT
+              value: {{ .Values.formio.service.port | quote }}
+          {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "soba.fullname" . }}-formio
+          {{- if and (not .Values.mongodb.internal.enabled) .Values.mongodb.external.authSecretName }}
+          volumeMounts:
+            - name: mongodb-password
+              mountPath: /var/run/secrets/soba/mongodb
+              readOnly: true
+          {{- end }}
           {{- else }}
           envFrom:
             - configMapRef:
@@ -101,4 +135,13 @@ spec:
             timeoutSeconds: {{ .Values.formio.readinessProbe.timeoutSeconds }}
           resources:
             {{- toYaml .Values.formio.resources | nindent 12 }}
+      {{- if and .Values.vault.enabled (not .Values.mongodb.internal.enabled) .Values.mongodb.external.authSecretName }}
+      volumes:
+        - name: mongodb-password
+          secret:
+            secretName: {{ .Values.mongodb.external.authSecretName | quote }}
+            items:
+              - key: mongodb-passwords
+                path: password
+      {{- end }}
 {{- end }}

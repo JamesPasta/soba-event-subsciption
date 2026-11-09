@@ -1,27 +1,42 @@
 'use client';
 import { useMemo, useState, useCallback } from 'react';
 import { FaRegTrashCan, FaFile } from 'react-icons/fa6';
-import { Link, Button } from '@bcgov/design-system-react-components';
+import { Button, Checkbox, Link, Select } from '@bcgov/design-system-react-components';
 import { useRouter, usePathname } from 'next/navigation';
 
-import type { Dictionary } from '@/src/types/plugins';
+import type { Dictionary } from '@/src/types/dictionary';
 import { DataTable, type Column } from '@/src/components/DataTable';
-import { Modal } from '@/src/components/Modal';
+import { ConfirmModal } from '@/src/components/ConfirmModal';
 import { useFormatLongDate } from '@/src/shared/hooks/useFormatLongDate';
-import type { SubmissionListItem } from '@/src/types/submissions';
+import { SubmissionWorkflowState, type SubmissionListItem } from '@/src/types/submissions';
+import {
+  SUBMISSION_REVIEW_STATUSES,
+  type SubmissionReviewStatus,
+} from '@/src/types/submissionReview';
 import { Tag } from '@/src/components/Tag';
+import { StatusTag, workflowStateToVariant } from '@/src/components/StatusTag';
+import { ListPageFilters } from '@/src/components/ListPageLayout';
+import { useCurrentUser } from '@/src/shared/api/useCurrentUser';
+import { reviewerLabel } from './SubmissionStatusPanel';
 import { useKeycloak } from '@/lib/hooks/useKeycloak';
 import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
-import { deleteSobaSubmission } from '@/src/shared/api/sobaApi';
-import { useFormSubmissions } from '@/src/features/designer/useFormSubmissions';
-import { FORM_SUBMISSIONS_LIST_QUERY } from '@/src/shared/list/listQueryMemory';
-import { PAGE_SIZE_OPTIONS, useListQuery } from '@/src/shared/list/useListQuery';
-import { loadErrorMessage } from '@/src/shared/api/loadErrorMessage';
-import { getLocaleFromPath } from '@/src/shared/util/locale';
 import {
-  capitalizeFirstLetter,
-  convertSubmissionIdToConfirmationId,
-} from '@/src/shared/util/stringUtils';
+  useFormSubmissions,
+  useSubmissionDeleter,
+} from '@/src/features/designer/data/useFormSubmissions';
+import { FORM_SUBMISSIONS_LIST_QUERY, scopedListQuery } from '@/src/shared/list/listQueryMemory';
+import { submissionDeleteMessage } from '@/src/features/submissions/submissionDeleteMessage';
+import { useListQuery } from '@/src/shared/list/useListQuery';
+import { useDataTable } from '@/src/shared/list/useDataTable';
+import { getLocaleFromPath } from '@/src/shared/util/locale';
+import { capitalizeFirstLetter } from '@/src/shared/util/stringUtils';
+import { FEATURE_CODES } from '@/src/shared/featureFlags/flags';
+import { useFeatureAllowed } from '@/src/shared/api/useFeatureAllowed';
+
+const ALL_STATUSES = 'all';
+
+const toReviewStatus = (raw: string | undefined): SubmissionReviewStatus | undefined =>
+  SUBMISSION_REVIEW_STATUSES.find((status) => status === raw);
 
 interface FormSubmissionTabProps {
   dict: Dictionary;
@@ -35,54 +50,75 @@ export default function FormSubmissionTab({
   formId,
   opened,
 }: Readonly<FormSubmissionTabProps>) {
-  const listQuery = useListQuery(FORM_SUBMISSIONS_LIST_QUERY);
-  const { submissions, total, isLoading, error, refresh } = useFormSubmissions(formId, opened, {
-    offset: listQuery.offset,
-    limit: listQuery.pageSize,
-    sort: listQuery.sort,
-    q: listQuery.q,
-  });
+  const listSpec = useMemo(
+    () =>
+      formId ? scopedListQuery(FORM_SUBMISSIONS_LIST_QUERY, formId) : FORM_SUBMISSIONS_LIST_QUERY,
+    [formId],
+  );
+  const query = useListQuery(listSpec);
+  const dictReview = dict.submission.review;
+  const currentUserId = useCurrentUser().data?.actor?.id;
+  const reviewStatus = toReviewStatus(query.filters.reviewStatus);
+  const mine = query.filters.mine === 'true';
+  const submissionsResult = useFormSubmissions(
+    formId,
+    opened,
+    { offset: query.offset, limit: query.pageSize, sort: query.sort, q: query.q },
+    { reviewStatus, assigneeId: mine ? currentUserId : undefined },
+  );
+  // The review columns and filters show only when the form's settings let reviewers change status.
+  const showReview = submissionsResult.allowStatusUpdates;
+  // A filter from a shared link still applies when the review is hidden, so it stays clearable.
+  const showFilters = showReview || !!reviewStatus || mine;
+  const { setFilters } = query;
+  const setReviewFilter = useCallback(
+    (next: { reviewStatus?: string; mine?: boolean }) => {
+      const status = 'reviewStatus' in next ? next.reviewStatus : reviewStatus;
+      const assignedToMe = 'mine' in next ? next.mine : mine;
+      setFilters({
+        ...(status ? { reviewStatus: status } : {}),
+        ...(assignedToMe ? { mine: 'true' } : {}),
+      });
+    },
+    [setFilters, reviewStatus, mine],
+  );
+  const { table } = useDataTable(query, submissionsResult, dict.submission.error);
+  const submissionDeleter = useSubmissionDeleter();
   const formatLongDate = useFormatLongDate();
   const { token } = useKeycloak();
   const pathname = usePathname();
   const locale = getLocaleFromPath(pathname);
   const router = useRouter();
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
-  const [deleteId, setDeleteId] = useState<string>('');
+  const [pendingDelete, setPendingDelete] = useState<SubmissionListItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const { addNotification } = useNotificationStore();
-
-  const deletePress = useCallback((submissionId: string) => {
-    setShowDeleteConfirm(true);
-    setDeleteId(submissionId);
-  }, []);
+  const exportsAllowed = useFeatureAllowed(FEATURE_CODES.SUBMISSION_EXPORT);
 
   const confirmDelete = useCallback(async () => {
-    setShowDeleteConfirm(false);
+    if (!token || !pendingDelete) return;
+    setDeleting(true);
     try {
-      await deleteSobaSubmission(token as string, deleteId);
-      await refresh();
-      addNotification({
-        text: dict.submission.deleteSuccess || 'Submission deleted successfully',
-        type: 'success',
-      });
+      await submissionDeleter.remove(token, pendingDelete.id);
+      addNotification({ text: dict.submission.deleteSuccess, type: 'success' });
     } catch (e: unknown) {
       addNotification({
         text: e instanceof Error && e.message ? e.message : dict.submission.deleteFailure,
         type: 'error',
         consoleError: e,
       });
+    } finally {
+      setDeleting(false);
+      setPendingDelete(null);
     }
-  }, [token, deleteId, refresh, addNotification, dict]);
+  }, [token, pendingDelete, submissionDeleter, addNotification, dict]);
 
   const columns: Column<SubmissionListItem>[] = useMemo(
     () => [
       {
-        key: 'id',
+        key: 'confirmationCode',
         label: dict.submission?.confirmationId || 'Confirmation Id',
         render: (sub) => (
-          <span data-testid={`${sub.id}-confirmation-id`}>
-            {convertSubmissionIdToConfirmationId(sub.id)}
-          </span>
+          <span data-testid={`${sub.id}-confirmation-id`}>{sub.confirmationCode ?? 'N/A'}</span>
         ),
       },
       {
@@ -95,17 +131,45 @@ export default function FormSubmissionTab({
         label: dict.submission?.submitter || 'Submitter',
         render: (sub) => sub.createdBy || dict.submission.anon,
       },
-      {
-        key: 'workflowState',
-        label: dict.form?.status || 'Status',
-        render: (sub) => (
-          <Tag
-            data-testid={`${sub.id}-status-tag`}
-            text={capitalizeFirstLetter(sub.workflowState)}
-            color={sub.workflowState === 'submitted' ? 'green' : 'grey'}
-          />
-        ),
-      },
+      showReview
+        ? {
+            key: 'reviewStatus',
+            label: dict.form?.status || 'Status',
+            sortField: 'reviewStatus',
+            render: (sub: SubmissionListItem) =>
+              sub.reviewStatus ? (
+                <StatusTag
+                  data-testid={`${sub.id}-review-status`}
+                  label={dictReview.statuses[sub.reviewStatus]}
+                  variant={workflowStateToVariant(sub.reviewStatus)}
+                />
+              ) : null,
+          }
+        : {
+            key: 'workflowState',
+            label: dict.form?.status || 'Status',
+            render: (sub: SubmissionListItem) => (
+              <Tag
+                data-testid={`${sub.id}-status-tag`}
+                text={capitalizeFirstLetter(sub.workflowState)}
+                color={sub.workflowState === SubmissionWorkflowState.submitted ? 'green' : 'grey'}
+              />
+            ),
+          },
+      ...(showReview
+        ? [
+            {
+              key: 'assignee',
+              label: dictReview.assignedTo,
+              sortField: 'assignee',
+              render: (sub: SubmissionListItem) => (
+                <span data-testid={`${sub.id}-assignee`}>
+                  {sub.assignee ? reviewerLabel(sub.assignee) : ''}
+                </span>
+              ),
+            },
+          ]
+        : []),
       {
         key: 'submittedAt',
         label: dict.submission?.submittedAt || 'Submission Date',
@@ -125,7 +189,7 @@ export default function FormSubmissionTab({
               className="bcds-react-aria-Link medium false me-2"
               aria-label={dict.submission.view}
               data-testid={`${sub.id}-view-link`}
-              onPress={() => router.push(`/${locale}/submission/${sub.id}`)}
+              onPress={() => router.push(`/${locale}/build/${sub.formId}/submissions/${sub.id}`)}
             >
               <FaFile />
             </Link>
@@ -133,9 +197,7 @@ export default function FormSubmissionTab({
               className="bcds-react-aria-Link medium false danger"
               data-testid={`${sub.id}-delete-link`}
               aria-label={dict.submission.delete}
-              onPress={() => {
-                deletePress(sub.id);
-              }}
+              onPress={() => setPendingDelete(sub)}
             >
               <FaRegTrashCan />
             </Link>
@@ -143,78 +205,79 @@ export default function FormSubmissionTab({
         ),
       },
     ],
-    [dict, formatLongDate, deletePress, locale, router],
+    [dict, dictReview, showReview, formatLongDate, locale, router],
   );
 
-  const loadError = useMemo(
-    () =>
-      error
-        ? loadErrorMessage(error, {
-            sessionExpired: dict.general.sessionExpired,
-            noAccess: dict.general.noAccess,
-            failed: dict.submission.error,
-          })
-        : null,
-    [error, dict.general.sessionExpired, dict.general.noAccess, dict.submission.error],
+  const statusOptions = useMemo(
+    () => [
+      { id: ALL_STATUSES, label: dictReview.listAllStatuses },
+      ...SUBMISSION_REVIEW_STATUSES.map((id) => ({ id, label: dictReview.statuses[id] })),
+    ],
+    [dictReview],
   );
 
   return (
     <>
+      {exportsAllowed ? (
+        <div className="d-flex justify-content-end mb-2">
+          <Button
+            variant="secondary"
+            size="small"
+            isDisabled={!formId}
+            onPress={() => router.push(`/${locale}/build/${formId}/submissions/exports`)}
+            data-testid="submissions-export-button"
+          >
+            {dict.submission.export.button}
+          </Button>
+        </div>
+      ) : null}
+      {showFilters ? (
+        <ListPageFilters>
+          <Select
+            size="medium"
+            label={dictReview.listStatusFilter}
+            selectedKey={reviewStatus ?? ALL_STATUSES}
+            onSelectionChange={(key) =>
+              setReviewFilter({
+                reviewStatus: key && key !== ALL_STATUSES ? String(key) : undefined,
+              })
+            }
+            items={statusOptions}
+            data-testid="form-submissions-review-status-select"
+          />
+          {currentUserId ? (
+            <Checkbox
+              isSelected={mine}
+              onChange={(selected) => setReviewFilter({ mine: selected })}
+              data-testid="form-submissions-mine"
+            >
+              {dictReview.assignedToMeFilter}
+            </Checkbox>
+          ) : null}
+        </ListPageFilters>
+      ) : null}
       <DataTable<SubmissionListItem>
-        data={submissions}
+        {...table}
         columns={columns}
-        loading={isLoading}
-        error={loadError}
         emptyMessage={dict.submission.emptyList}
         loadingMessage={dict.general.loading}
         itemName="submissions"
         caption={dict.submission?.submissions || 'Submissions'}
-        pageSize={listQuery.pageSize}
-        currentPage={listQuery.page}
-        totalItems={total}
-        onPageChange={listQuery.setPage}
-        onPageSizeChange={listQuery.setPageSize}
-        pageSizeOptions={PAGE_SIZE_OPTIONS}
-        sort={listQuery.sort}
-        onSortChange={listQuery.setSort}
         keyExtractor={(sub) => sub.id}
       />
-      <Modal
-        show={showDeleteConfirm}
-        title={`${dict.submission.deleteConfirm || 'Confirm Delete'}`}
-        onClose={() => setShowDeleteConfirm(false)}
-        size="sm"
-      >
-        <p className="text-center px-2 py-3 text-muted">
-          {dict.submission.deleteConfirmText}: {deleteId}
-        </p>
-        <div>
-          <Button
-            variant="secondary"
-            data-testid="cancel-delete-button"
-            className="bcds-react-aria-Button medium secondary me-2"
-            aria-label={dict.workspaces.cancel}
-            isIconButton
-            onPress={() => {
-              setShowDeleteConfirm(false);
-            }}
-          >
-            {dict.workspaces.cancel}
-          </Button>
-          <Button
-            variant="secondary"
-            data-testid="confirm-delete-button"
-            aria-label={dict.submission.confirm}
-            isIconButton
-            danger
-            onPress={() => {
-              confirmDelete();
-            }}
-          >
-            {dict.submission.confirm}
-          </Button>
-        </div>
-      </Modal>
+      <ConfirmModal
+        show={pendingDelete !== null}
+        title={dict.submission.deleteTitle}
+        message={
+          pendingDelete
+            ? submissionDeleteMessage(dict.submission, pendingDelete, formatLongDate)
+            : ''
+        }
+        confirmLabel={dict.submission.delete}
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setPendingDelete(null)}
+        pending={deleting}
+      />
     </>
   );
 }

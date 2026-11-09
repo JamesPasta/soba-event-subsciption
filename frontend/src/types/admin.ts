@@ -1,67 +1,42 @@
 /** Platform-administration payloads served by the backend `/admin/*` routes. */
-import type { ListPage, ListQueryArgs } from './list';
+import type { FeatureScopeItem } from '@soba/lib';
+import type { JobStatus } from './jobs';
+import type { ListQueryArgs } from './list';
 
-export type SobaAdminItem = {
-  userId: string;
-  source: string;
-  identityProviderCode: string | null;
-  syncedAt: string | null;
-  displayLabel: string | null;
+export type {
+  SobaAdminItem,
+  ListSobaAdminsResponse as SobaAdminsResponse,
+  AddSobaAdminBody,
+  FeatureScopeItem,
+  ListFeatureScopesResponse as FeatureScopesResponse,
+  UpsertFeatureScopeBody,
+  DocumentGenerationAuditItem,
+  ListDocumentGenerationAuditsResponse as DocumentGenerationAuditsResponse,
+  JobListItem,
+  ListJobsResponse as JobsResponse,
+  JobDetail,
+  JobSummary,
+  JobEmailCounts,
+  JobTypeItem,
+  ListJobTypesResponse as JobTypesResponse,
+} from '@soba/lib';
+
+export type { JobStatus };
+
+/** The filters the jobs list sends; ids are sent only once they are uuids. */
+export type JobFilters = {
+  status?: JobStatus;
+  type?: string;
+  workspaceId?: string;
+  formId?: string;
+  submissionId?: string;
 };
 
-export type SobaAdminsResponse = {
-  items: SobaAdminItem[];
-  page: ListPage;
-};
+export type JobsQuery = ListQueryArgs & JobFilters;
 
-export type FeatureScopeType = 'workspace' | 'form';
+export type FeatureScopeType = FeatureScopeItem['scopeType'];
 
-export type FeatureScopeStatus = 'active' | 'inactive';
-
-export type FeatureScopeItem = {
-  id: string;
-  featureCode: string;
-  scopeType: FeatureScopeType;
-  scopeId: string;
-  status: FeatureScopeStatus;
-  createdAt: string;
-  updatedAt: string;
-  createdBy: string | null;
-  updatedBy: string | null;
-};
-
-export type FeatureScopesResponse = {
-  items: FeatureScopeItem[];
-  page: ListPage;
-};
-
-export type UpsertFeatureScopeBody = {
-  featureCode: string;
-  scopeType: FeatureScopeType;
-  scopeId: string;
-  status?: FeatureScopeStatus;
-};
-
-export type DocumentGenerationAuditItem = {
-  id: string;
-  workspaceId: string;
-  formId: string;
-  submissionId: string;
-  mode: string;
-  backendCode: string;
-  outcome: string;
-  httpStatus: number | null;
-  durationMs: number;
-  errorDetail: string | null;
-  requestId: string | null;
-  createdBy: string;
-  createdAt: string;
-};
-
-export type DocumentGenerationAuditsResponse = {
-  items: DocumentGenerationAuditItem[];
-  page: ListPage;
-};
+export type FeatureScopeStatus = FeatureScopeItem['status'];
 
 export type DocumentGenerationAuditsQuery = ListQueryArgs & {
   workspaceId?: string;

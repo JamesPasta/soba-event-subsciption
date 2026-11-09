@@ -49,24 +49,26 @@ function enabledSourceCondition(table: CodeTable) {
   );
 }
 
+const toRegisteredCodeSets = (codeSet: string, rows: { source: string }[]): RegisteredCodeSet[] =>
+  rows.map((r) => ({
+    codeSet,
+    providerType: r.source === CODE_SOURCE_CORE ? 'core' : 'feature',
+    featureCode: r.source === CODE_SOURCE_CORE ? null : r.source,
+  }));
+
 async function listCodeSetsOnlyEnabled(): Promise<RegisteredCodeSet[]> {
   const { features } = await import('../db/schema');
-  const result: RegisteredCodeSet[] = [];
-  for (const [codeSet, table] of Object.entries(CODE_TABLES)) {
-    const rows = await db
-      .selectDistinct({ source: table.source })
-      .from(table)
-      .leftJoin(features, eq(table.source, features.code))
-      .where(or(eq(table.source, CODE_SOURCE_CORE), eq(features.status, 'enabled')));
-    for (const r of rows) {
-      result.push({
-        codeSet,
-        providerType: r.source === CODE_SOURCE_CORE ? 'core' : 'feature',
-        featureCode: r.source === CODE_SOURCE_CORE ? null : r.source,
-      });
-    }
-  }
-  return result;
+  const perSet = await Promise.all(
+    Object.entries(CODE_TABLES).map(async ([codeSet, table]) => {
+      const rows = await db
+        .selectDistinct({ source: table.source })
+        .from(table)
+        .leftJoin(features, eq(table.source, features.code))
+        .where(or(eq(table.source, CODE_SOURCE_CORE), eq(features.status, 'enabled')));
+      return toRegisteredCodeSets(codeSet, rows);
+    }),
+  );
+  return perSet.flat();
 }
 
 export class CodeService {
@@ -76,18 +78,13 @@ export class CodeService {
     if (options?.onlyEnabledFeatures !== false) {
       return listCodeSetsOnlyEnabled();
     }
-    const result: RegisteredCodeSet[] = [];
-    for (const [codeSet, table] of Object.entries(CODE_TABLES)) {
-      const rows = await db.selectDistinct({ source: table.source }).from(table);
-      for (const r of rows) {
-        result.push({
-          codeSet,
-          providerType: r.source === CODE_SOURCE_CORE ? 'core' : 'feature',
-          featureCode: r.source === CODE_SOURCE_CORE ? null : r.source,
-        });
-      }
-    }
-    return result;
+    const perSet = await Promise.all(
+      Object.entries(CODE_TABLES).map(async ([codeSet, table]) => {
+        const rows = await db.selectDistinct({ source: table.source }).from(table);
+        return toRegisteredCodeSets(codeSet, rows);
+      }),
+    );
+    return perSet.flat();
   }
 
   async getCodes(

@@ -1,5 +1,5 @@
 # Crunchy Postgres values for SOBA UAT.
-# Consumed by bcgov/action-crunchy; must be compatible with its charts/crunchy chart.
+# Consumed by bcgov/actions-openshift/crunchy; must be compatible with its bundled chart.
 #
 # UAT is intended to mirror the future production database pattern:
 # - stable release/cluster name supplied by workflow: pg-soba-uat / pg-soba-uat-crunchy

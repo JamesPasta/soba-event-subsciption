@@ -70,7 +70,7 @@ describe('PageLayout heading', () => {
     expect(document.getElementById(labelId as string)).not.toBeNull();
   });
 
-  it('does not let one child clobber another child\'s heading', async () => {
+  it("does not let one child clobber another child's heading", async () => {
     function TwoChildren() {
       const [showSecond, setShowSecond] = useState(true);
       return (

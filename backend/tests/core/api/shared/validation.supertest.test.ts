@@ -24,6 +24,7 @@ describe('validateRequest supertest', () => {
     const res = await request(app).post('/echo').send({ name: '' });
     expect(res.status).toBe(400);
     expect(res.body).toHaveProperty('error', 'Invalid request body');
+    expect(res.body).toHaveProperty('code', 'request_invalid');
     expect(res.body).toHaveProperty('details');
     expect(Array.isArray(res.body.details)).toBe(true);
     expect(res.body.details.length).toBeGreaterThan(0);

@@ -24,7 +24,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: "{{ $root.Values.frontend.image.repository }}:{{ $root.Values.frontend.image.tag }}"
+          image: "{{ $root.Values.frontend.image.repository }}:{{ $root.Values.frontend.image.tag }}-{{ $name }}"
           imagePullPolicy: {{ $root.Values.frontend.image.pullPolicy }}
           ports:
             - name: http
@@ -35,13 +35,13 @@ spec:
                 name: {{ include "soba.fullname" $root }}-frontend-{{ $name }}
           livenessProbe:
             httpGet:
-              path: {{ if $root.Values.global.routePath }}{{ $root.Values.global.routePath }}/{{ else }}/{{ end }}
+              path: {{ $app.routePath }}/
               port: http
             initialDelaySeconds: {{ $root.Values.frontend.livenessProbe.initialDelaySeconds }}
             periodSeconds: {{ $root.Values.frontend.livenessProbe.periodSeconds }}
           readinessProbe:
             httpGet:
-              path: {{ if $root.Values.global.routePath }}{{ $root.Values.global.routePath }}/{{ else }}/{{ end }}
+              path: {{ $app.routePath }}/
               port: http
             initialDelaySeconds: {{ $root.Values.frontend.readinessProbe.initialDelaySeconds }}
             periodSeconds: {{ $root.Values.frontend.readinessProbe.periodSeconds }}

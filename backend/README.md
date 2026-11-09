@@ -11,7 +11,7 @@ The Api is written in typescipt and uses the express library for routing and the
 
 ### Node Version
 
-This repository is built with node v24.4.1 and is set up inside the .nvmrc
+This repository is built with node 24 and is set up inside the .nvmrc
 
 ### Environment
 

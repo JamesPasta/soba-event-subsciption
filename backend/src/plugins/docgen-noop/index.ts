@@ -1,4 +1,3 @@
-import type { PluginConfigReader } from '../../core/config/pluginConfig';
 import type {
   DocumentGenerationAdapter,
   DocumentRenderResult,
@@ -11,13 +10,10 @@ const CODE = 'docgen-noop';
 const PLACEHOLDER = Buffer.from('document generation is disabled (docgen-noop backend)\n');
 
 /** No-op document generator: returns a placeholder document, no external call. Dev/test only. */
-function createNoopDocumentGenerationAdapter(
-  config: PluginConfigReader,
-): DocumentGenerationAdapter {
-  void config; // Required by interface; this plugin does not use config
+function createNoopDocumentGenerationAdapter(): DocumentGenerationAdapter {
   return {
-    async render(): Promise<DocumentRenderResult> {
-      return { data: PLACEHOLDER, contentType: 'text/plain' };
+    render(): Promise<DocumentRenderResult> {
+      return Promise.resolve({ data: PLACEHOLDER, contentType: 'text/plain' });
     },
   };
 }

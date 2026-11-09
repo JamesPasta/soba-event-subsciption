@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "soba.fullname" . }}-backend-user-search
+  labels:
+    {{- include "soba.labels" (dict "root" . "component" "backend") | nindent 4 }}
+data:
+  USER_SEARCH_PLUGINS: {{ .Values.backend.config.userSearchPlugins | quote }}
+  {{- with .Values.backend.userSearch.cssV1.apiBaseUrl }}
+  PLUGIN_CSS_V1_API_BASE_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.backend.userSearch.cssV1.environment }}
+  PLUGIN_CSS_V1_ENVIRONMENT: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.backend.userSearch.cssV1.tokenUrl }}
+  PLUGIN_CSS_V1_TOKEN_URL: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.backend.userSearch.cssV1.timeoutMs }}
+  PLUGIN_CSS_V1_TIMEOUT_MS: {{ . | quote }}
+  {{- end }}

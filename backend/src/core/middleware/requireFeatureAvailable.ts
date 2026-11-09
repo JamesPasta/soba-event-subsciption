@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import { ApiErrorCodes } from '@soba/lib';
 import { NotFoundError } from '../errors';
 import { isFeatureAvailable } from '../services/featureAvailabilityService';
 import type { FeatureScopeContext } from '../services/featureAvailabilityService';
@@ -33,7 +34,7 @@ export const requireFeatureAvailable = (
     try {
       const available = await isFeatureAvailable(code, getScope(req));
       if (!available) {
-        throw new NotFoundError('Not found');
+        throw new NotFoundError('Not found', ApiErrorCodes.route_not_found);
       }
       next();
     } catch (error) {

@@ -1,7 +1,12 @@
 'use client';
 
 import React from 'react';
-import { Modal as BCModal, Dialog, Heading, ButtonGroup } from '@bcgov/design-system-react-components';
+import {
+  Modal as BCModal,
+  Dialog,
+  Heading,
+  ButtonGroup,
+} from '@bcgov/design-system-react-components';
 import { useDictionary } from '@/app/[lang]/Providers';
 import styles from './Modal.module.css';
 
@@ -14,6 +19,8 @@ export interface ModalProps {
   footer?: React.ReactNode;
   /** Off for a prompt that has to be answered rather than dismissed with Escape or a backdrop click. */
   isDismissable?: boolean;
+  /** Off to hide the close button (X). */
+  isCloseable?: boolean;
 }
 
 // The design-system Modal is a fixed ~600px, so `size` maps onto an explicit width.
@@ -38,6 +45,7 @@ export function Modal({
   size = 'lg',
   footer,
   isDismissable = true,
+  isCloseable = true,
 }: Readonly<ModalProps>) {
   const dict = useDictionary();
   return (
@@ -51,7 +59,7 @@ export function Modal({
       data-testid={`${title}-modal`}
       style={{ width: WIDTH_BY_SIZE[size], maxWidth: '100vw' }}
     >
-      <Dialog isCloseable aria-label={title}>
+      <Dialog isCloseable={isCloseable} aria-label={title}>
         <div className={styles.shell}>
           <div className={styles.header}>
             <Heading slot="title" className={styles.title}>

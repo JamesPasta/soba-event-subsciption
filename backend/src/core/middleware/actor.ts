@@ -1,48 +1,40 @@
 /**
- * Resolves req.actorId from JWT (via IdP plugins) when not already set.
- * Refreshes soba_admin from IdP when the mapper returns sobaAdmin, then sets req.isSobaAdmin.
+ * Resolves req.actorId from the JWT (via IdP plugins).
+ * Applies the IdP's admin claim to soba_admin when the mapper returns sobaAdmin, then sets req.isSobaAdmin.
  * Must run after checkJwt() so that req.idpPluginCode and req.authPayload are set.
  */
 import { Request, Response, NextFunction } from 'express';
-const X_SOBA_USER_ID = 'x-soba-user-id';
 import { getIdpPlugins } from '../auth/idpRegistry';
 import type { CallerIdentity } from '../db/repos/formSubmitAccessRepo';
-import { findOrCreateUserByIdentity } from '../db/repos/membershipRepo';
-import { isSobaAdmin, upsertSobaAdminFromIdp } from '../db/repos/sobaAdminRepo';
+import { resolveSignedInActor } from '../services/actorIdentity';
 import { ValidationError } from '../errors';
-import { profileHelpers } from '../auth/jwtClaims';
+import { profileHelpers, type IdpAttributes } from '../auth/jwtClaims';
 import { getPublicUser } from '../services/publicUser';
 import { PUBLIC_PROVIDER_CODE } from '../db/codes';
 
 /**
- * Read the resolved actor id, falling back to the dev/test `x-soba-user-id` bypass header.
+ * Read the actor id resolved by resolveActor.
  * Used by actor-only routes that don't resolve a workspace context.
  */
-export const getActorId = (req: Request): string | null =>
-  req.actorId ?? req.header(X_SOBA_USER_ID) ?? null;
+export const getActorId = (req: Request): string | null => req.actorId ?? null;
 
 /** Identity provider code for the current session (from the verified JWT). */
 export const getActorIdpCode = (req: Request): string | null =>
   req.user?.providerCode?.toLowerCase() ?? null;
 
-/** The caller's identity for audience checks: resolved actor id and provider code (`public` if anon). */
+/**
+ * The caller's identity for submit-mode access checks: resolved actor id and provider code (`public`
+ * if anon).
+ */
 export const resolveCaller = (req: Request): CallerIdentity => ({
   actorId: req.actorId ?? null,
   idpCode: getActorIdpCode(req) ?? req.idpType?.toLowerCase() ?? null,
 });
 
-export function resolveActor(req: Request, res: Response, next: NextFunction): void {
-  const actorId = getActorId(req);
-  if (actorId) {
-    isSobaAdmin(actorId)
-      .then((admin) => {
-        req.isSobaAdmin = admin;
-        next();
-      })
-      .catch(next);
-    return;
-  }
+/** The caller's IdP claims for the current session (from the verified JWT); empty when anonymous. */
+export const getActorIdpAttributes = (req: Request): IdpAttributes => req.user?.idpAttributes ?? {};
 
+export function resolveActor(req: Request, res: Response, next: NextFunction): void {
   const pluginCode = (req as Request & { idpPluginCode?: string }).idpPluginCode;
   const payload = (req as Request & { authPayload?: Record<string, unknown> }).authPayload;
 
@@ -62,24 +54,10 @@ export function resolveActor(req: Request, res: Response, next: NextFunction): v
     profileHelpers.getDisplayLabel(mapped.profile, mapped.subject) ??
     null;
 
-  findOrCreateUserByIdentity(
-    mapped.providerCode,
-    mapped.subject,
-    mapped.profile,
-    mapped.idpAttributes,
-  )
-    .then((actorId) => {
+  resolveSignedInActor(pluginCode, mapped, actorDisplayLabel)
+    .then(({ actorId, isSobaAdmin }) => {
       req.actorId = actorId;
-
-      const refresh =
-        typeof mapped.sobaAdmin === 'boolean'
-          ? upsertSobaAdminFromIdp(actorId, pluginCode, mapped.sobaAdmin, actorDisplayLabel)
-          : Promise.resolve();
-
-      return refresh.then(() => isSobaAdmin(actorId));
-    })
-    .then((admin) => {
-      req.isSobaAdmin = admin;
+      req.isSobaAdmin = isSobaAdmin;
       next();
     })
     .catch(next);
@@ -87,14 +65,12 @@ export function resolveActor(req: Request, res: Response, next: NextFunction): v
 
 /**
  * Actor resolver for routes mounted with `checkJwt({ allowPublic: true })`: resolves the authenticated
- * actor when a token/identity is present, otherwise attributes the request to the seeded public user
- * (idp `public`). The route's own authorization (e.g. the Form submitters audience) decides access;
- * the public user is a member of no workspace, so staff-only routes still reject it.
+ * actor, or attributes a request that sent no bearer to the seeded public user (idp `public`). The
+ * route's own authorization (e.g. the form's audience) decides access; the public user is a member
+ * of no workspace, so staff-only routes still reject it.
  */
 export function resolveActorOrPublic(req: Request, res: Response, next: NextFunction): void {
-  const hasIdentity =
-    req.actorId || req.header(X_SOBA_USER_ID) || (req.idpPluginCode && req.authPayload);
-  if (hasIdentity) {
+  if (req.idpPluginCode && req.authPayload) {
     return resolveActor(req, res, next);
   }
 

@@ -1,4 +1,5 @@
 import { NextFunction, Request, RequestHandler, Response } from 'express';
+import { ApiErrorCodes } from '@soba/lib';
 import { z, ZodTypeAny } from 'zod';
 
 export type RequestSchemas = {
@@ -83,6 +84,7 @@ export const validateRequest = (schemas: RequestSchemas): RequestHandler => {
     if (isValidationFailure(result)) {
       return res.status(400).json({
         error: result.error,
+        code: ApiErrorCodes.request_invalid,
         details: result.details,
       });
     }

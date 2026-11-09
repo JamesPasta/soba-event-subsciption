@@ -1,18 +1,9 @@
-import { eq } from 'drizzle-orm';
+import { eq, type InferSelectModel } from 'drizzle-orm';
 import { FeatureStatus } from '../codes';
 import { db } from '../client';
 import { features } from '../schema';
 
-export interface FeatureRow {
-  code: string;
-  name: string;
-  description: string | null;
-  version: string | null;
-  status: string;
-  availability: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
+export type FeatureRow = InferSelectModel<typeof features>;
 
 export const listFeatures = async (): Promise<FeatureRow[]> => {
   const rows = await db.select().from(features).orderBy(features.code);

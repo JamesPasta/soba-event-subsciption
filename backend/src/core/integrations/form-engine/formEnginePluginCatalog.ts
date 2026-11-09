@@ -1,5 +1,5 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { FormEnginePluginDefinition } from './FormEnginePluginDefinition';
 
 interface DiscoveredPluginModule {
@@ -37,7 +37,7 @@ export const getFormEnginePluginCatalog = (): FormEnginePluginCatalogEntry[] => 
   const modules = discoverPluginModules();
   return modules
     .map(({ module }) => module.formEnginePluginDefinition ?? null)
-    .filter((definition) => Boolean(definition))
+    .filter(Boolean)
     .map((definition) => ({
       code: definition!.code,
       name: definition!.metadata.name,
@@ -47,7 +47,5 @@ export const getFormEnginePluginCatalog = (): FormEnginePluginCatalogEntry[] => 
 
 export const getFormEnginePluginDefinitions = (): FormEnginePluginDefinition[] => {
   const modules = discoverPluginModules();
-  return modules
-    .map(({ module }) => module.formEnginePluginDefinition)
-    .filter((definition): definition is FormEnginePluginDefinition => Boolean(definition));
+  return modules.map(({ module }) => module.formEnginePluginDefinition).filter(Boolean);
 };

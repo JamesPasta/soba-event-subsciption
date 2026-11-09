@@ -1,6 +1,5 @@
 'use client';
-import { useCallback, useEffect, useRef, useMemo } from 'react';
-import { useSWRConfig } from 'swr';
+import { useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Dropdown } from 'react-bootstrap';
@@ -8,25 +7,21 @@ import { Header as BCHeader } from '@bcgov/design-system-react-components';
 import { FaUser } from 'react-icons/fa6';
 import { useKeycloak } from '@/lib/hooks/useKeycloak';
 import { useCurrentUser } from '@/src/shared/api/useCurrentUser';
-import { useWorkspaces } from '@/src/shared/api/useWorkspaces';
 import { useDictionary } from '../[lang]/Providers';
 import { LoginButton } from './LoginButton';
 import { LanguageSelector, type LanguageOption } from './LanguageSelector';
-import type { PluginNavItem } from '@/src/types/plugins';
 import { WorkspaceModal, WORKSPACE_MODAL_DISMISSED_KEY } from '@/src/components/WorkspaceModal';
-import { forgetListQueries } from '@/src/shared/list/listQueryMemory';
+import { useClearSessionData } from '@/src/shared/api/useClearSessionData';
 import { removeSessionValues } from '@/src/shared/storage/sessionStore';
 import { isIdentityEnded } from '@/src/shared/auth/sessionIdentity';
 
 import styles from './Header.module.css';
 
 type HeaderProps = {
-  headerNavItems: PluginNavItem[];
-  overlayNavItems: PluginNavItem[];
-  showWorkspaces: boolean;
+  designMode: boolean;
 };
 
-function Header({ headerNavItems, showWorkspaces }: Readonly<HeaderProps>) {
+function Header({ designMode }: Readonly<HeaderProps>) {
   const dict = useDictionary();
   const locale = dict.locale === 'en' || dict.locale === 'fr' ? dict.locale : 'en';
   const languageOptions: LanguageOption[] = Object.entries(dict.header.languages).map(
@@ -38,15 +33,14 @@ function Header({ headerNavItems, showWorkspaces }: Readonly<HeaderProps>) {
   const { authenticated, idTokenParsed, token, logout, init, refresh, initStarted, initializing } =
     useKeycloak();
   const currentUser = useCurrentUser();
-  const { workspaces, loaded: workspacesLoaded } = useWorkspaces();
-  const { mutate } = useSWRConfig();
+  const clearSessionData = useClearSessionData();
 
   const headerChromeRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<NodeJS.Timeout | undefined>(undefined);
   const previousSubjectRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    init();
+    void init();
   }, [init]);
 
   // The aside sticks below the header, so its height has to be a real number. It is a design system
@@ -66,15 +60,13 @@ function Header({ headerNavItems, showWorkspaces }: Readonly<HeaderProps>) {
     return () => observer.disconnect();
   }, []);
 
-  // The cache and this tab's view state outlive the session. The next person signing in here would
-  // otherwise be served the previous user's workspaces and their list filters. Revalidating rather
-  // than only emptying: a key still on screen would otherwise hold `undefined` for the life of the
-  // page, because a mounted hook only refetches when its key changes.
+  // The cache and this tab's view state outlive the session, so the next person signing in here
+  // must not be served the previous user's data. The dismissed-modal flag is this feature's, so it
+  // is cleared here rather than in the shared session-data hook.
   const clearSessionState = useCallback(() => {
-    void mutate(() => true, undefined, { revalidate: true });
+    clearSessionData();
     removeSessionValues((key) => key === WORKSPACE_MODAL_DISMISSED_KEY);
-    forgetListQueries();
-  }, [mutate]);
+  }, [clearSessionData]);
 
   useEffect(() => {
     const currentSubject =
@@ -103,12 +95,12 @@ function Header({ headerNavItems, showWorkspaces }: Readonly<HeaderProps>) {
     }
     if (!intervalRef.current) {
       intervalRef.current = setInterval(() => {
-        refresh();
+        void refresh();
       }, 30000);
     }
   }, [authenticated, token, idTokenParsed, refresh, clearSessionState, initStarted, initializing]);
 
-  const hasWorkspaces = useMemo(() => workspaces.length > 0, [workspaces.length]);
+  const hasWorkspaces = currentUser.data?.capabilities?.hasWorkspaces === true;
   const canCreateWorkspace = currentUser.data?.capabilities?.canCreateWorkspace === true;
 
   const handleLogout = () => {
@@ -205,30 +197,11 @@ function Header({ headerNavItems, showWorkspaces }: Readonly<HeaderProps>) {
           </a>,
         ]}
       >
-        <div className="d-flex align-items-center gap-3">
-          {headerNavItems.length > 0 ? (
-            <nav
-              aria-label={dict.header.primaryNavAria}
-              data-testid="primary-nav"
-              className="d-none d-md-block"
-            >
-              <ul className="list-unstyled d-flex align-items-center gap-3 mb-0">
-                {headerNavItems.map((item) => (
-                  <li key={item.id}>
-                    <Link href={item.href} className="text-decoration-underline">
-                      {item.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          ) : null}
-          <div className="d-flex flex-shrink-0 align-items-center justify-content-end gap-3">
-            {authActions()}
-          </div>
+        <div className="d-flex flex-shrink-0 align-items-center justify-content-end gap-3">
+          {authActions()}
         </div>
       </BCHeader>
-      {showWorkspaces && workspacesLoaded && !hasWorkspaces && (
+      {designMode && currentUser.loaded && !hasWorkspaces && (
         <WorkspaceModal canCreateWorkspace={canCreateWorkspace} />
       )}
     </div>

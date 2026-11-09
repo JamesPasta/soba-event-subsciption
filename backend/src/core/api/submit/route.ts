@@ -1,83 +1,181 @@
 import express from 'express';
 import { validateRequest } from '../shared/validation';
-import { openWorkspaceFromResource } from '../../middleware/workspaceContext';
-import { requireFormAccess, requireFormSubmitAccess } from '../../middleware/formSubmitAccess';
-import { Permissions } from '../../db/codes';
-import { getSubmitSubmissionSchema, getSubmitFillBundle } from './controller';
+import { sortLocale } from '../../middleware/sortLocale';
+import {
+  loadSubmitterForm,
+  loadSubmitterFormVersion,
+  loadSubmitterSubmission,
+  requireSignedInSubmitter,
+  requireSubmissionDelete,
+  requireSubmissionRead,
+  requireSubmissionRevise,
+  requireSubmissionStart,
+  requireSubmissionWrite,
+  requireVersionSchemaRead,
+} from '../../middleware/formSubmitAccess';
+import {
+  getSubmitFillBundle,
+  getSubmitForm,
+  getSubmitFormVersionSchema,
+  getSubmitSubmission,
+  getSubmitSubmissionData,
+  getSubmitSubmissionSchema,
+  listMyForms,
+  listMySubmissions,
+  listMyWorkspaces,
+  reviseOwnSubmission,
+} from './controller';
+import { requireDraftSave } from './draftSave';
+import { replayRecordedOpen, replayRecordedSave, replayRecordedSubmit } from './replay';
 import {
   openSubmission,
-  getSubmission,
-  getSubmissionData,
   saveSubmission,
   submitSubmission,
+  deleteUnsubmittedSubmission,
 } from '../submissions/controller';
 import {
   OpenSubmissionBodySchema,
   SubmissionDataBodySchema,
   SubmissionIdParamsSchema,
+  SubmitSubmissionBodySchema,
 } from '../submissions/schema';
+import {
+  ListMyFormsQuerySchema,
+  ListMySubmissionsQuerySchema,
+  MyWorkspaceLookupQuerySchema,
+  ReviseSubmissionBodySchema,
+  SubmitFormIdParamsSchema,
+  SubmitFormVersionIdParamsSchema,
+} from './schema';
 
 // Submit-mode: mounted under /api/v1/submit with optional auth (anonymous resolves to the public user).
-// Access is decided by the workspace Form submitters audience (requireFormAccess / requireFormSubmitAccess),
-// so non-members and anonymous callers can read a published form, submit to it, and view the confirmation.
+// A route on one submission, form or form version reads it once, then one guard decides with the
+// @soba/lib rules. A repeated open, save or submit gets its recorded answer before any guard. The
+// caller's own lists need a signed-in caller.
 const router = express.Router();
 
-const openSubmissionResource = openWorkspaceFromResource({
-  kind: 'submission',
-  idFrom: 'paramsId',
-});
+const submissionParams = validateRequest({ params: SubmissionIdParamsSchema });
 
 router.post(
   '/submissions',
   validateRequest({ body: OpenSubmissionBodySchema }),
-  requireFormSubmitAccess,
+  replayRecordedOpen,
+  loadSubmitterForm,
+  requireSubmissionStart,
   openSubmission,
 );
 router.post(
   '/submissions/:id/save',
   validateRequest({ params: SubmissionIdParamsSchema, body: SubmissionDataBodySchema }),
-  requireFormSubmitAccess,
+  loadSubmitterSubmission,
+  replayRecordedSave,
+  requireSubmissionWrite,
+  requireDraftSave,
   saveSubmission,
 );
 router.post(
   '/submissions/:id/submit',
-  validateRequest({ params: SubmissionIdParamsSchema, body: SubmissionDataBodySchema }),
-  requireFormSubmitAccess,
+  validateRequest({ params: SubmissionIdParamsSchema, body: SubmitSubmissionBodySchema }),
+  loadSubmitterSubmission,
+  replayRecordedSubmit,
+  requireSubmissionWrite,
   submitSubmission,
 );
+// The owner sends their own submitted submission back to revise, when the form's review settings
+// allow it. A retry under the same id is answered as made.
+router.post(
+  '/submissions/:id/revise',
+  validateRequest({ params: SubmissionIdParamsSchema, body: ReviseSubmissionBodySchema }),
+  loadSubmitterSubmission,
+  requireSubmissionRevise,
+  reviseOwnSubmission,
+);
 
-// Confirmation read (a public form's submissions are public data; the UUID is the practical capability).
+router.get(
+  '/forms/mine',
+  validateRequest({ query: ListMyFormsQuerySchema }),
+  sortLocale,
+  requireSignedInSubmitter,
+  listMyForms,
+);
+
+// Registered after /forms/mine, which it would otherwise take as a form id. The form a caller may
+// start, with its facts; refused as an open would be.
+router.get(
+  '/forms/:formId',
+  validateRequest({ params: SubmitFormIdParamsSchema }),
+  loadSubmitterForm,
+  requireSubmissionStart,
+  getSubmitForm,
+);
+
+// The published version's schema, to render a new submission before it is opened.
+router.get(
+  '/form-versions/:id/schema',
+  validateRequest({ params: SubmitFormVersionIdParamsSchema }),
+  loadSubmitterFormVersion,
+  requireVersionSchemaRead,
+  getSubmitFormVersionSchema,
+);
+
+router.get(
+  '/workspaces/mine',
+  validateRequest({ query: MyWorkspaceLookupQuerySchema }),
+  sortLocale,
+  requireSignedInSubmitter,
+  listMyWorkspaces,
+);
+
+// Registered before /submissions/:id, which would otherwise take `mine` as an id.
+router.get(
+  '/submissions/mine',
+  validateRequest({ query: ListMySubmissionsQuerySchema }),
+  sortLocale,
+  requireSignedInSubmitter,
+  listMySubmissions,
+);
+
 router.get(
   '/submissions/:id',
-  validateRequest({ params: SubmissionIdParamsSchema }),
-  openSubmissionResource,
-  requireFormAccess(Permissions.submission_read),
-  getSubmission,
+  submissionParams,
+  loadSubmitterSubmission,
+  requireSubmissionRead,
+  getSubmitSubmission,
 );
 router.get(
   '/submissions/:id/data',
-  validateRequest({ params: SubmissionIdParamsSchema }),
-  openSubmissionResource,
-  requireFormAccess(Permissions.submission_read),
-  getSubmissionData,
+  submissionParams,
+  loadSubmitterSubmission,
+  requireSubmissionRead,
+  getSubmitSubmissionData,
 );
 
 // The submission's own form-version schema, for rendering its read-only confirmation.
 router.get(
   '/submissions/:id/schema',
-  validateRequest({ params: SubmissionIdParamsSchema }),
-  openSubmissionResource,
-  requireFormAccess(Permissions.submission_read),
+  submissionParams,
+  loadSubmitterSubmission,
+  requireSubmissionRead,
   getSubmitSubmissionSchema,
 );
 
-// The one bundle the fill page needs: workflow state + schema + any saved answers (resume).
+// The one bundle the fill page needs: workflow state, schema and any saved answers (resume), with the
+// caller's role and the form's facts, from which the page decides writing and draft saves.
 router.get(
   '/submissions/:id/fill',
-  validateRequest({ params: SubmissionIdParamsSchema }),
-  openSubmissionResource,
-  requireFormAccess(Permissions.submission_read),
+  submissionParams,
+  loadSubmitterSubmission,
+  requireSubmissionRead,
   getSubmitFillBundle,
+);
+
+// The owner deletes their own submission before it is submitted.
+router.delete(
+  '/submissions/:id',
+  submissionParams,
+  loadSubmitterSubmission,
+  requireSubmissionDelete,
+  deleteUnsubmittedSubmission,
 );
 
 export { router as submitRouter };

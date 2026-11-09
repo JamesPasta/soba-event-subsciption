@@ -51,7 +51,9 @@ describe('ListPageSearchField', () => {
       />,
     );
 
-    const input = screen.getByTestId('search-forms-text').querySelector('input') as HTMLInputElement;
+    const input = screen
+      .getByTestId('search-forms-text')
+      .querySelector('input') as HTMLInputElement;
     await userEvent.setup().type(input, '{Enter}');
     expect(onSubmit).toHaveBeenCalled();
   });

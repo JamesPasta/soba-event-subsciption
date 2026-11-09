@@ -12,8 +12,8 @@ Work from **branches** (not forks) off `develop`. Open a **pull request** into `
 
 Before requesting review, ensure:
 
-- **All checks pass** — e.g. `pnpm check` at the repo root (type-check and lint for backend and frontend). See [pnpm](#pnpm) for root commands.
-- **Unit tests** — New or changed behaviour is covered by tests. See [Backend](#backend) and [Frontend](#frontend) for how tests are run and where they live.
+- **All checks pass** — e.g. `pnpm check` at the repo root (type-check and lint for lib, backend and frontend). See [pnpm](#pnpm) for root commands.
+- **Unit tests** — New or changed behaviour is covered by tests. See [Backend](#backend), [Frontend](#frontend) and [Lib](#lib) for how tests are run and where they live.
 
 ---
 
@@ -60,7 +60,7 @@ This starts:
 - **Temporal** (gRPC port 7233) — workflow engine
 - **Temporal UI** (port 8088) — workflow dashboard
 
-**Inside the devcontainer** use `host.docker.internal` to reach sidecars from backend processes (e.g. `mongodb://host.docker.internal:27017`, `postgresql://postgres:postgres@host.docker.internal:5432/postgres`, `http://host.docker.internal:3001`). The `app` service sets `extra_hosts: host.docker.internal:host-gateway` so that this hostname works on Linux as well as on Docker Desktop (Mac/Windows). **Committed `.env.example` files use `localhost`** for DB, Form.io, and API URLs — that works when the browser and forwarded ports are on the host (e.g. http://localhost:3000 with `NEXT_PUBLIC_SOBA_API_BASE_URL=http://localhost:4000/api/v1`). Use `host.docker.internal` in backend env when the API server runs inside the container and must reach compose services. Form.io login: `formio@localhost.com` / `formio`.
+**Inside the devcontainer** use `host.docker.internal` to reach sidecars from backend processes (e.g. `mongodb://host.docker.internal:27017`, `postgresql://postgres:postgres@host.docker.internal:5432/postgres`, `http://host.docker.internal:3001`). The `app` service sets `extra_hosts: host.docker.internal:host-gateway` so that this hostname works on Linux as well as on Docker Desktop (Mac/Windows). **Committed `.env.example` files use `localhost`** for DB, Form.io, and API URLs — that works when the browser and forwarded ports are on the host (e.g. http://localhost:3000 with `NEXT_PUBLIC_SOBA_API_BASE_URL=http://localhost:4000/chefs/api/v1`). Use `host.docker.internal` in backend env when the API server runs inside the container and must reach compose services. Form.io login: `formio@localhost.com` / `formio`.
 
 **Database (migrate + seed):** After the sidecars are up, from the repo root run `pnpm db:init` (or `pnpm dev:db:up` to start services and init in one step). See [Drizzle](#drizzle) for individual `db:migrate` / `db:seed` commands.
 
@@ -68,7 +68,7 @@ This starts:
 
 ## pnpm
 
-The repo is a **[pnpm](https://pnpm.io) workspace** (faster installs, shared store, strict dependency graph). Root `package.json` delegates to the `frontend` and `backend` workspaces.
+The repo is a **[pnpm](https://pnpm.io) workspace** (faster installs, shared store, strict dependency graph). Root `package.json` delegates to the `lib`, `frontend` and `backend` workspaces.
 
 **Why pnpm:** Single lockfile and workspace protocol for frontend + backend, disk-efficient store, and consistent installs across dev and CI.
 
@@ -77,20 +77,29 @@ The repo is a **[pnpm](https://pnpm.io) workspace** (faster installs, shared sto
 | Command                                            | What it does                                                    |
 | -------------------------------------------------- | --------------------------------------------------------------- |
 | `pnpm install`                                     | Install all workspace deps (run after clone / when deps change) |
-| `pnpm build`                                       | `build:frontend` then `build:backend`                           |
+| `pnpm build`                                       | `build:lib`, `build:frontend`, then `build:backend`             |
 | `pnpm build:frontend` / `pnpm build:backend`       | Build one app                                                   |
-| `pnpm test`                                        | Run frontend and backend tests                                  |
+| `pnpm build:lib`                                   | Build the shared lib into `lib/dist`                            |
+| `pnpm test`                                        | Run lib, frontend and backend tests                             |
 | `pnpm test:frontend` / `pnpm test:backend`         | Test one app                                                    |
-| `pnpm lint`                                        | Lint frontend and backend                                       |
-| `pnpm lint:fix`                                    | Lint with auto-fix both                                         |
+| `pnpm test:lib`                                    | Test the shared lib                                             |
+| `pnpm lint`                                        | Lint lib, frontend and backend                                  |
+| `pnpm lint:fix`                                    | Lint with auto-fix, all three                                   |
 | `pnpm db:migrate`                                  | Run pending DB migrations (backend)                             |
 | `pnpm db:seed`                                     | Seed DB (run after migrate)                                     |
 | `pnpm db:init`                                     | Migrate then seed (full DB setup)                               |
 | `pnpm db:dev-data`                                 | Build/remove development data ([guide](backend/src/features/dev-data/README.md)) |
 | `pnpm lint:frontend` / `pnpm lint:backend`         | Lint one app                                                    |
 | `pnpm lint:fix:frontend` / `pnpm lint:fix:backend` | Lint fix one app                                                |
-| `pnpm check`                                       | Type/style checks for both apps                                 |
+| `pnpm lint:lib` / `pnpm lint:fix:lib`              | Lint or lint fix the shared lib                                 |
+| `pnpm format`                                      | Prettier write, lib and both apps                               |
+| `pnpm format:check`                                | Prettier check, lib and both apps (CI gate)                     |
+| `pnpm format:frontend` / `pnpm format:backend`     | Format one app                                                  |
+| `pnpm format:check:frontend` / `pnpm format:check:backend` | Format check one app                                    |
+| `pnpm format:lib` / `pnpm format:check:lib`        | Format or format check the shared lib                           |
+| `pnpm check`                                       | Type/style checks for lib and both apps                         |
 | `pnpm check:frontend` / `pnpm check:backend`       | Check one app                                                   |
+| `pnpm check:lib`                                   | Check the shared lib                                            |
 | `pnpm qa`                                          | `check` then `test` (PR readiness shortcut)                     |
 | `pnpm qa:build`                                    | `qa` then `build`                                               |
 | `pnpm dev:services:up`                             | Start sidecars via docker compose (`up -d --wait`)              |
@@ -110,15 +119,14 @@ VS Code config lives in `.vscode/launch.json` and `.vscode/tasks.json`.
 
 **Launch (`launch.json`):** Run and debug from the Run and Debug view.
 
-| Configuration                                  | Purpose                                                      |
-| ---------------------------------------------- | ------------------------------------------------------------ |
-| **SOBA Backend**                               | Start backend dev server (`pnpm dev` in `backend/`)          |
-| **SOBA Temporal Worker (soba)**                | Worker on the `soba` queue (health port 9090)                |
-| **SOBA Temporal Worker (document-generation)** | Worker on the `document-generation` queue (health port 9091) |
-| **SOBA Frontend**                              | Start frontend dev server (`pnpm dev:watch` in `frontend/`)  |
-| **SOBA (Backend + Temporal + Frontend)**       | Compound: backend, both Temporal workers, and frontend       |
-| **SOBA (Backend + Temporal)**                  | Compound: backend and both Temporal workers                  |
-| **SOBA Frontend (Chrome)**                     | Attach Chrome to frontend (URL `http://localhost:3000`)      |
+| Configuration                            | Purpose                                                     |
+| ---------------------------------------- | ----------------------------------------------------------- |
+| **SOBA Backend**                         | Start backend dev server (`pnpm dev` in `backend/`)         |
+| **SOBA Temporal Worker (soba)**          | Worker on the `soba` queue (health port 9090)               |
+| **SOBA Frontend**                        | Start frontend dev server (`pnpm dev:watch` in `frontend/`) |
+| **SOBA (Backend + Temporal + Frontend)** | Compound: backend, Temporal worker, and frontend            |
+| **SOBA (Backend + Temporal)**            | Compound: backend and Temporal worker                       |
+| **SOBA Frontend (Chrome)**               | Attach Chrome to frontend (URL `http://localhost:3000`)     |
 
 **Tasks (`tasks.json`):** Run from Command Palette → “Tasks: Run Task”.
 
@@ -207,7 +215,7 @@ gets built and for the gitignored owner file that seeds a fresh database without
 
 ### Temporal
 
-[Temporal](https://temporal.io) sidecar runs in compose (port 7233; UI on 8088). Worker scripts above poll `TEMPORAL_TASK_QUEUE` (default `soba`). Queue can be overridden per worker deployment (for example a dedicated `document-generation` queue). `.env.example` ships **`TEMPORAL_ALLOWED=true`** so the compound launch configs connect out of the box; set it to `false` to make the workers exit without connecting. The code default (when the variable is unset) is still `false`. See `docs/temporal.md` for workflow details.
+[Temporal](https://temporal.io) sidecar runs in compose (port 7233; UI on 8088). Worker scripts above poll `TEMPORAL_TASK_QUEUE` (default `soba`). Queue can be overridden per worker deployment. `.env.example` ships **`TEMPORAL_ALLOWED=true`** so the compound launch configs connect out of the box; set it to `false` to make the workers exit without connecting. The code default (when the variable is unset) is still `false`. See `docs/temporal.md` for workflow details.
 
 ### API layout
 
@@ -234,19 +242,24 @@ Key form-version routes: `POST /:id/publish`, `POST /:id/unpublish`, `POST /:id/
 
 ### Plugin implementations
 
-The backend uses a **plugin architecture** so that form engines, auth (IdP), cache, message bus, and optional feature APIs can be swapped or extended without changing core. Plugins are discovered from `backend/src/plugins/` (each directory is a plugin module). Configuration is via env (e.g. which plugins are enabled, plugin-specific keys). For auth, Passport is now the protected-route entry point, but IdP plugins still provide provider-specific token verification and claim mapping. See [In Detail — Configuration of plugins and features](#configuration-of-plugins-and-features).
+The backend uses a **plugin architecture** so that external services and infrastructure can be swapped without changing core. Plugins are discovered from `backend/src/plugins/` (each directory is a plugin module; `shared/` holds code shared between plugins). Most kinds select one plugin by a default code; IdP uses an ordered list and storage uses profiles. Each plugin reads its own `PLUGIN_<CODE>_*` keys (storage reads `STORAGE_PROFILE_<PROFILE>_*`). For auth, Passport is the protected-route entry point, but IdP plugins still provide provider-specific token verification and claim mapping. See [In Detail - Configuration of plugins and features](#configuration-of-plugins-and-features). To add a plugin or a new kind, follow [How to add a plugin](docs/how-to-add-a-plugin.md).
 
-**Plugin types and current implementations:**
+**Plugin kinds and current implementations:**
 
-| Type            | Purpose                            | Implementations                                                                   |
-| --------------- | ---------------------------------- | --------------------------------------------------------------------------------- |
-| **Form engine** | Render/store forms and submissions | `formio-v5` (Form.io v5)                                                          |
-| **IdP (auth)**  | JWT validation, claim mapping      | `idp-bcgov-sso` (BC Gov Keycloak), `idp-github`                                   |
-| **Cache**       | Key-value cache                    | `cache-memory`; future: Redis                                                     |
-| **Message bus** | Async messaging                    | `messagebus-memory`; future: Redis, NATS                                          |
-| **Feature API** | Optional REST API per plugin       | none; `pluginApiDefinition` extension point stays for plugins with REST endpoints |
+| Kind                    | Purpose                                  | Implementations                                  | Selected by (default)                                                                |
+| ----------------------- | ---------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| **Form engine**         | Render/store forms and submissions       | `formio-v5` (Form.io v5)                         | `FORM_ENGINE_DEFAULT_CODE` (`formio-v5`)                                             |
+| **IdP (auth)**          | JWT validation, claim mapping            | `idp-bcgov-sso` (code `bcgov-sso`), `idp-github` | `IDP_PLUGINS`, tried in order (`bcgov-sso`)                                          |
+| **Cache**               | Key-value cache                          | `cache-memory`, `cache-redis`                    | `CACHE_DEFAULT_CODE` (`cache-memory`)                                                |
+| **Message bus**         | Cross-replica pub/sub                    | `messagebus-memory`, `messagebus-redis`          | `MESSAGEBUS_DEFAULT_CODE` (`messagebus-memory`)                                      |
+| **Event stream**        | Durable at-least-once streams            | `eventstream-memory`, `eventstream-redis`        | `EVENTSTREAM_DEFAULT_CODE` (`eventstream-memory`)                                    |
+| **Temp storage**        | Temporary files                          | `tempstorage-os`, `tempstorage-mount`            | `TEMPSTORAGE_DEFAULT_CODE` (`tempstorage-os`)                                        |
+| **Virus scan**          | Scan uploaded files                      | `virusscan-noop`, `virusscan-clamav`             | `VIRUSSCAN_DEFAULT_CODE` (`virusscan-noop`; Helm sets `virusscan-clamav`)            |
+| **Storage**             | File storage, one backend per profile    | `storage-memory`, `storage-local`, `storage-s3`  | `STORAGE_PROFILES` (one `storage-memory` profile in development; required elsewhere) |
+| **Document generation** | Render documents                         | `docgen-noop`, `cdogs-v2`, `cdogs-v3`            | `DOCUMENT_GENERATION_DEFAULT_CODE` (`docgen-noop`); cdogs is feature-gated           |
+| **Tenant engine**       | The caller's tenants (`GET /me/tenants`) | `tenant-noop`, `cstar-v1` (CSTAR)                | `TENANT_ENGINE_DEFAULT_CODE` (`tenant-noop`)                                         |
 
-IdP plugins are ordered via env (`IDP_PLUGINS`); the first successful IdP wins. Passport orchestrates the ordered plugin attempts and the winning plugin supplies the mapped identity used by core. IdP env prefixes follow plugin codes (e.g. `bcgov-sso` → `PLUGIN_BCGOV_SSO_*`, `idp-github` → `PLUGIN_IDP_GITHUB_*`).
+IdP plugins are ordered via env (`IDP_PLUGINS`); the first successful IdP wins. Passport orchestrates the ordered plugin attempts and the winning plugin supplies the mapped identity used by core. IdP env prefixes follow plugin codes (e.g. `bcgov-sso` reads `PLUGIN_BCGOV_SSO_*`, `idp-github` reads `PLUGIN_IDP_GITHUB_*`).
 
 ### Features
 
@@ -256,15 +269,15 @@ IdP plugins are ordered via env (`IDP_PLUGINS`); the first successful IdP wins. 
 
 Form rendering and submission storage are delegated to a **form engine** plugin. The default is `formio-v5` (Form.io v5). The core stores form and submission metadata in PostgreSQL; the form engine (Form.io/Mongo) holds form definitions and submission payloads. The **FormioEngineAdapter** (`backend/src/plugins/formio-v5/`) talks to Form.io over HTTP using a **server-side admin client**. Config is via `PLUGIN_FORMIO_V5_*` (API URLs, admin credentials). `FORM_ENGINE_DEFAULT_CODE` selects which engine to use; forms reference an engine code.
 
-**Server-mediated flow (no browser → Form.io proxy):** The browser never calls Form.io directly. Protected API routes provision and read schemas (`POST|GET /form-versions/:id/schema`); `SubmissionService.save()` creates submission documents in the engine server-side and stores `engine_submission_ref`. `engine_sync_status` on domain rows tracks provisioning state. Readiness is on the adapter and reported via `/api/v1/health/ready`. See [In Detail — Form engine cross-references](#form-engine-cross-references).
+**Server-mediated flow (no browser → Form.io proxy):** The browser never calls Form.io directly. Protected API routes write a schema when a form or version is created (`POST /forms`, `POST /form-versions`) or saved, and read it back (`POST|GET /form-versions/:id/schema`); `SubmissionService.save()` creates submission documents in the engine server-side and stores `engine_submission_ref`. `engine_sync_status` on domain rows tracks provisioning state. Readiness is on the adapter and reported via `/api/v1/health/ready`. See [In Detail — Form engine cross-references](#form-engine-cross-references).
 
 ### Form engine cross-references
 
-Data lives in **two systems**: domain metadata in **PostgreSQL** and form definitions/submission payloads in the **form engine**. Cross-reference columns: `form_version.engine_schema_ref`, `submission.engine_submission_ref`. Provision via `POST /form-versions/:id/schema`; saves can still accept `engine_schema_ref` on `POST /form-versions/:id/save` when needed. See [In Detail — Form engine cross-references](#form-engine-cross-references).
+Data lives in **two systems**: domain metadata in **PostgreSQL** and form definitions/submission payloads in the **form engine**. Cross-reference columns: `form_version.engine_schema_ref`, `submission.engine_submission_ref`. Provision via `POST /form-versions/:id/schema`, the only way a version's `engine_schema_ref` is set. See [In Detail — Form engine cross-references](#form-engine-cross-references).
 
 ### Auth plugins and responsibilities
 
-**IdP plugins** are responsible for: (1) validating the token (issuer, signature via JWKS or provider API), and (2) mapping claims to a normalised identity (subject, profile, optional `soba_admin`). Protected routes enter auth through Passport: `checkJwt()` calls `passport.authenticate(..., { session: false })`, and the composite Passport strategy tries each configured IdP in order. The first success still sets `req.idpPluginCode` and `req.authPayload`, and Passport also authenticates the request principal. **resolveActor** runs after `checkJwt()`: it uses the IdP’s claim mapper to get subject/profile, finds or creates the app user, sets `req.actorId` and `req.isSobaAdmin` (including refresh from IdP when the mapper returns `sobaAdmin`). So: Passport = “run the protected-route auth flow”; IdP = “is this token valid and who is it?”; core = “resolve to internal actor and admin flag”. IdPs are configured with `IDP_PLUGINS` (comma-separated) and plugin-specific env (e.g. `PLUGIN_BCGOV_SSO_JWKS_URI`). `session: false` is intentional because it keeps the auth path stateless, aligned with bearer-token APIs, easier to scale across instances, and compatible with multiple IdP plugins tried in order. See [In Detail — Auth flow](#auth-flow).
+**IdP plugins** are responsible for: (1) validating the token (issuer, signature via JWKS or provider API), and (2) mapping claims to a normalised identity (subject, profile, optional `soba_admin`). Protected routes enter auth through Passport: `checkJwt()` calls `passport.authenticate(..., { session: false })`, and the composite Passport strategy tries each configured IdP in order. The first success still sets `req.idpPluginCode` and `req.authPayload`, and Passport also authenticates the request principal. **resolveActor** runs after `checkJwt()`: it uses the IdP’s claim mapper to get subject/profile, finds or creates the app user, sets `req.actorId` and `req.isSobaAdmin`, applying the IdP admin claim only when it differs from the stored row. So: Passport = “run the protected-route auth flow”; IdP = “is this token valid and who is it?”; core = “resolve to internal actor and admin flag”. IdPs are configured with `IDP_PLUGINS` (comma-separated) and plugin-specific env (e.g. `PLUGIN_BCGOV_SSO_JWKS_URI`). `session: false` is intentional because it keeps the auth path stateless, aligned with bearer-token APIs, easier to scale across instances, and compatible with multiple IdP plugins tried in order. See [In Detail — Auth flow](#auth-flow).
 
 ### Drizzle
 
@@ -306,9 +319,9 @@ Tests live under `frontend/tests/`. See [In Detail — Testing](#testing).
 
 ### App structure and routing
 
-- **App Router:** `app/layout.tsx` is the root (html/body, globals.css). `app/[lang]/layout.tsx` wraps locale routes with `DictionaryProvider`, `Header`, `SideNav`, `<main>`, and `Footer`. Locale is required (e.g. `/en`, `/fr`). Home (`app/[lang]/page.tsx`) redirects logged-in users to `/forms`.
-- **Key routes:** `/{lang}/designer` (design-mode), `/{lang}/forms` (form list), `/{lang}/form/{formId}` (submit/render), `/{lang}/submissions/...`, `/{lang}/meta` (meta-review).
-- **Where code lives:** `app/` — pages, layouts, shared UI (`app/ui/`). `src/features/` — feature UI (designer, submit-mode, formio-v5, workspaces, meta-review). `src/shared/` — API, config, feature flags. `src/app/` — plugin types and registry. `lib/` — Redux store, slices, hooks, runtime config. Path aliases: `@/lib`, `@/app`, `@/src`.
+- **App Router:** `app/layout.tsx` is the root (html/body, globals.css). `app/[lang]/layout.tsx` wraps locale routes with `DictionaryProvider`, `Header`, `SideNav`, `<main>`, and `Footer`. Locale is required (e.g. `/en`, `/fr`). Home (`app/[lang]/page.tsx`) is the signed-out landing page. `AppAccessGuard` redirects signed-in users from it to `/forms` (or `/onboarding` or `/workspaces` for users without workspaces) when `design-mode` is allowed, otherwise to `/my-forms`.
+- **Key routes:** `/{lang}/build` (design-mode), `/{lang}/forms` (form list), `/{lang}/my-forms` and `/{lang}/my-submissions` (submit-mode), `/{lang}/form/{formId}` (submit/render), `/{lang}/meta` (feature support).
+- **Where code lives:** `app/` - pages, layouts, shared UI (`app/ui/`). `src/features/` - feature UI (admin, designer, formio-v5, onboarding, submit-mode, workspaces). `src/shared/` - API, config, feature flags. `src/app/` - providers and routing. `lib/` - Redux store, slices, hooks, runtime config. Path aliases: `@/lib`, `@/app`, `@/src`.
 - **Adding pages:** Add under `app/[lang]/`; use the locale layout for nav and dictionary.
 
 ### Runtime config and env
@@ -333,14 +346,14 @@ Tests live under `frontend/tests/`. See [In Detail — Testing](#testing).
 
 - **Location:** `src/shared/api/sobaApi.ts` and `sobaApiForms.ts`. Functions use `getSobaApiBaseUrl()` (from runtime config cache or env fallback). Protected endpoints send `Authorization: Bearer ${token}` and, for form/submission calls, **`x-workspace-id`** from the active workspace. Examples: `fetchHealth()`, `fetchWorkspaces(token)`, `fetchCurrentUser(token)`, `getFormVersionSchema(token, ...)`. See [In Detail — API layer (frontend)](#api-layer-frontend).
 
-### Plugins and navigation
+### Navigation
 
-- **AppPlugin:** id, optional `featureCode`, order, `getNavItem`, optional `showInHeaderNav`. The **registry** (`src/app/plugins/registry.ts`) registers: **workspaces** (always on), **designer** (`design-mode`), **submit-mode**, **meta-review** (`meta`). Plugins are filtered with `createIsFeatureAllowed(meta)`; `getHeaderNavigationItems` and `getOverlayNavigationItems` drive Header and SideNav. See [In Detail — Plugins (frontend)](#plugins-frontend).
+- **SideNav** (`app/ui/SideNav.tsx`) builds its items from the `design-mode` and `submit-mode` flags, which the locale layout resolves server-side with `createIsFeatureAllowed(meta)`.
 
 ### Feature flags
 
 - **Platform:** `GET /meta/features` returns each row with **`platformAllowed`** (from `soba.feature` status). Loaded via `src/shared/config/featuresMeta.ts` (`loadFeaturesMeta`).
-- **Per-frontend deployment:** **`NEXT_PUBLIC_SOBA_FEATURES_ALLOWED`** — comma-separated codes (same as meta, e.g. `workspaces`, `design-mode`, `submit-mode`, `marketing`), or **`*`** / **`all`** alone to allow every platform-allowed feature. **Empty/unset** = no codes allowed at the frontend layer (intersected with `platformAllowed`). Use a subset for submit-only or design-only Next.js images that share one API.
+- **Per-frontend deployment:** **`NEXT_PUBLIC_SOBA_FEATURES_ALLOWED`** - comma-separated codes (same as meta, e.g. `design-mode`, `submit-mode`, `files`, `marketing`), or **`*`** / **`all`** alone to allow every platform-allowed feature. **Empty/unset** = no codes allowed at the frontend layer (intersected with `platformAllowed`). Use a subset for submit-only or design-only Next.js images that share one API.
 - **`createIsFeatureAllowed(meta)`** returns `isFeatureAllowed(code)` = `platformAllowed && frontendAllowlist`. Constants: `FEATURE_CODES` in `src/shared/featureFlags/flags.ts`.
 
 ### IDP groups and form visibility
@@ -358,8 +371,8 @@ Tests live under `frontend/tests/`. See [In Detail — Testing](#testing).
 
 ### Forms
 
-- **Designer** (`src/features/designer/`, `design-mode`): form list and builder at `/{lang}/designer`; provisions schema via `POST /form-versions/:id/schema`, loads schema via `GET /form-versions/:id/schema`.
-- **Submit** (`src/features/submit-mode/`, `submit-mode`): form list at `/{lang}/forms`; render at `/{lang}/form/{formId}` via **`src/features/formio-v5/`** (`FormioProvider` + `DynamicForm` from `@formio/react`). **The browser does not call Form.io** — schema and submissions go through the SOBA API only.
+- **Designer** (`src/features/designer/`, `design-mode`): form list at `/{lang}/forms` and builder at `/{lang}/build`; creates a form or version with its schema in one request (`POST /forms`, `POST /form-versions`), saves schema via `POST /form-versions/:id/schema`, loads schema via `GET /form-versions/:id/schema`.
+- **Submit** (`src/features/submit-mode/`, `submit-mode`): My Forms and My Submissions at `/{lang}/my-forms` and `/{lang}/my-submissions`; render at `/{lang}/form/{formId}` via **`src/features/formio-v5/`** (`FormioProvider` + `DynamicForm` from `@formio/react`). **The browser does not call Form.io** - schema and submissions go through the SOBA API only.
 - **Renderer CSS:** static copies under `public/formio-v5/`; `useFormioV5FormChrome` loads them next to `<Form />` (avoid global Form.io CSS imports with Turbopack).
 
 ### Testing
@@ -372,11 +385,40 @@ Tests live under `frontend/tests/`. See [In Detail — Testing](#testing).
 
 ---
 
+## Lib
+
+Shared code for the backend and frontend, used in the workspace as `@soba/lib`:
+
+- Zod schemas and inferred types for the request bodies and responses both sides use, with the sort-field constants and sort enums of each list.
+- `normalizeSchema` for Form.io schema import and export.
+
+Query and params schemas stay in the backend. The frontend re-exports the lib types from `frontend/src/types/<domain>.ts`. A runtime import from `@soba/lib` bundles zod and every schema, so frontend code that loads on every page takes the sort fields from `@soba/lib/sort` instead.
+
+lib builds its schemas before the backend extends zod, so calling `.openapi()` on a lib schema directly works or fails depending on which module requires lib first. The backend names a lib schema by cloning it: `XSchema.clone().openapi('Domain_X')`. A composite, such as a list response, is rebuilt with `.extend()` on the named children so the spec references each child with `$ref`. Cloning a composite inlines its children. `libSchemaLoadOrder.test.ts` and `libSchemaOpenApi.test.ts` in `backend/tests/core/api/shared/` check both, and each new schema module and composite needs a row there.
+
+`lib/dist/` is generated and not committed. `pnpm install` builds it (the `prepare` script) and the devcontainer rebuilds it on start. While editing lib, run `pnpm dev` in `lib/` to keep `dist/` current. The backend's watcher follows `backend/src` only, so restart the backend after a lib change.
+
+### Scripts
+
+| Command                        | Purpose                                  |
+| ------------------------------ | ---------------------------------------- |
+| `pnpm build`                   | Clean `dist/` and compile `src/` into it |
+| `pnpm dev`                     | Compile `src/` into `dist/` on change    |
+| `pnpm test`                    | Run Jest unit tests                      |
+| `pnpm lint` / `lint:fix`       | ESLint; fix applies auto-fix             |
+| `pnpm format` / `format:check` | Prettier write / check                   |
+| `pnpm type-check`              | `tsc --noEmit` over `src/` and `tests/`  |
+| `pnpm check`                   | Type-check + lint (run before PR)        |
+
+Tests live under `lib/tests/`.
+
+---
+
 ## Integration
 
 Integration tests live in the **integration** app (repo root). An integration test specialist will own and expand this area; below is the minimum for running tests and for frontend support.
 
-**Tech:** [Playwright](https://playwright.dev) (Chromium). Tests target the running frontend and backend (default: `http://localhost:3000`, `http://localhost:4000/api/v1`; override with `E2E_BASE_URL`, `E2E_API_BASE_URL`).
+**Tech:** [Playwright](https://playwright.dev) (Chromium). Tests target the running frontend and backend (default: `http://localhost:3000`, `http://localhost:4000/chefs/api/v1`; override with `E2E_BASE_URL`, `E2E_API_BASE_URL`).
 
 **Run tests:** From repo root, `pnpm -C integration/playwright test`. In the devcontainer, dependencies and Playwright Chromium are installed by post-create; otherwise run `npm ci --prefix integration/playwright` and `npm exec --prefix integration/playwright -- playwright install chromium` once.
 
@@ -402,6 +444,8 @@ Form data spans two systems: domain metadata in **PostgreSQL**, and form definit
 - **form_version.engine_schema_ref** — engine reference for the form schema (e.g. Form.io form id/path).
 - **submission.engine_submission_ref** — engine reference for a submission document.
 
+**Creating (server-side):** `FormService.create()` and `FormVersionService.createDraft()` write the engine document first, keyed by the caller-minted version id, then commit the rows `ready` in one transaction. A retry with the same ids returns what the first attempt made.
+
 **Provisioning (server-side):** `FormVersionService.provision()` calls the adapter to create/update the schema in Form.io, sets `engine_schema_ref`, and tracks `engine_sync_status` (`provisioning` → `ready` or `error`). Exposed as `POST /form-versions/:id/schema`; read back via `GET /form-versions/:id/schema`. The designer UI sends schema JSON to this endpoint — browsers never talk to Form.io directly.
 
 **Submissions (server-side):** `SubmissionService.save()` calls `adapter.createSubmission()`, then `appendSubmissionRevision()` stores the new `engine_submission_ref`. Payload reads use `GET /submissions/:id/data`.
@@ -410,15 +454,15 @@ The Form.io admin client (`backend/src/plugins/formio-v5/formioV5Client.ts`) aut
 
 ### Configuration of plugins and features
 
-- **Plugin discovery:** Plugins live under `backend/src/plugins/<pluginDir>/`. Each plugin module can export one or more of: `workspacePluginDefinition`, `formEnginePluginDefinition`, `pluginApiDefinition`, `idpPluginDefinition`, `cachePluginDefinition`, `messagebusPluginDefinition`. The registry validates with Zod and builds caches at startup.
-- **Which plugins run:** Workspace resolvers: `WORKSPACE_PLUGINS_ALLOWED` (comma-separated codes). IdP: `IDP_PLUGINS` (comma-separated; default from `IDP_PLUGIN_DEFAULT_CODE`). Cache / message bus: `CACHE_DEFAULT_CODE`, `MESSAGEBUS_DEFAULT_CODE`. Form engine: `FORM_ENGINE_DEFAULT_CODE`. Only plugins that are both discovered and listed in the relevant env are used. For auth, Passport uses the ordered IdP plugin list as its provider chain and stops at the first successful plugin. `WORKSPACE_PLUGINS_STRICT_MODE=true` fails startup if any enabled workspace plugin is missing.
-- **Plugin config:** Each plugin gets a `PluginConfigReader` built from env with a prefix. Prefix is `PLUGIN_<NORMALIZED_CODE>_` (e.g. `PLUGIN_FORMIO_V5_API_BASE_URL`). The reader exposes `getRequired`, `getOptional`, `getBoolean`, `getNumber`, `getCsv`. Use `.env.example` and `.env.local` for secrets; document keys in examples only.
+- **Plugin discovery:** Plugins live under `backend/src/plugins/<pluginDir>/`; `shared/` is skipped. `PluginRegistry` loads each module once and validates the exports named in its `DEFINITION_KINDS` with Zod: `formEnginePluginDefinition`, `documentGenerationPluginDefinition`, `tenantEnginePluginDefinition`, `idpPluginDefinition`, `cachePluginDefinition`, `messagebusPluginDefinition`, `eventStreamPluginDefinition`, `tempStoragePluginDefinition`, `virusScanPluginDefinition`, `storagePluginDefinition` and `pluginApiDefinition`. A module that fails to load, or a definition that fails validation, is logged and skipped. `pluginApiDefinition` is validated but its router is not mounted.
+- **Which plugins run:** Each kind's default code selects its plugin, falling back to the default in the [kinds table](#plugin-implementations). IdP: `IDP_PLUGINS` (comma-separated; default from `IDP_PLUGIN_DEFAULT_CODE`); Passport uses the ordered list as its provider chain and stops at the first successful plugin. Storage: one backend per profile in `STORAGE_PROFILES`. A document generation plugin that declares a `featureCode` is used only where that feature is available for the workspace or form, and a scoped one overrides the default. `/api/v1/meta/plugins` marks the active selectable, storage, form engine and tenant engine plugins, and feature-gated plugins whose feature is platform-enabled; it does not mark IdP plugins or the document generation default.
+- **Plugin config:** Each plugin gets a `PluginConfigReader` built from env with a prefix. Prefix is `PLUGIN_<NORMALIZED_CODE>_` (e.g. `PLUGIN_FORMIO_V5_API_BASE_URL`). The reader exposes `getRequired`, `getOptional`, `getBoolean`, `getNumber`, `getOptionalNumber`, `getCsv`. Storage profiles read `STORAGE_PROFILE_<PROFILE>_*` instead. Use `.env.example` and `.env.local` for secrets; document keys in examples only.
 - **Features (DB):** The `soba.feature` and `soba.feature_status` tables are seeded via `pnpm db:seed`. Feature status (e.g. `enabled`/`disabled`) drives feature-flag behaviour. Roles and code tables support `source` and (for roles) `feature_code` so features can add codes and roles; see [Enable/Disable features, add codes + roles](#enabledisable-features-add-codes--roles-for-feature).
 
 ### Admins: table and IdP role mapping
 
-- **Table:** `soba.soba_admin` stores SOBA platform admins (cross-workspace privileges). One row per user; `source` is either `idp` (granted from IdP token and refreshed on each login) or `direct` (manually added via admin API, survives IdP revoke). IdP-sourced rows store `identity_provider_code` (e.g. `bcgov-sso`) and `synced_at` for refresh. Direct grants are for users who must stay admin even when the IdP no longer reports the role.
-- **Who decides “is this user an admin?”:** Each **IdP plugin** is responsible for reading the token and returning a boolean in the claim mapper (`sobaAdmin`). The core does not interpret JWT claims for admin; it trusts the IdP’s mapper. On login, if the mapper returns `sobaAdmin === true` or `false`, the core upserts or revokes the IdP-sourced row accordingly.
+- **Table:** `soba.soba_admin` stores SOBA platform admins (cross-workspace privileges). One row per user; `source` is either `idp` (granted from the IdP token, checked on each request and written only when the claim differs) or `direct` (manually added via admin API, survives IdP revoke). IdP-sourced rows store `identity_provider_code` (e.g. `bcgov-sso`) and `synced_at`, when the IdP last granted or moved the row. Direct grants are for users who must stay admin even when the IdP no longer reports the role.
+- **Who decides “is this user an admin?”:** Each **IdP plugin** is responsible for reading the token and returning a boolean in the claim mapper (`sobaAdmin`). The core does not interpret JWT claims for admin; it trusts the IdP’s mapper. On each request, if the mapper returns `sobaAdmin === true` or `false`, the core grants, moves or revokes the IdP-sourced row when it differs from the claim.
 - **Example — idp-bcgov-sso:** Looks for the role `soba_admin` in the token. It checks (in order): top-level `roles`, `realm_access.roles`, and `client_roles`. If any of these arrays contain `soba_admin`, the mapper returns `sobaAdmin: true`. So granting a user the Keycloak client role `soba_admin` (or realm role) makes them a SOBA admin when using BC Gov SSO. Other IdPs (e.g. `idp-github`) can use different claim shapes; they just need to set `sobaAdmin` on the mapped result.
 
 ### Auth flow
@@ -426,7 +470,7 @@ The Form.io admin client (`backend/src/plugins/formio-v5/formioV5Client.ts`) aut
 1. **Request hits protected route** — Middleware order: `checkJwt()` then `resolveActor` (and for `/api/v1/admin`, `requireSobaAdmin`).
 2. **checkJwt()** — Passport-backed auth middleware: it calls `passport.authenticate(..., { session: false })`, which runs the composite Passport strategy for protected API requests.
 3. **Composite Passport strategy** — For each IdP in `IDP_PLUGINS`, run that IdP’s auth middleware (typically verify JWT with JWKS, issuer/audience, or validate against the provider API). First IdP that sets `req.idpPluginCode` and `req.authPayload` wins; if none succeed, respond 401. `session: false` is intentional because the API is bearer-token based, stays stateless across requests, scales cleanly across instances, and remains compatible with trying multiple IdP plugins in order.
-4. **resolveActor** — Uses the winning IdP’s `claimMapper.mapPayload(req.authPayload)` to get subject, profile, and optional `sobaAdmin`. Calls `findOrCreateUserByIdentity(...)` to get or create the app user and set `req.actorId`. If the mapper returns `sobaAdmin === true` or `false`, upserts SOBA admin flag from IdP. Sets `req.isSobaAdmin` from DB. Any failure (e.g. unknown IdP, missing payload) goes to error handler.
+4. **resolveActor** — Uses the winning IdP’s `claimMapper.mapPayload(req.authPayload)` to get subject, profile, and optional `sobaAdmin`. Reads the identity provider, the identity, its stored attributes and the SOBA admin row in one query (`findSignInState`, called from `resolveSignedInActor`). Creates the app user with `findOrCreateUserByIdentity(...)` only for an identity not seen before, writes the IdP attributes or the admin row only when the token differs, and sets `req.actorId` and `req.isSobaAdmin`. Any failure (e.g. unknown IdP, missing payload) goes to error handler.
 5. **Downstream** — Handlers use `req.actorId` and `req.isSobaAdmin`; core context middleware can attach workspace etc. for domain routes.
 
 Auth-related env: `IDP_PLUGINS`, `IDP_PLUGIN_DEFAULT_*`, and per-IdP `PLUGIN_<IDP>_*` (e.g. JWKS URI, issuer, audience). Protected API auth is Passport-backed and stateless; IdP plugins still perform provider-specific verification and claim mapping.
@@ -440,8 +484,8 @@ Auth-related env: `IDP_PLUGINS`, `IDP_PLUGIN_DEFAULT_*`, and per-IdP `PLUGIN_<ID
 ### App structure (frontend)
 
 - **Root layout** (`app/layout.tsx`): Minimal — html/body, globals.css. No providers here so the tree stays simple.
-- **Locale layout** (`app/[lang]/layout.tsx`): Wraps all `[lang]` routes. Loads dictionary and features meta server-side, provides `DictionaryProvider`, renders `Header`, `SideNav`, `<main>{children}</main>`, and `Footer`. SideNav shows home (when `marketing` allowed) and app links (when `design-mode` or `submit-mode` allowed).
-- **Folders:** `app/ui/` — shared UI (Header, SideNav, Footer, forms). `lib/` — Redux store, slices, hooks, Keycloak init, runtime config. `src/features/` — designer, submit-mode, formio-v5, workspaces, meta-review. `src/shared/` — API client, config, feature flags. `src/app/` — plugin types and registry. Use `@/lib`, `@/app`, `@/src` for imports.
+- **Locale layout** (`app/[lang]/layout.tsx`): Wraps all `[lang]` routes. Loads dictionary and features meta server-side, provides `DictionaryProvider`, renders `Header`, `SideNav`, `<main>{children}</main>`, and `Footer`. For signed-in users, SideNav shows Forms and Workspaces when `design-mode` is allowed, then My Forms and My Submissions when `submit-mode` is allowed, then Administration for SOBA admins. Feedback and Help always show.
+- **Folders:** `app/ui/` - shared UI (Header, SideNav, Footer, forms). `lib/` - Redux store, slices, hooks, Keycloak init, runtime config. `src/features/` - admin, designer, formio-v5, onboarding, submit-mode, workspaces. `src/shared/` - API client, config, feature flags. `src/app/` - providers and routing. Use `@/lib`, `@/app`, `@/src` for imports.
 
 ### Runtime config (frontend)
 
@@ -472,12 +516,6 @@ Auth-related env: `IDP_PLUGINS`, `IDP_PLUGIN_DEFAULT_*`, and per-IdP `PLUGIN_<ID
 
 - **Base URL:** From `getSobaApiBaseUrl()` in `src/shared/config/runtimeConfig.ts` (cached config or `NEXT_PUBLIC_SOBA_API_BASE_URL`).
 - **Pattern:** Protected calls set `Authorization: Bearer ${token}`. Form/submission helpers in `sobaApiForms.ts` also send **`x-workspace-id`** when a workspace is selected. Use fetch with cache: 'no-store' for dynamic data. Types for responses live in sobaApi.ts / sobaApiForms.ts.
-
-### Plugins (frontend)
-
-- **Registered plugins:** workspaces (no `featureCode`), designer (`design-mode`), submit-mode, meta-review (`meta`). Marketing is a feature flag only (SideNav home link), not a separate plugin.
-- **Adding a plugin:** (1) Optionally add a row to `soba.feature` if platform-gated; set `featureCode` on the plugin. Omit for always-on shell (e.g. workspaces). (2) Create `src/features/<name>/plugin.tsx` exporting `AppPlugin`: id, optional featureCode, order, getNavItem, optional showInHeaderNav. (3) Register in `src/app/plugins/registry.ts`.
-- **getNavItem** returns { id, href, label }; href includes locale (e.g. `/${locale}/designer`).
 
 ### Testing
 

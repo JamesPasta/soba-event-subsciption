@@ -2,32 +2,32 @@ import type {
   CacheAdapter,
   CachePluginDefinition,
 } from '../../core/integrations/cache/CacheAdapter';
-import type { PluginConfigReader } from '../../core/config/pluginConfig';
 
 const defaultTtlMs = 5 * 60 * 1000; // 5 minutes
 
-function createInMemoryCacheAdapter(config: PluginConfigReader): CacheAdapter {
-  void config; // Required by interface; this plugin does not use config
+function createInMemoryCacheAdapter(): CacheAdapter {
   const store = new Map<string, { value: unknown; expiresAt?: number }>();
 
   return {
-    async get<T>(key: string): Promise<T | null> {
+    get<T>(key: string): Promise<T | null> {
       const entry = store.get(key);
-      if (!entry) return null;
+      if (!entry) return Promise.resolve(null);
       if (entry.expiresAt !== undefined && Date.now() > entry.expiresAt) {
         store.delete(key);
-        return null;
+        return Promise.resolve(null);
       }
-      return entry.value as T;
+      return Promise.resolve(entry.value as T);
     },
 
-    async set(key: string, value: unknown, ttlMs?: number): Promise<void> {
+    set(key: string, value: unknown, ttlMs?: number): Promise<void> {
       const expiresAt = ttlMs !== undefined ? Date.now() + ttlMs : undefined;
       store.set(key, { value, expiresAt });
+      return Promise.resolve();
     },
 
-    async delete(key: string): Promise<void> {
+    delete(key: string): Promise<void> {
       store.delete(key);
+      return Promise.resolve();
     },
 
     async getOrSet<T>(key: string, factory: () => Promise<T>, ttlMs?: number): Promise<T> {

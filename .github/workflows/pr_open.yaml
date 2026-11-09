@@ -1,4 +1,4 @@
-# PR pipeline: QA (type-check, lint, unit tests), then build/deploy when app paths change.
+# PR pipeline: QA (type-check, lint, format, unit tests), then build/deploy when app paths change.
 # Also runnable manually (workflow_dispatch) with just a PR number (like CHEFS); a manual
 # run force-deploys, bypassing the changed-paths gate.
 name: PR Open
@@ -6,11 +6,9 @@ run-name: PR-${{ github.event.number || github.event.inputs.pr-number }}
 
 env:
   ACRONYM: soba
-  # PR deployments map to a fixed pool of slots (PR_NUM % SLOT_COUNT) so login
-  # hostnames are a known, finite set. Sourced from the repo variable so
-  # pr_close.yaml and the Keycloak redirect URIs (soba-N-designer / soba-N-forms,
-  # N = 0 .. SLOT_COUNT-1) share one value; the literal is a fallback if unset.
-  SLOT_COUNT: ${{ vars.SLOT_COUNT || '20' }}
+  # PR deployments share the dev host and are told apart by path, so the Keycloak redirect URIs
+  # stay a finite set (one wildcard per environment) without a pool of slot hostnames.
+  DEV_HOST_PREFIX: soba-dev
 
 on:
   pull_request:
@@ -51,9 +49,12 @@ jobs:
             deploy:
               - 'backend/**'
               - 'frontend/**'
+              - 'lib/**'
               - '.github/workflows/pr_open.yaml'
+              - '.github/workflows/gateway-proxy-check.yaml'
               - '.github/workflows/build-images.yaml'
               - '.github/workflows/qa.yaml'
+              - '.github/actions/**'
               - '.gitignore'
               - 'package.json'
               - 'pnpm-lock.yaml'
@@ -69,6 +70,7 @@ jobs:
   set-vars:
     name: Set variables
     runs-on: ubuntu-24.04
+    environment: pr
     needs: [qa, changes]
     if: ${{ needs.changes.outputs.deploy == 'true' && !startsWith(github.head_ref, 'release/') && github.head_ref != 'main' }}
     outputs:
@@ -77,20 +79,27 @@ jobs:
       URL_FORMS: ${{ steps.vars.outputs.URL_FORMS }}
       ref: ${{ steps.vars.outputs.ref }}
       PR_NUM: ${{ steps.vars.outputs.PR_NUM }}
-      SLOT: ${{ steps.vars.outputs.SLOT }}
+      FRONTEND_HOST: ${{ steps.vars.outputs.FRONTEND_HOST }}
+      APS_PR_ENABLED: ${{ steps.vars.outputs.APS_PR_ENABLED }}
     steps:
       - name: Setting variables
         id: vars
+        env:
+          PR_NUMBER: ${{ github.event.number || github.event.inputs.pr-number }}
         run: |
-          PR_NUMBER="${{ github.event.number || github.event.inputs.pr-number }}"
-          PR_NUMBER="${PR_NUMBER//[^0-9]/}"
-          SLOT=$(( PR_NUMBER % SLOT_COUNT ))
+          # The concurrency group is keyed on the raw input, so it must already be the bare number.
+          if [[ ! "${PR_NUMBER}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::pr-number must be digits only, e.g. 42 (got '${PR_NUMBER}')."
+            exit 1
+          fi
+          FRONTEND_HOST="${DEV_HOST_PREFIX}.${{ vars.OC_DOMAIN }}"
           echo "PR_NUM=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "SLOT=$SLOT" >> "$GITHUB_OUTPUT"
-          echo "JOB_NAME=pr-slot-$SLOT" >> "$GITHUB_OUTPUT"
-          echo "URL=https://soba-${SLOT}-designer.${{ vars.OC_DOMAIN }}" >> "$GITHUB_OUTPUT"
-          echo "URL_FORMS=https://soba-${SLOT}-forms.${{ vars.OC_DOMAIN }}" >> "$GITHUB_OUTPUT"
+          echo "JOB_NAME=pr-$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "FRONTEND_HOST=$FRONTEND_HOST" >> "$GITHUB_OUTPUT"
+          echo "URL=https://${FRONTEND_HOST}/designer-${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "URL_FORMS=https://${FRONTEND_HOST}/forms-${PR_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "ref=refs/pull/$PR_NUMBER/head" >> "$GITHUB_OUTPUT"
+          echo "APS_PR_ENABLED=${{ vars.APS_PR_ENABLED == 'true' }}" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build & Push
@@ -100,7 +109,7 @@ jobs:
       ref: ${{ needs.set-vars.outputs.ref }}
       platforms: amd64
       image_version: pr-${{ needs.set-vars.outputs.PR_NUM }}
-      #base_path: /pr-${{ needs.set-vars.outputs.PR_NUM }}
+      base_path_suffix: -${{ needs.set-vars.outputs.PR_NUM }}
     secrets: inherit
     permissions:
       contents: read
@@ -110,6 +119,7 @@ jobs:
     name: Deploy Crunchy Postgres
     needs: [set-vars]
     runs-on: ubuntu-24.04
+    environment: pr
     outputs:
       cluster: ${{ steps.crunchy.outputs.cluster }}
     steps:
@@ -120,13 +130,13 @@ jobs:
 
       - name: Deploy Crunchy (add PR user)
         id: crunchy
-        uses: bcgov/action-crunchy@7ee9c0bdec27f5251a8239373f51db1e01c7c4d9 # v2.1.0
+        uses: bcgov/actions-openshift/crunchy@46f2614322f7ba1a5ad88a7e4e1b98569c80dcf7 # v0.6.0
         with:
-          oc_namespace: ${{ secrets.OC_NAMESPACE }}
+          oc_server: ${{ vars.OC_SERVER }}
+          oc_namespace: ${{ vars.OC_NAMESPACE }}
           oc_token: ${{ secrets.OC_TOKEN }}
           values_file: deployments/helm/action-crunchy/values.yml
           release_name: pg-soba
-          ref: v2.0.0
 
   deploy:
     name: Deploy SOBA
@@ -156,12 +166,12 @@ jobs:
           openshift_server_url: ${{ vars.OC_SERVER }}
           openshift_token: ${{ secrets.OC_TOKEN }}
           insecure_skip_tls_verify: true
-          namespace: ${{ secrets.OC_NAMESPACE }}
+          namespace: ${{ vars.OC_NAMESPACE }}
 
       - name: Deploy shared Temporal and ensure PR namespace
         uses: ./.github/actions/temporal-deploy
         with:
-          namespace: ${{ secrets.OC_NAMESPACE }}
+          namespace: ${{ vars.OC_NAMESPACE }}
           temporal_namespace: soba-pr-${{ needs.set-vars.outputs.PR_NUM }}
           retention: "3d"
           chart_version: ${{ vars.TEMPORAL_CHART_VERSION || '0.74.0' }}
@@ -169,7 +179,7 @@ jobs:
       - name: Get DB config from Crunchy secret
         id: db
         env:
-          NAMESPACE: ${{ secrets.OC_NAMESPACE }}
+          NAMESPACE: ${{ vars.OC_NAMESPACE }}
           CLUSTER: ${{ needs.deploy-crunchy.outputs.cluster }}
           PR_NUM: ${{ needs.set-vars.outputs.PR_NUM }}
         run: |
@@ -181,23 +191,42 @@ jobs:
         uses: ./.github/actions/wait-for-postgres
         with:
           secret_name: ${{ steps.db.outputs.secret_name }}
-          namespace: ${{ secrets.OC_NAMESPACE }}
+          namespace: ${{ vars.OC_NAMESPACE }}
           label: PR database
       # Pipeline performance fix: Revert if needed.
+
+      - name: Recover pending Helm release
+        # Checkouts that predate the action skip recovery.
+        if: hashFiles('.github/actions/recover-helm-release/action.yaml') != ''
+        uses: ./.github/actions/recover-helm-release
+        with:
+          release: soba-${{ needs.set-vars.outputs.JOB_NAME }}
+          namespace: ${{ vars.OC_NAMESPACE }}
 
       - name: Generate values override and deploy
         env:
           GITHUB_REPOSITORY: ${{ github.repository }}
-          NAMESPACE: ${{ secrets.OC_NAMESPACE }}
+          NAMESPACE: ${{ vars.OC_NAMESPACE }}
           RELEASE: soba-${{ needs.set-vars.outputs.JOB_NAME }}
           TAG: sha-${{ needs.build.outputs.short_sha }}
           SHORT_SHA: ${{ needs.build.outputs.short_sha }}
           DOMAIN: ${{ vars.OC_DOMAIN }}
           PR_NUM: ${{ needs.set-vars.outputs.PR_NUM }}
-          SLOT: ${{ needs.set-vars.outputs.SLOT }}
+          FRONTEND_HOST: ${{ needs.set-vars.outputs.FRONTEND_HOST }}
+          APS_PR_ENABLED: ${{ vars.APS_PR_ENABLED == 'true' }}
+          VAULT_AUTH_PATH: ${{ vars.VAULT_AUTH_PATH }}
+          VAULT_NAMESPACE: ${{ vars.VAULT_NAMESPACE }}
+          VAULT_ROLE: ${{ vars.VAULT_ROLE_NONPROD }}
+          VAULT_SECRET_PATH: ${{ vars.VAULT_SECRET_PATH }}
+          VAULT_SERVICE_ACCOUNT_NAME: ${{ vars.VAULT_SERVICE_ACCOUNT_NAME }}
         run: |
           # Pipeline performance fix: Revert if needed.
           set -euo pipefail
+          : "${VAULT_AUTH_PATH:?Set the VAULT_AUTH_PATH variable.}"
+          : "${VAULT_NAMESPACE:?Set the VAULT_NAMESPACE variable.}"
+          : "${VAULT_ROLE:?Set the VAULT_ROLE_NONPROD variable.}"
+          : "${VAULT_SECRET_PATH:?Set VAULT_SECRET_PATH on this environment.}"
+          : "${VAULT_SERVICE_ACCOUNT_NAME:?Set the VAULT_SERVICE_ACCOUNT_NAME variable.}"
           REPO_LC=$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
 
           # Version /meta reports, e.g. 2.0.0-beta.0+pr.114.a1b2c3d. Empty if unreadable: the
@@ -224,13 +253,14 @@ jobs:
             image:
               repository: "ghcr.io/${REPO_LC}/frontend"
               tag: "${TAG}"
-            # Slot hosts are decoupled from the release name, so pin them per app.
-            # Backend CORS_ORIGIN is derived from these two hosts by the chart.
+            # PRs share the dev host and are told apart by path, so pin the host and set each
+            # app's path. Backend CORS_ORIGIN is derived from this host by the chart.
+            host: "${FRONTEND_HOST}"
             apps:
               designer:
-                host: "soba-${SLOT}-designer.${DOMAIN}"
+                routePath: "/designer-${PR_NUM}"
               forms:
-                host: "soba-${SLOT}-forms.${DOMAIN}"
+                routePath: "/forms-${PR_NUM}"
           temporalWorkersImage:
             repository: "ghcr.io/${REPO_LC}/temporal-worker"
             tag: "${TAG}"
@@ -248,6 +278,8 @@ jobs:
             # PR-unique Redis namespace (by PR number, not the reused slot) so a recycled slot never
             # inherits a previous PR's cached rows, bus channels or streams on the shared Valkey.
             prefix: "soba-pr-${PR_NUM}:"
+          gatewayNetworkPolicy:
+            enabled: ${APS_PR_ENABLED}
 
           OVERRIDE
 
@@ -258,7 +290,12 @@ jobs:
             --wait-for-jobs \
             --timeout 660s \
             -f deployments/helm/soba/values-pr.yaml \
-            -f /tmp/values-override.yaml
+            -f /tmp/values-override.yaml \
+            --set-string "vault.authPath=${VAULT_AUTH_PATH}" \
+            --set-string "vault.namespace=${VAULT_NAMESPACE}" \
+            --set-string "vault.role=${VAULT_ROLE}" \
+            --set-string "vault.secretPath=${VAULT_SECRET_PATH}" \
+            --set-string "vault.serviceAccountName=${VAULT_SERVICE_ACCOUNT_NAME}"
           # Pipeline performance fix: Revert if needed.
 
       # Pipeline performance fix: Revert if needed.
@@ -268,7 +305,7 @@ jobs:
       #   uses: ./.github/actions/openshift-diagnostics
       #   with:
       #     release: soba-${{ needs.set-vars.outputs.JOB_NAME }}
-      #     namespace: ${{ secrets.OC_NAMESPACE }}
+      #     namespace: ${{ vars.OC_NAMESPACE }}
       #     database_secret_name: ${{ steps.db.outputs.secret_name }}
       # Pipeline performance fix: Revert if needed.
 
@@ -285,15 +322,30 @@ jobs:
             - Forms (submit-mode): <${{ needs.set-vars.outputs.URL_FORMS }}>
           number: ${{ needs.set-vars.outputs.PR_NUM }}
 
+  gateway:
+    name: Verify PR through APS gateway
+    needs: [deploy, set-vars]
+    if: ${{ needs.set-vars.outputs.APS_PR_ENABLED == 'true' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/gateway-proxy-check.yaml
+    with:
+      environment: pr
+      release: soba-${{ needs.set-vars.outputs.JOB_NAME }}
+    secrets: inherit
+
   Tests:
     name: Integration Tests
     needs: [deploy, set-vars]
+    # Repository variable: set PLAYWRIGHT_ENABLED=true to run integration tests.
+    if: ${{ vars.PLAYWRIGHT_ENABLED == 'true' }}
     uses: ./.github/workflows/playwright.yaml
     with:
       DEP_ENV: ${{ github.event.number || github.event.inputs.pr-number }} #Passes PR number
       pr_branch: ${{ needs.set-vars.outputs.ref }} # Passes the PR branch
       BASE_URL: ${{ needs.set-vars.outputs.URL }}
     secrets:
-      Username: ${{ secrets.keycloakUsername }}
-      Password: ${{ secrets.keycloakPassword }}
+      keycloakUsername: ${{ secrets.keycloakUsername }}
+      keycloakPassword: ${{ secrets.keycloakPassword }}
       MFA_CODE: ${{ secrets.MFA_CODE }}

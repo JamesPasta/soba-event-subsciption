@@ -40,7 +40,11 @@ describe('DocumentGenerationRegistry', () => {
   it('creates the default adapter without external config (noop)', async () => {
     delete process.env.DOCUMENT_GENERATION_DEFAULT_CODE;
     const adapter = createDefaultDocumentGenerationAdapter();
-    const res = await adapter.render({});
+    const res = await adapter.render({
+      template: { content: Buffer.from('x'), fileType: 'docx' },
+      options: {},
+      data: {},
+    });
     expect(res.contentType).toBe('text/plain');
   });
 

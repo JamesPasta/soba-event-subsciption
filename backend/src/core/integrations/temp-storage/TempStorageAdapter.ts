@@ -19,8 +19,13 @@ export interface TempWriteOptions {
 }
 
 export interface TempStorageAdapter {
-  /** Stage bytes (Buffer or stream) and return a handle. */
+  /** Stage bytes (Buffer or stream) and return a handle. A failed write leaves nothing behind. */
   write(data: Buffer | Readable, opts?: TempWriteOptions): Promise<TempResource>;
+  /**
+   * A handle for a file the caller writes itself, such as through a write stream. Nothing exists at
+   * the path yet; the caller removes the handle when done, whether or not it wrote anything.
+   */
+  reserve(opts?: TempWriteOptions): TempResource;
   /** Open a readable stream over a previously staged resource. */
   createReadStream(resource: TempResource): Readable;
   /** Remove a staged resource. No-op if it is already gone. */

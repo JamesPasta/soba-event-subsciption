@@ -2,33 +2,20 @@
  * Runs the plan through the real services, so forms and submissions exist in Postgres and in the
  * form engine. No argv, console, or process exit: takes options, returns a manifest.
  */
-import { v7 as uuidv7 } from 'uuid';
-
 import { db } from '../../core/db/client';
-import { workspaceMemberships } from '../../core/db/schema';
-import {
-  SystemGroup,
-  WorkspaceMembershipSource,
-  WorkspaceMembershipStatus,
-  type WorkspaceMembershipRoleCode,
-} from '../../core/db/codes';
+import type { WorkspaceMembershipRoleCode } from '../../core/db/codes';
 import { ConflictError } from '../../core/errors';
+import { mapInOrder } from '../../core/inOrder';
 import { createTeamWorkspace } from '../../core/db/repos/workspaceRepo';
-import {
-  findOrCreateUserByIdentity,
-  invalidateMembershipCache,
-} from '../../core/db/repos/membershipRepo';
-import {
-  addUserToGroup,
-  createGroupWithRole,
-  getSystemGroupId,
-  setSubmitterAudience,
-} from '../../core/db/repos/workspaceGroupRepo';
+import { findOrCreateUserByIdentity } from '../../core/db/repos/membershipRepo';
+import { addUserToGroup, createGroupWithRole } from '../../core/db/repos/workspaceGroupRepo';
+import { updateWorkspaceAudience } from '../../core/db/repos/audienceSettingRepo';
 import { FormService } from '../../core/services/formService';
 import { FormVersionService } from '../../core/services/formVersionService';
-import { SubmissionService } from '../../core/services/submissionService';
 
+import { generateCoverage, type CoverageManifest } from './access/generate';
 import { getFixture, type DevFormFixture } from './fixtures';
+import { addMember } from './members';
 import {
   buildPlan,
   DEFAULT_SIZE,
@@ -43,11 +30,11 @@ import {
 import { requireBaseSeed } from './preconditions';
 import { finishRun, hasOpenRun, recordIds, startRun } from './runs';
 import { resolveTargetUser, type ResolvedUser, type UserRef } from './resolveUser';
+import { seedSubmission } from './seedSubmission';
 
 // Not from the core container, which also wires the API service layer this tool does not use.
 const formService = new FormService();
 const formVersionService = new FormVersionService();
-const submissionService = new SubmissionService();
 
 export interface GenerateOptions {
   /** The real user the data is built around. */
@@ -88,6 +75,7 @@ export interface DevDataManifest {
   users: Array<{ id: string; displayLabel: string; identityProviderCode: string }>;
   workspaces: ManifestWorkspace[];
   counts: Record<string, number>;
+  coverage: CoverageManifest;
 }
 
 interface GenerateContext {
@@ -111,16 +99,13 @@ async function createUsers(
   runId: string,
 ): Promise<Map<number, ResolvedUser>> {
   const users = new Map<number, ResolvedUser>();
-  for (const planned of plannedUsers) {
-    const id = await findOrCreateUserByIdentity(
-      planned.identityProviderCode,
-      planned.subject,
-      planned.profile,
-    );
-    // Recorded one at a time: a failure part way through must not orphan the ones already made.
+  // Recorded one at a time: a failure part way through must not orphan the ones already made.
+  await mapInOrder(plannedUsers, async (planned) => {
+    const { identityProviderCode, subject, profile } = planned;
+    const id = await findOrCreateUserByIdentity(identityProviderCode, subject, profile);
     await recordIds(runId, { userIds: [id] });
     users.set(planned.index, { id, displayLabel: planned.displayLabel });
-  }
+  });
   return users;
 }
 
@@ -132,33 +117,6 @@ function requireUser(ctx: GenerateContext, index: number): ResolvedUser {
 
 const ownerOf = (ctx: GenerateContext, planned: PlannedWorkspace): ResolvedUser =>
   planned.ownerUserIndex == null ? ctx.target : requireUser(ctx, planned.ownerUserIndex);
-
-/** Written directly: the members API is read-only and the owner bootstrap is private. */
-async function addMember(args: {
-  workspaceId: string;
-  user: ResolvedUser;
-  role: WorkspaceMembershipRoleCode;
-  invitedBy: ResolvedUser;
-}): Promise<string> {
-  const membershipId = uuidv7();
-  const now = new Date();
-  await db.insert(workspaceMemberships).values({
-    id: membershipId,
-    workspaceId: args.workspaceId,
-    userId: args.user.id,
-    role: args.role,
-    status: WorkspaceMembershipStatus.active,
-    source: WorkspaceMembershipSource.user_created,
-    invitedByUserId: args.invitedBy.id,
-    invitedAt: now,
-    acceptedAt: now,
-    createdBy: args.invitedBy.displayLabel,
-    updatedBy: args.invitedBy.displayLabel,
-  });
-  // The cache is process-local, so a long-lived API process would otherwise miss this row.
-  invalidateMembershipCache(args.workspaceId, args.user.id);
-  return membershipId;
-}
 
 /** Memberships for the target user when they are not the owner, plus every planned dev member. */
 async function addMembers(
@@ -179,33 +137,31 @@ async function addMembers(
     });
   }
 
-  for (const member of planned.members) {
+  // In plan order, so the time-ordered ids follow the plan.
+  await mapInOrder(planned.members, async (member) => {
+    const user = requireUser(ctx, member.userIndex);
     const membershipId = await addMember({
       workspaceId,
-      user: requireUser(ctx, member.userIndex),
+      user,
       role: member.role,
       invitedBy: owner,
     });
     dev.set(member.userIndex, membershipId);
-  }
+  });
   return { dev, target };
 }
 
-/** Bootstrap already produces 'protected', so only the other modes need work. */
+/** A new workspace is already 'protected', so only the other modes need work. */
 async function applyAudience(
   workspaceId: string,
   planned: PlannedWorkspace,
   owner: ResolvedUser,
 ): Promise<void> {
   if (planned.audience === 'protected') return;
-  const groupId = await getSystemGroupId(workspaceId, SystemGroup.form_submitters);
-  if (!groupId) return;
-  await setSubmitterAudience({
+  await updateWorkspaceAudience({
     workspaceId,
-    groupId,
-    public: planned.audience === 'public',
-    idps: [],
-    displayLabel: owner.displayLabel,
+    audience: { mode: planned.audience, idps: [] },
+    actorDisplayLabel: owner.displayLabel,
   });
 }
 
@@ -218,20 +174,21 @@ async function createGroups(
 ): Promise<void> {
   const displayLabel = owner.displayLabel;
 
+  // A transaction runs its statements one at a time on one connection.
   await db.transaction(async (tx) => {
-    for (const group of planned.groups) {
+    await mapInOrder(planned.groups, async (group) => {
       const groupId = await createGroupWithRole(tx, {
         workspaceId,
         name: group.name,
         roleCodes: [...group.roleCodes],
         displayLabel,
       });
-      for (const userIndex of group.memberUserIndexes) {
+      await mapInOrder(group.memberUserIndexes, async (userIndex) => {
         const membershipId = memberships.dev.get(userIndex);
         if (!membershipId) throw new Error(`No membership for dev user ${userIndex}`);
         await addUserToGroup(tx, { workspaceId, groupId, membershipId, displayLabel });
-      }
-    }
+      });
+    });
 
     // Without this the target user's workspace role grants no form access at all.
     if (planned.targetGroup && memberships.target) {
@@ -267,21 +224,14 @@ async function createSubmission(args: {
   planned: PlannedSubmission;
 }): Promise<string> {
   const actor = submitterOf(args.ctx, args.planned.submitter);
-  const submissionId = uuidv7();
-  const actorInput = { actorId: actor.id, actorDisplayLabel: actor.displayLabel };
-  await submissionService.open({
-    id: submissionId,
+  return seedSubmission({
     workspaceId: args.workspaceId,
     formId: args.formId,
-    ...actorInput,
+    actorId: actor.id,
+    actorDisplayLabel: actor.displayLabel,
+    data: args.fixture.answers(args.planned.index),
+    events: args.planned.events,
   });
-
-  const data = args.fixture.answers(args.planned.index);
-  for (const event of args.planned.events) {
-    const input = { workspaceId: args.workspaceId, submissionId, data, ...actorInput };
-    await (event === 'saved' ? submissionService.save(input) : submissionService.submit(input));
-  }
-  return submissionId;
 }
 
 async function createForm(
@@ -297,27 +247,18 @@ async function createForm(
     workspaceId,
     name: planned.name,
     description: planned.description,
+    schema: fixture.schema,
     ...actor,
   });
 
-  if (planned.provisioned) {
-    await formVersionService.provision({
-      workspaceId,
-      formVersionId: version.id,
-      schema: fixture.schema,
-      ...actor,
-    });
-  }
   if (planned.published) {
     await formVersionService.publish({ workspaceId, formVersionId: version.id, ...actor });
   }
 
-  const submissionIds: string[] = [];
-  for (const submission of planned.submissions) {
-    submissionIds.push(
-      await createSubmission({ ctx, workspaceId, formId: form.id, fixture, planned: submission }),
-    );
-  }
+  // In plan order, so the time-ordered ids follow the plan.
+  const submissionIds = await mapInOrder(planned.submissions, (submission) =>
+    createSubmission({ ctx, workspaceId, formId: form.id, fixture, planned: submission }),
+  );
 
   return { id: form.id, name: planned.name, published: planned.published, submissionIds };
 }
@@ -347,10 +288,10 @@ async function createWorkspace(
   await applyAudience(workspaceId, planned, owner);
   await createGroups(workspaceId, planned, memberships, owner);
 
-  const forms: ManifestForm[] = [];
-  for (const plannedForm of planned.forms) {
-    forms.push(await createForm(ctx, workspaceId, plannedForm, owner));
-  }
+  // In plan order, so the time-ordered ids follow the plan.
+  const forms = await mapInOrder(planned.forms, (plannedForm) =>
+    createForm(ctx, workspaceId, plannedForm, owner),
+  );
 
   return {
     id: workspaceId,
@@ -408,6 +349,9 @@ export async function generate(options: GenerateOptions): Promise<DevDataManifes
   // Recorded before anything is written, so a run that dies part-way is still visible.
   const runId = await startRun({ size, ownerUserId: target.id, stampedBy: target.displayLabel });
 
+  // First, so its rows take the lowest ids and trail the default id:desc lists.
+  const coverage = await generateCoverage({ runId, owner: target, publicUser });
+
   const ctx: GenerateContext = {
     runId,
     target,
@@ -420,9 +364,9 @@ export async function generate(options: GenerateOptions): Promise<DevDataManifes
   // and lead the default id:desc list instead of trailing it. Written back by plan index, so the
   // manifest still lines up with the plan.
   const created: ManifestWorkspace[] = new Array(plan.workspaces.length);
-  for (const planned of [...plan.workspaces].reverse()) {
+  await mapInOrder([...plan.workspaces].reverse(), async (planned) => {
     created[planned.index] = await createWorkspace(ctx, planned);
-  }
+  });
 
   const manifest: DevDataManifest = {
     generatedAt: new Date().toISOString(),
@@ -436,6 +380,7 @@ export async function generate(options: GenerateOptions): Promise<DevDataManifes
     })),
     workspaces: created,
     counts: countRows(created, ctx.users.size),
+    coverage,
   };
 
   await finishRun(runId, manifest, target.displayLabel);

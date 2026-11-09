@@ -1,0 +1,24 @@
+.fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--layout-margin-medium);
+}
+
+.field {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.wideField {
+  flex: 2 1 15rem;
+  min-width: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--layout-margin-medium);
+  margin: var(--layout-margin-small) 0 var(--layout-margin-medium);
+}

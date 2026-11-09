@@ -1,7 +1,8 @@
 import { and, count, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { DEFAULT_SORT_LOCALE, FEATURE_SCOPE_SORT_FIELDS, type SortToken } from '@soba/lib';
 import { db } from '../client';
 import { featureScopes } from '../schema';
-import { orderByForSort, type SortColumns, type SortToken } from '../listSort';
+import { orderByForSort, type SortColumns } from '../listSort';
 import { readListPage } from '../listRead';
 import { FeatureScopeStatus, FeatureScopeType } from '../codes';
 
@@ -23,13 +24,6 @@ export interface UpsertFeatureScopeInput {
   updatedBy?: string | null;
 }
 
-export const FEATURE_SCOPE_SORT_FIELDS = [
-  'featureCode',
-  'scopeType',
-  'status',
-  'createdAt',
-  'updatedAt',
-] as const;
 export type FeatureScopeListSortField = (typeof FEATURE_SCOPE_SORT_FIELDS)[number];
 export type FeatureScopeListSort = SortToken<FeatureScopeListSortField>;
 
@@ -117,7 +111,14 @@ export const listFeatureScopes = async (
       .select()
       .from(featureScopes)
       .where(where)
-      .orderBy(...orderByForSort(FEATURE_SCOPE_SORT_COLUMNS, input.sort, featureScopes.id))
+      .orderBy(
+        ...orderByForSort(
+          FEATURE_SCOPE_SORT_COLUMNS,
+          input.sort,
+          featureScopes.id,
+          DEFAULT_SORT_LOCALE,
+        ),
+      )
       .limit(input.limit)
       .offset(input.offset);
     const totals = await tx.select({ total: count() }).from(featureScopes).where(where);

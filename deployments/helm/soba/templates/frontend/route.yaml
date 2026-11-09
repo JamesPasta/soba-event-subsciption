@@ -23,9 +23,9 @@ metadata:
     {{- end }}
   {{- end }}
 spec:
-  host: {{ include "soba.frontendHostFor" (dict "root" $root "name" $name "app" $app) }}
-  {{- if $root.Values.global.routePath }}
-  path: {{ $root.Values.global.routePath }}
+  host: {{ include "soba.frontendHost" $root }}
+  {{- with $app.routePath }}
+  path: {{ . }}
   {{- end }}
   to:
     kind: Service

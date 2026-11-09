@@ -29,20 +29,37 @@ export function classifyRoute(pathname: string): RouteKind {
   return ROUTE_KIND_BY_SEGMENT[route] ?? 'public';
 }
 
+function resolveLanding(
+  locale: string,
+  onboarding: string,
+  session: AppSessionSnapshot,
+  designMode: boolean,
+): string {
+  if (!designMode) {
+    return `/${locale}/my-forms`;
+  }
+  if (session.needsOnboarding) {
+    return onboarding;
+  }
+  if (session.canCreateWorkspace && !session.hasWorkspaces) {
+    return `/${locale}/workspaces`;
+  }
+  // Marked as an in-app arrival so the list comes back as the user left it.
+  return navLink(`/${locale}/forms`);
+}
+
 /**
  * Returns a path to `router.replace`, or null when the current route may render.
  * Caller should wait until `sessionReady` before redirecting authenticated users.
  *
- * `workspacesEnabled` is the frontend WORKSPACES gate for this deployment. When off (submit-mode),
- * the workspace-onboarding/create landing doesn't apply: `canCreateWorkspace` is a per-user
- * capability, not mode-aware, so a designer signing into the submit frontend would otherwise be
- * routed to `/workspaces` (404 there) or the workspace-access dead-end. Submit-mode lands on forms.
+ * `designMode` is this deployment's DESIGN_MODE gate. When off, users land on My Forms and
+ * workspace onboarding is skipped; `canCreateWorkspace` is per-user and not mode-aware.
  */
 export function resolveRedirect(
   pathname: string,
   locale: string,
   session: AppSessionSnapshot,
-  workspacesEnabled: boolean,
+  designMode: boolean,
 ): string | null {
   // Routing an unauthenticated user off a guarded route before Keycloak has run sends a deep link
   // to the landing page and drops its query string.
@@ -53,9 +70,6 @@ export function resolveRedirect(
   const kind = classifyRoute(pathname);
   const home = `/${locale}`;
   const onboarding = `/${locale}/onboarding`;
-  // Marked as an in-app arrival so the list comes back as the user left it.
-  const forms = navLink(`/${locale}/forms`);
-  const workspaces = `/${locale}/workspaces`;
 
   if (!session.authenticated) {
     if (kind === 'home' || kind === 'public') {
@@ -68,14 +82,8 @@ export function resolveRedirect(
     return null;
   }
 
-  const needsOnboarding = workspacesEnabled && session.needsOnboarding;
-
-  let landing = forms;
-  if (needsOnboarding) {
-    landing = onboarding;
-  } else if (workspacesEnabled && session.canCreateWorkspace && !session.hasWorkspaces) {
-    landing = workspaces;
-  }
+  const needsOnboarding = designMode && session.needsOnboarding;
+  const landing = resolveLanding(locale, onboarding, session, designMode);
 
   if (kind === 'home') {
     return landing;

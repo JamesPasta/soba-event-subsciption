@@ -4,14 +4,14 @@
   "description": "",
   "main": "app.ts",
   "scripts": {
-    "test": "NODE_OPTIONS='--max-old-space-size=1024' jest --runInBand",
+    "test": "NODE_OPTIONS='--max-old-space-size=1024 --expose-gc' jest --runInBand --logHeapUsage",
     "test:parallel": "NODE_OPTIONS='--max-old-space-size=1024' jest --maxWorkers=2",
-    "script:test-formio-proxy": "tsx scripts/test-formio-proxy.ts",
     "test:watch": "NODE_OPTIONS='--max-old-space-size=1024' jest --watch --runInBand",
     "test:coverage": "NODE_OPTIONS='--max-old-space-size=1024' jest --coverage --runInBand",
     "db:migrate": "tsx src/core/db/migrate.ts",
     "db:seed": "tsx src/core/db/seed.ts",
     "db:dev-data": "tsx src/features/dev-data/cli.ts",
+    "db:dev-data:verify": "tsx src/features/dev-data/access/cli.ts",
     "build": "tsc",
     "serve": "pnpm run build && node dist/src/app.js",
     "dev": "npx nodemon",
@@ -45,6 +45,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-sonarjs": "^4.1.0",
+    "eslint-plugin-unicorn": "^65.0.1",
     "globals": "^16.5.0",
     "jest": "^30.2.0",
     "jiti": "^2.6.1",
@@ -57,6 +58,7 @@
     "typescript-eslint": "^8.48.0"
   },
   "dependencies": {
+    "@soba/lib": "workspace:*",
     "@asteasolutions/zod-to-openapi": "^8.1.0",
     "@temporalio/activity": "^1.15.0",
     "@temporalio/client": "^1.15.0",

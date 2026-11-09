@@ -17,15 +17,18 @@ Backend, in the repo:
 Backend, in the route schema:
 
 3. Spread `offsetQueryFields`, reject `cursor` with `rejectedCursorField`, and build `sort`
-   from `makeSortEnum`.
+   from `makeSortEnum`. If a sort field is `linguistic`, add `locale: sortLocaleQueryField`.
+4. If a sort field is `linguistic`, put `sortLocale` after `validateRequest` on the route and
+   pass `req.sortLocale` through the service to the repo.
 
 Frontend:
 
-4. Add a spec to `frontend/src/shared/list/listQueryMemory.ts`.
-5. Read the page with `useAuthedSWR` and `listReadConfig`. Put every value the request uses in
-   the SWR key.
-6. Wire `useListQuery` into `DataTable`. Set `sortField` on each column that should sort.
-7. If something links into this list, build the href with `listLink`. If a screen returns to
+5. Add a spec to `frontend/src/shared/list/listQueryMemory.ts`.
+6. Read the page with `useAuthedSWR` and `listReadConfig`. Put every value the request uses in
+   the SWR key. For a `linguistic` sort, that includes `useSortLocale()`, sent with
+   `toListRequestQuery` and `sortLocaleHeaders`.
+7. Wire `useListQuery` into `DataTable`. Set `sortField` on each column that should sort.
+8. If something links into this list, build the href with `listLink`. If a screen returns to
    it, use `navLink`.
 
 ## Backend
@@ -38,14 +41,22 @@ export type ThingListSortField = (typeof THING_SORT_FIELDS)[number];
 export type ThingListSort = SortToken<ThingListSortField>;
 
 const THING_SORT_COLUMNS: SortColumns<ThingListSortField> = {
-  name: { column: things.name, caseInsensitive: true },
+  name: { column: things.name, linguistic: true },
   status: { column: things.status },
   createdAt: { column: things.createdAt },
 };
 ```
 
-`caseInsensitive` orders by `lower(column)`, which matches `ilike` search. Use it for text a
-person typed. Skip it for codes and enums, which have an index on the raw column that folding would not use.
+`linguistic` orders by the request locale's ICU collation (`und-x-icu` for en, `fr-CA-x-icu` for
+fr), the same order `compareTextForSort` gives in the browser. Use it for text a person typed. Skip
+it for codes and enums, which have an index on the raw column that the collation would not use.
+
+The sort locale is `en` or `fr`. `sortLocale` reads a non-empty `Accept-Language` first, then the
+`locale` param; any other language sorts as `en`. The frontend sends both from the app language.
+It sets the header explicitly because the browser's own follows the browser language.
+
+For an `orderBy` without a sort token, such as a lookup or a fixed order, use
+`collated(column, locale)`.
 
 `nullable: true` puts empty values last in both directions. Without it, sorting submissions by
 `submittedAt` ascending would open on rows that have never been submitted.
@@ -58,7 +69,7 @@ return readListPage(async (tx) => {
     .select({ ... })
     .from(things)
     .where(where)
-    .orderBy(...orderByForSort(THING_SORT_COLUMNS, input.sort, things.id))
+    .orderBy(...orderByForSort(THING_SORT_COLUMNS, input.sort, things.id, input.locale))
     .limit(input.limit)
     .offset(input.offset);
   const totals = await tx.select({ total: count() }).from(things).where(where);
@@ -68,7 +79,7 @@ return readListPage(async (tx) => {
 
 `readListPage` is a repeatable-read, read-only transaction, so the count describes the rows in
 the same snapshot. `orderByForSort` appends the id as a tiebreak; without it, rows that share a
-sort value can swap pages.
+sort value can swap pages. A list with no `linguistic` field passes `DEFAULT_SORT_LOCALE`.
 
 An empty `workspaceIds` array still means the caller holds the permission nowhere, not "all
 workspaces". Return `{ items: [], total: 0 }` without querying.
@@ -81,6 +92,7 @@ export const ListThingsQuerySchema = z.object({
   cursor: rejectedCursorField,
   q: searchQueryField.openapi({ description: 'Matches anywhere in the name.' }),
   sort: makeSortEnum(THING_SORT_FIELDS).default('createdAt:desc'),
+  locale: sortLocaleQueryField,
 });
 ```
 

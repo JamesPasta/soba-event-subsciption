@@ -3,21 +3,22 @@
 import { useMemo, useCallback } from 'react';
 import { Link } from '@bcgov/design-system-react-components';
 
-import type { Dictionary } from '@/src/types/plugins';
+import type { Dictionary } from '@/src/types/dictionary';
 import { Tag, TagColor } from '@/src/components/Tag';
 import { DataTable, type Column } from '@/src/components/DataTable';
 import { useFormatLongDate } from '@/src/shared/hooks/useFormatLongDate';
 import { FORM_VERSIONS_LIST_QUERY } from '@/src/shared/list/listQueryMemory';
-import { PAGE_SIZE_OPTIONS, useListQuery } from '@/src/shared/list/useListQuery';
-import { useFormVersionPage } from '../useFormVersions';
-import type { SobaFormVersionType } from '@/src/types/forms';
+import { useListQuery } from '@/src/shared/list/useListQuery';
+import { useDataTable } from '@/src/shared/list/useDataTable';
+import { useFormVersionPage } from '../data/useFormVersions';
+import type { SobaFormVersionListItem } from '@/src/types/forms';
 import { capitalizeFirstLetter } from '@/src/shared/util/stringUtils';
 
 interface FormHistoryTabProps {
   dict: Dictionary;
   formId?: string;
   onSelectVersion: (versionId: string) => void;
-  onRestoreVersion: (version: SobaFormVersionType) => Promise<void>;
+  onRestoreVersion: (version: SobaFormVersionListItem) => Promise<boolean>;
   onNavigateToDesigner?: () => void;
 }
 
@@ -33,16 +34,17 @@ export default function FormHistoryTab({
   onRestoreVersion,
   onNavigateToDesigner,
 }: Readonly<FormHistoryTabProps>) {
-  const listQuery = useListQuery(FORM_VERSIONS_LIST_QUERY);
-  const { versions, total, isLoading, error } = useFormVersionPage(formId, {
-    offset: listQuery.offset,
-    limit: listQuery.pageSize,
-    sort: listQuery.sort,
+  const query = useListQuery(FORM_VERSIONS_LIST_QUERY);
+  const versionsResult = useFormVersionPage(formId, {
+    offset: query.offset,
+    limit: query.pageSize,
+    sort: query.sort,
   });
+  const { table } = useDataTable(query, versionsResult, dict.form.loadVersionsError);
   const formatLongDate = useFormatLongDate();
 
   const openInDesigner = useCallback(
-    (version: SobaFormVersionType) => {
+    (version: SobaFormVersionListItem) => {
       onSelectVersion(version.id);
       onNavigateToDesigner?.();
     },
@@ -50,13 +52,19 @@ export default function FormHistoryTab({
   );
 
   const restore = useCallback(
-    (version: SobaFormVersionType) => {
-      void onRestoreVersion(version).then(() => onNavigateToDesigner?.());
+    (version: SobaFormVersionListItem) => {
+      // A restore that failed leaves the designer on the old draft, so staying put is the honest
+      // result. The caller reports the failure.
+      void onRestoreVersion(version)
+        .then((created) => {
+          if (created) onNavigateToDesigner?.();
+        })
+        .catch(() => undefined);
     },
     [onRestoreVersion, onNavigateToDesigner],
   );
 
-  const columns: Column<SobaFormVersionType>[] = useMemo(
+  const columns: Column<SobaFormVersionListItem>[] = useMemo(
     () => [
       {
         key: 'versionNo',
@@ -68,7 +76,7 @@ export default function FormHistoryTab({
         key: 'state',
         label: dict.form?.status || 'Status',
         sortField: 'state',
-        render: (version: SobaFormVersionType) => (
+        render: (version: SobaFormVersionListItem) => (
           <Tag
             data-testid={`${version.id}-status-tag`}
             text={capitalizeFirstLetter(version.state)}
@@ -84,7 +92,7 @@ export default function FormHistoryTab({
         key: 'created',
         label: dict.submission?.formList?.columns?.createdAt || 'Created Date',
         sortField: 'createdAt',
-        render: (version: SobaFormVersionType) => (
+        render: (version: SobaFormVersionListItem) => (
           <span className="small" data-testid={`${version.id}-created-date`}>
             {formatLongDate(version.createdAt)}
           </span>
@@ -95,7 +103,7 @@ export default function FormHistoryTab({
         label: dict.submission?.formList?.columns?.quickLinks || 'Quick Links',
         align: 'start',
         width: '10%',
-        render: (version: SobaFormVersionType) => (
+        render: (version: SobaFormVersionListItem) => (
           <>
             <Link
               className="bcds-react-aria-Link medium false me-2"
@@ -119,23 +127,13 @@ export default function FormHistoryTab({
   );
 
   return (
-    <DataTable<SobaFormVersionType>
-      data={versions}
+    <DataTable<SobaFormVersionListItem>
+      {...table}
       columns={columns}
-      loading={isLoading}
-      error={error ? dict.form.loadVersionsError : null}
       emptyMessage={dict.form.emptyHistory}
       loadingMessage={dict.general.loading}
       itemName="items"
       caption={dict.form.historyTab}
-      pageSize={listQuery.pageSize}
-      currentPage={listQuery.page}
-      totalItems={total}
-      onPageChange={listQuery.setPage}
-      onPageSizeChange={listQuery.setPageSize}
-      pageSizeOptions={PAGE_SIZE_OPTIONS}
-      sort={listQuery.sort}
-      onSortChange={listQuery.setSort}
       keyExtractor={(version) => version.id}
     />
   );

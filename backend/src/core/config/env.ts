@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { isStoragePrefix } from '../integrations/storage-engine/storageKey';
 
 let loaded = false;
 
@@ -26,7 +27,7 @@ export function parseBooleanEnvValue(value: string): boolean {
 export function parseNumberEnvValue(value: string): number {
   const parsed = Number(value);
   if (Number.isNaN(parsed)) {
-    throw new Error('Value must be a number');
+    throw new TypeError('Value must be a number');
   }
   return parsed;
 }
@@ -124,6 +125,179 @@ export function resolveTrustProxySetting(source: EnvSource): number | boolean {
   return getOptionalEnvFrom(source, 'NODE_ENV') === 'development' ? false : 1;
 }
 
+/**
+ * URL path the API is served under, normalised to a leading slash and no trailing one. Express
+ * mounts a path without a leading slash against the wrong prefix rather than failing, and nothing
+ * else validates this value.
+ */
+export function resolveApiBasePath(source: EnvSource): string {
+  const raw = (getOptionalEnvFrom(source, 'API_BASE_PATH') ?? '').trim();
+  if (raw === '' || raw === '/') {
+    return '';
+  }
+  const withLeadingSlash = raw.startsWith('/') ? raw : `/${raw}`;
+  return withLeadingSlash.endsWith('/') ? withLeadingSlash.slice(0, -1) : withLeadingSlash;
+}
+
+/** The value when it is a whole number of at least 1; undefined otherwise. */
+const positiveInteger = (value: number | undefined): number | undefined =>
+  value !== undefined && Number.isInteger(value) && value >= 1 ? value : undefined;
+
+/** Worker pool a job type runs in. A pod runs the pools listed in JOB_POOLS. */
+export const JobPool = {
+  light: 'light',
+  heavy: 'heavy',
+} as const;
+export type JobPoolCode = (typeof JobPool)[keyof typeof JobPool];
+
+/** Background job runner settings. */
+export interface JobSettings {
+  /** Pools this pod runs. */
+  pools: JobPoolCode[];
+  pollMs: Record<JobPoolCode, number>;
+  leaseMs: Record<JobPoolCode, number>;
+  /** Jobs one pod runs at once, per pool. */
+  concurrency: Record<JobPoolCode, number>;
+  /** Run time for a job type that does not set its own. */
+  timeoutMs: Record<JobPoolCode, number>;
+  /** Attempts for a job type that does not set its own. */
+  maxAttempts: number;
+  backoffBaseMs: number;
+  backoffMaxMs: number;
+  sweepIntervalMs: number;
+  /** Finished jobs deleted per sweep. */
+  retentionBatch: number;
+  succeededRetentionDays: number;
+  /** Applies to dead and cancelled jobs. */
+  deadRetentionDays: number;
+  /** How long shutdown waits for running jobs before aborting them. */
+  drainMs: number;
+  /** How long an aborted handler has to stop before its lease is left to expire. */
+  abortGraceMs: number;
+  /** Least time between progress writes for one job. */
+  progressIntervalMs: number;
+  /** Largest result file a job may store. */
+  resultMaxBytes: number;
+  /** Days a stored result is kept. */
+  resultRetentionDays: number;
+  /** Result files deleted per sweep. */
+  resultSweepBatch: number;
+  /** Storage profile and key prefix for result files. */
+  resultsStorageProfile: string;
+  resultsStoragePrefix: string;
+}
+
+/** Largest delay a Node timer accepts; a longer one fires after 1 ms. */
+export const MAX_TIMER_MS = 2_147_483_647;
+
+/** A heartbeat runs every third of the lease, so a shorter lease would beat continuously. */
+const MIN_LEASE_MS = 1000;
+
+/** Past this, now() minus the retention overflows a Postgres timestamp. */
+const MAX_RETENTION_DAYS = 36_500;
+
+/** file.size is an integer column. */
+const MAX_RESULT_BYTES = 2_147_483_647;
+
+/** Unset uses the fallback; a value that is not a whole number from `min` to `max` throws. */
+function wholeNumberSetting(
+  source: EnvSource,
+  key: string,
+  fallback: number,
+  { min = 1, max = MAX_TIMER_MS }: { min?: number; max?: number } = {},
+): number {
+  const raw = getOptionalEnvFrom(source, key);
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`${key} must be a whole number from ${min} to ${max}, got '${raw}'`);
+  }
+  return value;
+}
+
+const isJobPool = (value: string): value is JobPoolCode =>
+  (Object.values(JobPool) as string[]).includes(value);
+
+function resolveJobPools(source: EnvSource): JobPoolCode[] {
+  const raw = getCsvEnvFrom(source, 'JOB_POOLS');
+  if (!raw) return [JobPool.light, JobPool.heavy];
+  const unknown = raw.filter((pool) => !isJobPool(pool));
+  if (unknown.length > 0) {
+    throw new Error(`JOB_POOLS has unknown pools: ${unknown.join(', ')}`);
+  }
+  return [...new Set(raw.filter(isJobPool))];
+}
+
+/** Job runner settings from `source`. A set value that is not valid stops startup. */
+export function resolveJobSettings(source: EnvSource): JobSettings {
+  const setting = (key: string, fallback: number) => wholeNumberSetting(source, key, fallback);
+  const lease = (key: string, fallback: number) =>
+    wholeNumberSetting(source, key, fallback, { min: MIN_LEASE_MS });
+  const retentionDays = (key: string, fallback: number) =>
+    wholeNumberSetting(source, key, fallback, { max: MAX_RETENTION_DAYS });
+  return {
+    pools: resolveJobPools(source),
+    pollMs: {
+      light: setting('JOB_LIGHT_POLL_MS', 2_000),
+      heavy: setting('JOB_HEAVY_POLL_MS', 10_000),
+    },
+    leaseMs: {
+      light: lease('JOB_LIGHT_LEASE_MS', 60_000),
+      heavy: lease('JOB_HEAVY_LEASE_MS', 90_000),
+    },
+    concurrency: {
+      light: setting('JOB_LIGHT_CONCURRENCY', 4),
+      heavy: setting('JOB_HEAVY_CONCURRENCY', 1),
+    },
+    timeoutMs: {
+      light: setting('JOB_LIGHT_TIMEOUT_MS', 300_000),
+      heavy: setting('JOB_HEAVY_TIMEOUT_MS', 1_800_000),
+    },
+    maxAttempts: setting('JOB_MAX_ATTEMPTS', 3),
+    backoffBaseMs: setting('JOB_BACKOFF_BASE_MS', 30_000),
+    backoffMaxMs: setting('JOB_BACKOFF_MAX_MS', 1_800_000),
+    sweepIntervalMs: setting('JOB_SWEEP_INTERVAL_MS', 60_000),
+    retentionBatch: setting('JOB_RETENTION_BATCH', 1000),
+    succeededRetentionDays: retentionDays('JOB_SUCCEEDED_RETENTION_DAYS', 30),
+    deadRetentionDays: retentionDays('JOB_DEAD_RETENTION_DAYS', 90),
+    drainMs: setting('JOB_DRAIN_MS', 15_000),
+    abortGraceMs: setting('JOB_ABORT_GRACE_MS', 2_000),
+    progressIntervalMs: wholeNumberSetting(source, 'JOB_PROGRESS_INTERVAL_MS', 5_000, {
+      min: 1_000,
+    }),
+    resultMaxBytes: wholeNumberSetting(source, 'JOB_RESULT_MAX_BYTES', 209_715_200, {
+      max: MAX_RESULT_BYTES,
+    }),
+    resultRetentionDays: retentionDays('JOB_RESULT_RETENTION_DAYS', 7),
+    resultSweepBatch: setting('JOB_RESULT_SWEEP_BATCH', 100),
+    resultsStorageProfile: getOptionalEnvFrom(source, 'JOB_RESULTS_STORAGE_PROFILE') ?? 'default',
+    resultsStoragePrefix: resolveResultsPrefix(source),
+  };
+}
+
+function resolveResultsPrefix(source: EnvSource): string {
+  const prefix = getOptionalEnvFrom(source, 'JOB_RESULTS_STORAGE_PREFIX') ?? 'job-results';
+  if (!isStoragePrefix(prefix)) {
+    throw new Error(`JOB_RESULTS_STORAGE_PREFIX is not a valid storage prefix, got '${prefix}'`);
+  }
+  return prefix;
+}
+
+export interface ShutdownSettings {
+  /** How long SIGTERM keeps serving while routing moves off the pod; 0 stops serving at once. */
+  delayMs: number;
+  /** Shutdown exits by this deadline whatever is still running. */
+  timeoutMs: number;
+}
+
+/** Shutdown settings from `source`. A set value that is not valid stops startup. */
+export function resolveShutdownSettings(source: EnvSource): ShutdownSettings {
+  return {
+    delayMs: wholeNumberSetting(source, 'SHUTDOWN_DELAY_MS', 5_000, { min: 0 }),
+    timeoutMs: wholeNumberSetting(source, 'SHUTDOWN_TIMEOUT_MS', 28_000),
+  };
+}
+
 /** Build an env reader that reads from the given source. Use in tests with a simulated .env object. */
 export function createEnvReader(source: EnvSource) {
   return {
@@ -134,10 +308,7 @@ export function createEnvReader(source: EnvSource) {
     getNumberEnv: (key: string) => getNumberEnvFrom(source, key),
     getCsvEnv: (key: string) => getCsvEnvFrom(source, key),
     getDatabaseUrl: () => resolveDatabaseUrl(source),
-    /**
-     * express.json body limit for the API surfaces. Larger than the 100kb default so document
-     * generation can carry a base64 template inline (reducible once templates are stored server-side).
-     */
+    /** express.json body limit for the API surfaces. */
     getJsonBodyLimit: () => getOptionalEnvFrom(source, 'HTTP_JSON_BODY_LIMIT') ?? '10mb',
     getDbAdminDatabase: () => getOptionalEnvFrom(source, 'DB_ADMIN_DATABASE'),
     // Pipeline performance fix: Revert if needed.
@@ -161,9 +332,21 @@ export function createEnvReader(source: EnvSource) {
     getTempStorageDefaultCode: () => getOptionalEnvFrom(source, 'TEMPSTORAGE_DEFAULT_CODE'),
     getVirusScanDefaultCode: () => getOptionalEnvFrom(source, 'VIRUSSCAN_DEFAULT_CODE'),
     getFormEngineDefaultCode: () => getOptionalEnvFrom(source, 'FORM_ENGINE_DEFAULT_CODE'),
+    /** User search plugin codes, in merge order. Unset enables none. */
+    getUserSearchPlugins: () => getCsvEnvFrom(source, 'USER_SEARCH_PLUGINS') ?? [],
+    getCredentialIssuerDefaultCode: () =>
+      getOptionalEnvFrom(source, 'CREDENTIAL_ISSUER_DEFAULT_CODE'),
+    getPostSubmissionActionPlugins: () =>
+      getCsvEnvFrom(source, 'POST_SUBMISSION_ACTION_PLUGINS') ?? [],
+    getTenantEngineDefaultCode: () => getOptionalEnvFrom(source, 'TENANT_ENGINE_DEFAULT_CODE'),
+    getWorkflowEngineDefaultCode: () => getOptionalEnvFrom(source, 'WORKFLOW_ENGINE_DEFAULT_CODE'),
+    getNotificationDefaultCode: () => getOptionalEnvFrom(source, 'NOTIFICATION_DEFAULT_CODE'),
     getDocumentGenerationDefaultCode: () =>
       getOptionalEnvFrom(source, 'DOCUMENT_GENERATION_DEFAULT_CODE'),
-    /** Login provider new workspaces default their Form submitters audience to (must be a seeded identity_provider code). */
+    /** Renders one process runs at once. Unset, or not a whole number of at least 1, is 2. */
+    getDocumentGenerationMaxConcurrent: () =>
+      positiveInteger(getNumberEnvFrom(source, 'DOCUMENT_GENERATION_MAX_CONCURRENT')) ?? 2,
+    /** Login provider a new workspace's audience is protected by (must be a seeded identity_provider code). */
     getDefaultSubmitterProvider: () =>
       getOptionalEnvFrom(source, 'DEFAULT_SUBMITTER_PROVIDER') ?? 'azureidir',
     getStorageProfiles: () => {
@@ -186,6 +369,10 @@ export function createEnvReader(source: EnvSource) {
     getRateLimitApiMax: () => getNumberEnvFrom(source, 'RATE_LIMIT_API_MAX'),
     getRateLimitPublicWindowMs: () => getNumberEnvFrom(source, 'RATE_LIMIT_PUBLIC_WINDOW_MS'),
     getRateLimitPublicMax: () => getNumberEnvFrom(source, 'RATE_LIMIT_PUBLIC_MAX'),
+    getRateLimitRenderWindowMs: () => getNumberEnvFrom(source, 'RATE_LIMIT_RENDER_WINDOW_MS'),
+    getRateLimitRenderMax: () => getNumberEnvFrom(source, 'RATE_LIMIT_RENDER_MAX'),
+    /** URL path the API is served under, e.g. `/chefs`. Empty serves at the host root. */
+    getApiBasePath: () => resolveApiBasePath(source),
     getTrustProxySetting: () => resolveTrustProxySetting(source),
     /** Production CORS allowlist (comma-separated trusted origins). */
     getCorsOrigins: () => getCsvEnvFrom(source, 'CORS_ORIGIN'),
@@ -197,6 +384,8 @@ export function createEnvReader(source: EnvSource) {
     getTemporalTaskQueue: () => getOptionalEnvFrom(source, 'TEMPORAL_TASK_QUEUE') ?? 'soba',
     getTemporalWorkerHealthPort: () =>
       getNumberEnvFrom(source, 'TEMPORAL_WORKER_HEALTH_PORT') ?? 9090,
+    getJobSettings: () => resolveJobSettings(source),
+    getShutdownSettings: () => resolveShutdownSettings(source),
   };
 }
 
@@ -216,10 +405,7 @@ export const env = {
   getNumberEnv,
   getCsvEnv,
   getDatabaseUrl: () => resolveDatabaseUrl(process.env),
-  /**
-   * express.json body limit for the API surfaces. Larger than the 100kb default so document
-   * generation can carry a base64 template inline (reducible once templates are stored server-side).
-   */
+  /** express.json body limit for the API surfaces. */
   getJsonBodyLimit: () => getOptionalEnv('HTTP_JSON_BODY_LIMIT') ?? '10mb',
   getDbAdminDatabase: () => getOptionalEnv('DB_ADMIN_DATABASE'),
   // Pipeline performance fix: Revert if needed.
@@ -241,9 +427,20 @@ export const env = {
   getTempStorageDefaultCode: () => getOptionalEnv('TEMPSTORAGE_DEFAULT_CODE'),
   getVirusScanDefaultCode: () => getOptionalEnv('VIRUSSCAN_DEFAULT_CODE'),
   getFormEngineDefaultCode: () => getOptionalEnv('FORM_ENGINE_DEFAULT_CODE'),
+  /** User search plugin codes, in merge order. Unset enables none. */
+  getUserSearchPlugins: () => getCsvEnv('USER_SEARCH_PLUGINS') ?? [],
+  getCredentialIssuerDefaultCode: () => getOptionalEnv('CREDENTIAL_ISSUER_DEFAULT_CODE'),
+  /** Post-submission action plugins this environment runs, by code. Empty runs none. */
+  getPostSubmissionActionPlugins: () => getCsvEnv('POST_SUBMISSION_ACTION_PLUGINS') ?? [],
+  getTenantEngineDefaultCode: () => getOptionalEnv('TENANT_ENGINE_DEFAULT_CODE'),
+  getWorkflowEngineDefaultCode: () => getOptionalEnv('WORKFLOW_ENGINE_DEFAULT_CODE'),
+  getNotificationDefaultCode: () => getOptionalEnv('NOTIFICATION_DEFAULT_CODE'),
   /** Document generation backend the consumer defaults to (a discovered plugin code). */
   getDocumentGenerationDefaultCode: () => getOptionalEnv('DOCUMENT_GENERATION_DEFAULT_CODE'),
-  /** Login provider new workspaces default their Form submitters audience to (must be a seeded identity_provider code). */
+  /** Renders one process runs at once. Unset, or not a whole number of at least 1, is 2. */
+  getDocumentGenerationMaxConcurrent: () =>
+    positiveInteger(getNumberEnv('DOCUMENT_GENERATION_MAX_CONCURRENT')) ?? 2,
+  /** Login provider a new workspace's audience is protected by (must be a seeded identity_provider code). */
   getDefaultSubmitterProvider: () => getOptionalEnv('DEFAULT_SUBMITTER_PROVIDER') ?? 'azureidir',
   getStorageProfiles: () => {
     const raw = getOptionalEnv('STORAGE_PROFILES');
@@ -265,6 +462,10 @@ export const env = {
   getRateLimitApiMax: () => getNumberEnv('RATE_LIMIT_API_MAX'),
   getRateLimitPublicWindowMs: () => getNumberEnv('RATE_LIMIT_PUBLIC_WINDOW_MS'),
   getRateLimitPublicMax: () => getNumberEnv('RATE_LIMIT_PUBLIC_MAX'),
+  getRateLimitRenderWindowMs: () => getNumberEnv('RATE_LIMIT_RENDER_WINDOW_MS'),
+  getRateLimitRenderMax: () => getNumberEnv('RATE_LIMIT_RENDER_MAX'),
+  /** URL path the API is served under, e.g. `/chefs`. Empty serves at the host root. */
+  getApiBasePath: () => resolveApiBasePath(process.env),
   getTrustProxySetting: () => resolveTrustProxySetting(process.env),
   /** Production CORS allowlist (comma-separated trusted origins). */
   getCorsOrigins: () => getCsvEnv('CORS_ORIGIN'),
@@ -283,4 +484,18 @@ export const env = {
   getFilesMaxFileSizeMb: () => getNumberEnv('FILES_MAX_FILE_SIZE_MB') || 10,
   // Storage profile the files feature reads/writes. Defaults to 'default'.
   getFilesStorageProfile: () => getOptionalEnv('FILES_STORAGE_PROFILE') ?? 'default',
+  // Key prefix the files feature stores under within its profile. Defaults to 'attachments'.
+  getFilesStoragePrefix: () => getOptionalEnv('FILES_STORAGE_PREFIX') ?? 'attachments',
+  // Max upload size accepted by the templates API. Feature-level (not per storage backend).
+  getTemplatesMaxFileSizeMb: () => getNumberEnv('TEMPLATES_MAX_FILE_SIZE_MB') || 10,
+  // Storage profile the templates feature reads/writes. Defaults to 'default'.
+  getTemplatesStorageProfile: () => getOptionalEnv('TEMPLATES_STORAGE_PROFILE') ?? 'default',
+  // Key prefix the templates feature stores under within its profile. Defaults to 'templates'.
+  getTemplatesStoragePrefix: () => getOptionalEnv('TEMPLATES_STORAGE_PREFIX') ?? 'templates',
+  // Queued or running submission exports one form may have at once. Not a whole number of at least 1
+  // stops the start with an error naming the variable.
+  getSubmissionExportActiveLimit: () =>
+    wholeNumberSetting(process.env, 'SUBMISSION_EXPORT_ACTIVE_LIMIT', 2),
+  getJobSettings: () => resolveJobSettings(process.env),
+  getShutdownSettings: () => resolveShutdownSettings(process.env),
 };

@@ -1,0 +1,106 @@
+name: SonarQube Cloud analysis
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+  pull_request:
+    branches:
+      - develop
+      - main
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze code
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan with SonarQube Cloud
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Link to SonarQube analysis
+        shell: bash
+        run: |
+          dashboard_url=$(sed -n 's/^dashboardUrl=//p' .scannerwork/report-task.txt)
+          if [[ -z "$dashboard_url" ]]; then
+            echo 'SonarQube scan did not provide a results link.' >&2
+            exit 1
+          fi
+          printf '### SonarQube analysis\n\n[View analysis results](%s)\n' "$dashboard_url" >> "$GITHUB_STEP_SUMMARY"
+
+      # The quality gate rates new code, so a few small code smells pass it. This fails on any open
+      # issue or hotspot to review: in the pull request's new code, or anywhere on a branch.
+      - name: Fail on open issues
+        shell: bash
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          report_task() { local key=$1; sed -n "s/^$key=//p" .scannerwork/report-task.txt; }
+          server=$(report_task serverUrl)
+          project=$(report_task projectKey)
+          ce_task=$(report_task ceTaskUrl)
+          sonar() { local endpoint=$1; shift; curl -fsS -u "$SONAR_TOKEN:" --get "$server/api/$endpoint" "$@"; }
+
+          # The issues API only sees the analysis once SonarQube Cloud has processed it.
+          for _ in {1..60}; do
+            task=$(curl -fsS -u "$SONAR_TOKEN:" "$ce_task" | jq -c .task)
+            status=$(jq -r .status <<<"$task")
+            [[ "$status" =~ ^(PENDING|IN_PROGRESS)$ ]] || break
+            sleep 5
+          done
+          if [[ "$status" != SUCCESS ]]; then
+            echo "::error::SonarQube Cloud processing status is $status."
+            exit 1
+          fi
+
+          pull_request=$(jq -r '.pullRequest // empty' <<<"$task")
+          if [[ -n "$pull_request" ]]; then
+            scope=(--data-urlencode "pullRequest=$pull_request")
+          else
+            scope=(--data-urlencode "branch=$(jq -r .branch <<<"$task")")
+          fi
+          issues=$(sonar issues/search --data-urlencode "componentKeys=$project" "${scope[@]}" \
+            -d resolved=false -d ps=500)
+          hotspots=$(sonar hotspots/search --data-urlencode "projectKey=$project" "${scope[@]}" \
+            -d status=TO_REVIEW -d ps=500)
+          issue_count=$(jq .paging.total <<<"$issues")
+          hotspot_count=$(jq .paging.total <<<"$hotspots")
+          if ((issue_count + hotspot_count == 0)); then
+            echo 'No open issues or hotspots to review.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          {
+            echo
+            echo "$issue_count open issues and $hotspot_count hotspots to review:"
+            echo
+            echo '| Kind | Rule | Location | Message |'
+            echo '| --- | --- | --- | --- |'
+            printf '%s\n%s\n' "$issues" "$hotspots" | jq -rs '
+              def cell: gsub("\\|"; "\\|") | gsub("\\s+"; " ");
+              def place: "`\(.component | sub("^[^:]+:"; ""))\(if .line then ":\(.line)" else "" end)`";
+              (.[0].issues[] | {kind: "\(.severity // "-") \(.type // "")", rule, place: place, message}),
+              (.[1].hotspots[] | {kind: "hotspot \(.vulnerabilityProbability)", rule: .ruleKey, place: place, message})
+              | "| \(.kind) | \(.rule) | \(.place) | \(.message | cell) |"'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::SonarQube Cloud has $issue_count open issues and $hotspot_count hotspots to review."
+          exit 1

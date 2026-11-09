@@ -15,6 +15,9 @@ const columns = [
 vi.mock('@/app/[lang]/Providers', () => ({
   useDictionary: () => ({
     locale: 'en',
+    general: {
+      sortBy: 'Sort by',
+    },
     dataTable: {
       emptyMessage: 'No items found.',
       loadingMessage: 'Loading...',
@@ -59,8 +62,8 @@ describe('DataTable', () => {
       />,
     );
 
-    // No visible loading text by design — the spinner carries the message as its
-    // screen-reader accessible name (aria-label) inside a role="status" region.
+    // No visible loading text by design: the spinner carries the message as its
+    // screen-reader accessible name (aria-label) inside a live region.
     expect(screen.getByRole('progressbar', { name: 'Please wait...' })).toBeInTheDocument();
   });
 
@@ -215,7 +218,12 @@ describe('DataTable', () => {
     const sortableColumns = [
       { key: 'id', label: 'ID' },
       { key: 'name', label: 'Name', sortField: 'name' },
-      { key: 'value', label: 'Value', sortField: 'createdAt', sortDefaultDirection: 'desc' as const },
+      {
+        key: 'value',
+        label: 'Value',
+        sortField: 'createdAt',
+        sortDefaultDirection: 'desc' as const,
+      },
     ];
 
     const renderSortable = (sort: string, onSortChange = vi.fn()) => {

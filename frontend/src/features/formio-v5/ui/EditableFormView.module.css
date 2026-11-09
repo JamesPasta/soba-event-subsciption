@@ -1,0 +1,5 @@
+/* Staff save edits through their own Update; the form's own submit button would do nothing. */
+.editing :global(button[type='submit']),
+.editing :global(.formio-component-button:has(button[type='submit'])) {
+  display: none;
+}

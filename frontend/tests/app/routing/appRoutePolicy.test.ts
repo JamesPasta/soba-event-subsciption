@@ -18,7 +18,9 @@ describe('classifyRoute', () => {
     expect(classifyRoute('/en')).toBe('home');
     expect(classifyRoute('/fr/onboarding')).toBe('onboarding');
     expect(classifyRoute('/en/forms')).toBe('workspace-app');
-    expect(classifyRoute('/en/designer/abc')).toBe('workspace-app');
+    expect(classifyRoute('/en/build/abc')).toBe('workspace-app');
+    expect(classifyRoute('/en/my-forms')).toBe('workspace-app');
+    expect(classifyRoute('/en/my-submissions')).toBe('workspace-app');
     expect(classifyRoute('/en/workspaces')).toBe('workspaces');
     expect(classifyRoute('/en/workspace/ws1')).toBe('workspaces');
     expect(classifyRoute('/en/help')).toBe('public');
@@ -27,13 +29,11 @@ describe('classifyRoute', () => {
     expect(classifyRoute('/en/form/abc')).toBe('public');
     expect(classifyRoute('/en/submit/sub1')).toBe('public');
     expect(classifyRoute('/en/submission/sub1')).toBe('public');
-    // The submissions management table stays staff-only.
-    expect(classifyRoute('/en/submissions/f1')).toBe('workspace-app');
   });
 });
 
-// Design-mode: workspaces feature enabled for the deployment.
-describe('resolveRedirect — workspaces enabled', () => {
+// Design mode enabled for the deployment, alone or with submit mode.
+describe('resolveRedirect - design mode enabled', () => {
   it('sends unauthenticated users on protected routes to home', () => {
     expect(
       resolveRedirect(
@@ -51,7 +51,7 @@ describe('resolveRedirect — workspaces enabled', () => {
     const unstarted = { ...readySession, authenticated: false, initStarted: false };
     expect(resolveRedirect('/en/forms', 'en', unstarted, true)).toBeNull();
     expect(resolveRedirect('/en/workspaces', 'en', unstarted, true)).toBeNull();
-    expect(resolveRedirect('/en/designer/abc', 'en', unstarted, true)).toBeNull();
+    expect(resolveRedirect('/en/build/abc', 'en', unstarted, true)).toBeNull();
   });
 
   it('allows unauthenticated users on home and public routes', () => {
@@ -88,6 +88,12 @@ describe('resolveRedirect — workspaces enabled', () => {
     expect(resolveRedirect('/en/help', 'en', onboarding, true)).toBeNull();
   });
 
+  it('funnels onboarding users off submit routes too', () => {
+    const onboarding = { ...readySession, needsOnboarding: true };
+    expect(resolveRedirect('/en/my-forms', 'en', onboarding, true)).toBe('/en/onboarding');
+    expect(resolveRedirect('/en/my-submissions', 'en', onboarding, true)).toBe('/en/onboarding');
+  });
+
   it('redirects off onboarding when access is available', () => {
     expect(resolveRedirect('/en/onboarding', 'en', readySession, true)).toBe('/en/forms?from=nav');
     expect(
@@ -105,24 +111,24 @@ describe('resolveRedirect — workspaces enabled', () => {
   });
 });
 
-// Submit-mode: workspaces feature disabled — no workspace onboarding/create landing.
-describe('resolveRedirect — workspaces disabled', () => {
-  it('lands authenticated users on forms regardless of workspace state', () => {
+// Submit-only: design mode disabled, so no workspace onboarding/create landing.
+describe('resolveRedirect - submit only', () => {
+  it('lands authenticated users on my forms regardless of workspace state', () => {
     expect(resolveRedirect('/en', 'en', { ...readySession, needsOnboarding: true }, false)).toBe(
-      '/en/forms?from=nav',
+      '/en/my-forms',
     );
     const newCreator = { ...readySession, hasWorkspaces: false, canCreateWorkspace: true };
-    expect(resolveRedirect('/en', 'en', newCreator, false)).toBe('/en/forms?from=nav');
-    expect(resolveRedirect('/en', 'en', readySession, false)).toBe('/en/forms?from=nav');
+    expect(resolveRedirect('/en', 'en', newCreator, false)).toBe('/en/my-forms');
+    expect(resolveRedirect('/en', 'en', readySession, false)).toBe('/en/my-forms');
   });
 
   it('does not funnel users into the workspace onboarding dead-end', () => {
     const onboarding = { ...readySession, needsOnboarding: true };
-    expect(resolveRedirect('/en/forms', 'en', onboarding, false)).toBeNull();
-    expect(resolveRedirect('/en/onboarding', 'en', onboarding, false)).toBe('/en/forms?from=nav');
+    expect(resolveRedirect('/en/my-forms', 'en', onboarding, false)).toBeNull();
+    expect(resolveRedirect('/en/onboarding', 'en', onboarding, false)).toBe('/en/my-forms');
   });
 
-  it('does not redirect on workspace routes — the layout 404s instead', () => {
+  it('defers workspace routes to the layout 404', () => {
     // needsOnboarding is suppressed, so the guard returns null and defers to the route's notFound().
     const onboarding = { ...readySession, needsOnboarding: true };
     expect(resolveRedirect('/en/workspaces', 'en', onboarding, false)).toBeNull();

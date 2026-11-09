@@ -11,6 +11,8 @@ jest.mock('../../../../src/core/db/repos/idpGroupRepo', () => ({
 
 jest.mock('../../../../src/core/db/repos/membershipRepo', () => ({
   actorBelongsToWorkspace: jest.fn(),
+  hasActiveMembership: jest.fn().mockResolvedValue(false),
+  findPermittedWorkspace: jest.fn().mockResolvedValue(null),
 }));
 
 import { meApiService } from '../../../../src/core/api/me/service';
@@ -57,6 +59,7 @@ describe('MeApiService', () => {
     expect(result?.preferences.defaultWorkspaceId).toBe(workspaceId);
     expect(result?.capabilities.canCreateWorkspace).toBe(true);
     expect(idpGroupRepo.canCreateWorkspaceByIdp).toHaveBeenCalledWith('idir');
+    expect(result?.profile.idpCode).toBe('idir');
   });
 
   it('get returns null defaultWorkspaceId when stored workspace is invalid', async () => {
@@ -153,6 +156,24 @@ describe('MeApiService', () => {
     const result = await meApiService.get(actorId, 'idir', admin);
 
     expect(result?.capabilities.isSobaAdmin).toBe(admin);
+  });
+
+  it.each([
+    [null, 'none'],
+    [{ disclaimerAccepted: false }, 'disclaimer_required'],
+    [{ disclaimerAccepted: true }, 'allowed'],
+  ] as const)('get maps the permitted workspace %o to formCreate %s', async (found, expected) => {
+    jest.mocked(appUserRepo.findAppUserById).mockResolvedValue(baseUser);
+    jest.mocked(idpGroupRepo.canCreateWorkspaceByIdp).mockResolvedValue(false);
+    jest.mocked(membershipRepo.findPermittedWorkspace).mockResolvedValueOnce(found);
+
+    const result = await meApiService.get(actorId, 'idir', false);
+
+    expect(result?.capabilities.formCreate).toBe(expected);
+    expect(membershipRepo.findPermittedWorkspace).toHaveBeenCalledWith(actorId, [
+      'form_create',
+      'design_create',
+    ]);
   });
 
   it('patch rejects defaultWorkspaceId when user is not a member', async () => {

@@ -33,3 +33,9 @@
 .notices:not(:empty) {
   margin-bottom: var(--layout-margin-large);
 }
+
+@media print {
+  .notices {
+    display: none;
+  }
+}

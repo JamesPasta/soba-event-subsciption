@@ -76,6 +76,7 @@ See [docs/build-images.md](docs/build-images.md) for building images, targeting 
 
 - `backend/` — Express.js API server
 - `frontend/` — React + Vite application
+- `lib/`: shared schemas, types and Form.io schema normalization used by backend and frontend (`@soba/lib`)
 - `.devcontainer/` — Devcontainer configuration
 - `.vscode/` — Launch configurations for backend and frontend
 

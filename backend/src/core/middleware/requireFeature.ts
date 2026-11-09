@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import { ApiErrorCodes } from '@soba/lib';
 import { NotFoundError } from '../errors';
 import { isFeatureEnabledCached } from '../db/repos/featureRepo';
 import type { FeatureCode } from '../db/codes';
@@ -14,7 +15,7 @@ export const requireFeature = (code: FeatureCode) => {
     try {
       const enabled = await isFeatureEnabledCached(code, Date.now());
       if (!enabled) {
-        throw new NotFoundError('Not found');
+        throw new NotFoundError('Not found', ApiErrorCodes.route_not_found);
       }
       next();
     } catch (error) {

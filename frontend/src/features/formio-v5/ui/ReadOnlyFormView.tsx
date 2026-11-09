@@ -11,11 +11,11 @@ export function ReadOnlyFormView({
   schema,
   submission,
   testId,
-}: {
+}: Readonly<{
   schema: FormType;
   submission: Submission;
   testId?: string;
-}) {
+}>) {
   return (
     <div className="formio-v5-chrome" data-soba-formio-chrome data-testid={testId}>
       <DynamicForm

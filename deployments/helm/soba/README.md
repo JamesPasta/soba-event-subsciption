@@ -81,7 +81,8 @@ templates/
 │   ├── configmap-document-generation.yaml # Document generation plugin config
 │   ├── configmap-sso.yaml       # SSO / JWT config
 │   ├── configmap-ratelimit.yaml # Rate limiting config
-│   └── configmap-storage.yaml   # Files feature + storage profiles config
+│   ├── configmap-storage.yaml   # Files and templates features + storage profiles config
+│   └── pvc-filestore.yaml       # File store PVC when the default storage profile is storage-local
 ├── frontend/
 │   ├── deployment.yaml
 │   ├── service.yaml
@@ -148,7 +149,7 @@ named `my-soba`:
 | `database.host`          | `""`       | ConfigMap `my-soba-backend-app` | `DB_HOST`           | Hostname (used when `uri` is empty)            |
 | `database.port`          | `"5432"`   | ConfigMap `my-soba-backend-app` | `DB_PORT`           | Port                                           |
 | `database.user`          | `postgres` | ConfigMap `my-soba-backend-app` | `DB_USER`           | Username                                       |
-| `database.password`      | `""`       | Secret `my-soba-db`             | `DB_PASSWORD`       | Password (random 24-char generated if omitted) |
+| `database.password`      | unset      | Secret `my-soba-db`             | `DB_PASSWORD`       | Password (random 24-char generated if omitted) |
 | `database.name`          | `soba`     | ConfigMap `my-soba-backend-app` | `DB_NAME`           | Database name                                  |
 | `database.adminDatabase` | `postgres` | ConfigMap `my-soba-backend-app` | `DB_ADMIN_DATABASE` | Admin database for migration CREATE DATABASE   |
 | `database.poolMax`       | `"10"`     | ConfigMap `my-soba-backend-app` | `DB_POOL_MAX`       | Max connection pool size                       |
@@ -165,12 +166,13 @@ and Vault/Kubernetes Secret (secret) values.
 
 ### Non-secret values (ConfigMap `<fullname>-backend-document-generation`)
 
-| Helm value                                     | Env var                            | Used by                  |
-| ---------------------------------------------- | ---------------------------------- | ------------------------ |
-| `backend.config.documentGenerationDefaultCode` | `DOCUMENT_GENERATION_DEFAULT_CODE` | default backend resolver |
-| `backend.documentGeneration.cdogsV2.endpoint`  | `PLUGIN_CDOGS_V2_ENDPOINT`         | cdogs-v2 adapter         |
-| `backend.documentGeneration.cdogsV2.tokenUrl`  | `PLUGIN_CDOGS_V2_TOKEN_URL`        | cdogs-v2 adapter         |
-| `backend.documentGeneration.cdogsV3.endpoint`  | `PLUGIN_CDOGS_V3_ENDPOINT`         | cdogs-v3 adapter         |
+| Helm value                                     | Env var                              | Used by                  |
+| ---------------------------------------------- | ------------------------------------ | ------------------------ |
+| `backend.config.documentGenerationDefaultCode` | `DOCUMENT_GENERATION_DEFAULT_CODE`   | default backend resolver |
+| `backend.documentGeneration.maxConcurrent`     | `DOCUMENT_GENERATION_MAX_CONCURRENT` | render concurrency cap   |
+| `backend.documentGeneration.cdogsV2.endpoint`  | `PLUGIN_CDOGS_V2_ENDPOINT`           | cdogs-v2 adapter         |
+| `backend.documentGeneration.cdogsV2.tokenUrl`  | `PLUGIN_CDOGS_V2_TOKEN_URL`          | cdogs-v2 adapter         |
+| `backend.documentGeneration.cdogsV3.endpoint`  | `PLUGIN_CDOGS_V3_ENDPOINT`           | cdogs-v3 adapter         |
 
 ### Secret values (Vault template in backend Deployment)
 
@@ -178,6 +180,127 @@ and Vault/Kubernetes Secret (secret) values.
 | ------------------------------- | ------------------------------- |
 | `PLUGIN_CDOGS_V2_CLIENT_ID`     | `PLUGIN_CDOGS_V2_CLIENT_ID`     |
 | `PLUGIN_CDOGS_V2_CLIENT_SECRET` | `PLUGIN_CDOGS_V2_CLIENT_SECRET` |
+
+## Tenant Engine Configuration
+
+The tenant engine serves `GET /me/tenants`. It has no secrets: `cstar-v1` calls CSTAR with the
+signed-in user's own token. ConfigMap `<fullname>-backend-tenant-engine`:
+
+| Helm value                                | Env var                        | Used by                 |
+| ----------------------------------------- | ------------------------------ | ----------------------- |
+| `backend.config.tenantEngineDefaultCode`  | `TENANT_ENGINE_DEFAULT_CODE`   | default engine resolver |
+| `backend.tenantEngine.cstarV1.apiBaseUrl` | `PLUGIN_CSTAR_V1_API_BASE_URL` | cstar-v1 adapter        |
+| `backend.tenantEngine.cstarV1.timeoutMs`  | `PLUGIN_CSTAR_V1_TIMEOUT_MS`   | cstar-v1 adapter        |
+
+## Workflow Engine Configuration
+
+The workflow engine starts and tracks workflows. It has no secrets: `cs-workflow-v1` calls the
+Connected Services workflow API with the signed-in user's own token. `workflow-noop` (the default)
+starts nothing. ConfigMap `<fullname>-backend-workflow-engine`:
+
+| Helm value                                       | Env var                              | Used by                 |
+| ------------------------------------------------ | ------------------------------------ | ----------------------- |
+| `backend.config.workflowEngineDefaultCode`       | `WORKFLOW_ENGINE_DEFAULT_CODE`       | default engine resolver |
+| `backend.workflowEngine.csWorkflowV1.apiBaseUrl` | `PLUGIN_CS_WORKFLOW_V1_API_BASE_URL` | cs-workflow-v1 adapter  |
+| `backend.workflowEngine.csWorkflowV1.apiKey`     | `PLUGIN_CS_WORKFLOW_V1_API_KEY`      | cs-workflow-v1 adapter  |
+| `backend.workflowEngine.csWorkflowV1.timeoutMs`  | `PLUGIN_CS_WORKFLOW_V1_TIMEOUT_MS`   | cs-workflow-v1 adapter  |
+
+## Notification Configuration
+
+Notification sends email. `notification-noop` (the default) sends nothing; `notify-v1` calls BC Gov
+Notify with an API key. ConfigMap `<fullname>-backend-notification`:
+
+| Helm value                                | Env var                       | Used by                       |
+| ----------------------------------------- | ----------------------------- | ----------------------------- |
+| `backend.config.notificationDefaultCode`  | `NOTIFICATION_DEFAULT_CODE`   | default notification resolver |
+| `backend.notification.notifyV1.endpoint`  | `PLUGIN_NOTIFY_V1_ENDPOINT`   | notify-v1 adapter             |
+| `backend.notification.notifyV1.timeoutMs` | `PLUGIN_NOTIFY_V1_TIMEOUT_MS` | notify-v1 adapter             |
+
+### Secret values (Vault template in backend Deployment)
+
+| Vault key                  | Env var                    |
+| -------------------------- | -------------------------- |
+| `PLUGIN_NOTIFY_V1_API_KEY` | `PLUGIN_NOTIFY_V1_API_KEY` |
+
+## User Search Configuration
+
+User search finds people to add to a workspace or a form's team, across every enabled plugin.
+`backend.features.user-search` turns it on; the migration leaves it disabled. With no plugins
+listed, nothing is searched. `user-search-soba` searches Soba's own users and needs no config.
+ConfigMap `<fullname>-backend-user-search`:
+
+| Helm value                             | Env var                      | Used by              |
+| -------------------------------------- | ---------------------------- | -------------------- |
+| `backend.config.userSearchPlugins`     | `USER_SEARCH_PLUGINS`        | user search registry |
+| `backend.userSearch.cssV1.apiBaseUrl`  | `PLUGIN_CSS_V1_API_BASE_URL` | css-v1 adapter       |
+| `backend.userSearch.cssV1.environment` | `PLUGIN_CSS_V1_ENVIRONMENT`  | css-v1 adapter       |
+| `backend.userSearch.cssV1.tokenUrl`    | `PLUGIN_CSS_V1_TOKEN_URL`    | css-v1 adapter       |
+| `backend.userSearch.cssV1.timeoutMs`   | `PLUGIN_CSS_V1_TIMEOUT_MS`   | css-v1 adapter       |
+
+### Secret values (Vault template in backend Deployment)
+
+Injected only when `css-v1` is in `backend.config.userSearchPlugins`; the pod fails to start if
+either key is missing.
+
+| Vault key                     | Env var                       |
+| ----------------------------- | ----------------------------- |
+| `PLUGIN_CSS_V1_CLIENT_ID`     | `PLUGIN_CSS_V1_CLIENT_ID`     |
+| `PLUGIN_CSS_V1_CLIENT_SECRET` | `PLUGIN_CSS_V1_CLIENT_SECRET` |
+
+## Post-Submission Action Configuration
+
+Actions that run after a submit are plugins, run as jobs while `backend.features.post-submission`
+is on; the After Submission tab shows on every workspace and form then. The list names the action
+codes this environment runs, comma-separated; with none listed, a submit queues no actions. Set in
+ConfigMap `<fullname>-backend-app` only when non-empty:
+
+| Helm value                                                 | Env var                                                           | Used by                         |
+| ---------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------- |
+| `backend.config.postSubmissionActionPlugins`               | `POST_SUBMISSION_ACTION_PLUGINS`                                  | post-submission actions         |
+| `backend.config.postSubmissionEmailFormHourlyLimit`        | `PLUGIN_POST_SUBMISSION_EMAIL_ADDRESSES_FORM_HOURLY_LIMIT`        | post-submission-email-addresses |
+| `backend.config.postSubmissionEmailWorkspaceHourlyLimit`   | `PLUGIN_POST_SUBMISSION_EMAIL_ADDRESSES_WORKSPACE_HOURLY_LIMIT`   | post-submission-email-addresses |
+| `backend.config.postSubmissionEmailEnvironmentHourlyLimit` | `PLUGIN_POST_SUBMISSION_EMAIL_ADDRESSES_ENVIRONMENT_HOURLY_LIMIT` | post-submission-email-addresses |
+
+`post-submission-log` only logs that it ran. No environment lists it; a local run can.
+
+`post-submission-email-addresses` emails a notice to a list of up to 100 addresses through the
+active notification plugin. The hourly limits (defaults 500 per form, 2000 per workspace, 5000 for
+the environment) are checked before a list starts; a list that would pass one is not sent and its
+job ends cancelled with the counts. Its feature, `backend.features.post-submission-email`, applies
+to every workspace and form while its status is `enabled`. Every environment lists the plugin and
+enables both features. Dev, PR and test send through Notify test, which delivers only to its
+safelist. UAT and prod keep `backend.features.notifications` disabled, so email jobs there end
+cancelled; sending needs that feature enabled, `notificationDefaultCode: notify-v1`,
+`notification.notifyV1.endpoint`, and `PLUGIN_NOTIFY_V1_API_KEY` in the Vault secret.
+A limit outside 100 to 1000000 fails the render.
+
+To retire an action, take its code off the list first and remove its plugin in a later release.
+Jobs already queued for a plugin that no pod has stay queued.
+
+## Job Result Files
+
+A background job can keep one file it produced, such as a submission export. Result files are not
+virus-scanned: no one uploads them. They are kept for `backend.jobs.resultRetentionDays` (default 7)
+and removed by the job sweeper, as are the files of jobs that failed or were stopped. A job whose file
+would pass `backend.jobs.resultMaxBytes` (default 200 MiB) fails. PR slots use 50 MiB and 1 day, as
+their file store volume is 1 Gi. Each running export needs temp disk up to that size.
+
+| Helm value                                 | Env var                       | Default       |
+| ------------------------------------------ | ----------------------------- | ------------- |
+| `backend.jobs.progressIntervalMs`          | `JOB_PROGRESS_INTERVAL_MS`    | 5000          |
+| `backend.jobs.resultMaxBytes`              | `JOB_RESULT_MAX_BYTES`        | 209715200     |
+| `backend.jobs.resultRetentionDays`         | `JOB_RESULT_RETENTION_DAYS`   | 7             |
+| `backend.jobs.resultSweepBatch`            | `JOB_RESULT_SWEEP_BATCH`      | 100           |
+| `backend.storage.jobResultsStorageProfile` | `JOB_RESULTS_STORAGE_PROFILE` | `default`     |
+| `backend.storage.jobResultsStoragePrefix`  | `JOB_RESULTS_STORAGE_PREFIX`  | `job-results` |
+
+The backend refuses to start with a results profile that is not configured. On S3, a pod that stops
+between uploading a file and recording it leaves the object behind, as can an interrupted multipart
+upload; a bucket lifecycle rule that aborts incomplete uploads and expires `job-results/` objects
+after the retention cleans those up.
+
+Submission export (`backend.features.submission-export`) is on in dev, PR and test and off in UAT and
+prod; the designer app's `featuresAllowed` lists it.
 
 ## Database Migration
 
@@ -240,6 +363,12 @@ dependencies, but templates within this chart that are conditionally rendered.
 | **Internal** (default) | `formio.internal.enabled=true`                                      | Deploys a Form.io pod + service inside the release |
 | **External**           | `formio.internal.enabled=false` + `formio.external.url=https://...` | No Form.io pods; backend connects to external URL  |
 
+The backend's Form.io plugin settings are in ConfigMap `<fullname>-backend-formio`:
+
+| Helm value                 | Env var                       | Used by          |
+| -------------------------- | ----------------------------- | ---------------- |
+| `backend.formio.timeoutMs` | `PLUGIN_FORMIO_V5_TIMEOUT_MS` | formio-v5 client |
+
 ### MongoDB
 
 | Mode                   | Configuration                                                           | What happens                                      |
@@ -261,15 +390,17 @@ them in pairs.
 
 Hostnames are derived from the release name and `global.domain`:
 
-- **Frontend:** one host per `frontend.apps` entry, `<fullname>-<name>.<domain>`
-  (e.g. `soba-dev-designer.apps.gov.bc.ca`, `soba-dev-forms.apps.gov.bc.ca`).
-  Override a single app with `frontend.apps.<name>.host` (PR slots pin the host this way).
-- **Backend API:** `<fullname>-api.<domain>` (e.g. `soba-pr-42-api.apps.gov.bc.ca`)
+- **Frontend:** one host for every `frontend.apps` entry, `<fullname>.<domain>`
+  (e.g. `soba-dev.apps.gov.bc.ca`), with each app at its own `routePath`
+  (`/designer`, `/forms`). Pin it with `frontend.host` (PR deployments point at the dev host).
+- **Backend API:** `<fullname>-api.<domain>` (e.g. `soba-pr-42-api.apps.gov.bc.ca`),
+  served under `backend.basePath` (e.g. `/chefs`).
 
-Each `frontend.apps` entry renders its own Deployment/Service/Route/ConfigMap from the
-same image, differing only by `featuresAllowed` (the mode). The backend `CORS_ORIGIN`
-defaults to the origins of all enabled frontend apps; set `backend.config.corsOrigin`
-to override.
+Each `frontend.apps` entry renders its own Deployment/Service/Route/ConfigMap, differing by
+`featuresAllowed` (the mode) and `routePath` (the URL). They share an image repository, but
+the tag carries the app name: Next bakes `basePath` at build time, so each path needs its own
+image. The backend `CORS_ORIGIN` defaults to the shared frontend origin; set
+`backend.config.corsOrigin` to override.
 
 ### Route annotations
 
@@ -312,12 +443,24 @@ backend:
         path: /api/v1/submit/files
         annotations:
           haproxy.router.openshift.io/timeout: "300s"
+      - name: files-api
+        path: /api/v1/files
+        annotations:
+          haproxy.router.openshift.io/timeout: "300s"
+      - name: templates
+        path: /api/v1/templates
+        annotations:
+          haproxy.router.openshift.io/timeout: "300s"
+      - name: print-upload
+        path: /api/v1/design/print-upload
+        annotations:
+          haproxy.router.openshift.io/timeout: "300s"
 ```
 
-That is what the chart ships: uploads at 300s, everything else at 60s. An upload writes nothing back until clamd finishes scanning (`clamav.timeoutMs`, 60s), so the router's 30s default would 504 a clean upload.
+That is what the chart ships: uploads at 300s on the file, template and print-upload paths, everything else at 60s. An upload writes nothing back until clamd finishes scanning (`clamav.timeoutMs`, 60s), so the router's 30s default would 504 a clean upload.
 
 Matching is by whole segment and prefix only — `/api/v1/submit/files` does not capture
-`/api/v1/submit/filestore`, and there is no suffix match. Document generation cannot be scoped this way: it sits at `/api/v1/submit/submissions/:id/{preview,print}`,and the only prefix reaching it would swallow ordinary submission reads and writes. It is a synchronous call to CDOGS, so the base timeout has to cover it.
+`/api/v1/submit/filestore`, and there is no suffix match. Document generation cannot be scoped this way: it sits at `/api/v1/{submit,design}/submissions/:id/print`, and the only prefix reaching it would swallow ordinary submission reads and writes. It is a synchronous call to CDOGS, so the base timeout has to cover it. Print with an uploaded template scans the upload before that call, so it has its own prefix, `/api/v1/design/print-upload`.
 
 `name` and `path` are required. `name` becomes the Route name and the `app.kubernetes.io/component` label, so it must be lowercase DNS-1123 and short enough to keep that label under 63 characters; duplicates are refused. `path` must start with `/` and needs `edge` or `reencrypt` termination, as `passthrough` cannot match on path. Host, Service and TLS come from the base Route. Each rule fails the render naming the entry.
 
@@ -347,7 +490,7 @@ being lost on uninstall.
 | File               | Purpose        | Replicas    | Form.io  | MongoDB          |
 | ------------------ | -------------- | ----------- | -------- | ---------------- |
 | `values.yaml`      | Base defaults  | 1           | Internal | Internal         |
-| `values-pr.yaml`   | PR review apps | 1           | Internal | Internal (256Mi) |
+| `values-pr.yaml`   | PR review apps | 1           | Dev's    | None             |
 | `values-dev.yaml`  | Development    | 1           | Internal | Internal         |
 | `values-test.yaml` | Test / UAT     | 2           | Internal | Internal (2Gi)   |
 | `values-prod.yaml` | Production     | 3 (HPA 3–6) | External | External         |
@@ -436,3 +579,38 @@ removed from Secrets and PVCs. This allows `helm uninstall` to delete them norma
 | ----------------- | ------------------------------------------------- |
 | `false` (default) | Secrets and PVCs are **retained**                 |
 | `true`            | Secrets and PVCs are **deleted** with the release |
+
+### Credential issuer
+
+| Value | Purpose |
+| --- | --- |
+| `backend.config.credentialIssuerDefaultCode` | `credential-issuer-noop` (default) or `aps-credential-issuer-v3` |
+| `backend.credentialIssuer.apsCredentialIssuerV3.apiBaseUrl` | Directory API URL including `/ds/api/v3` |
+| `backend.credentialIssuer.apsCredentialIssuerV3.gatewayId` | Gateway ID |
+| `backend.credentialIssuer.apsCredentialIssuerV3.tokenUrl` | Service-account token endpoint |
+| `backend.credentialIssuer.apsCredentialIssuerV3.timeoutMs` | Shared operation deadline in milliseconds |
+
+When APS is selected with Vault enabled, the backend sources `PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_ID`,
+`PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_SECRET` and `PLUGIN_APS_CREDENTIAL_ISSUER_V3_ENVIRONMENT_APP_ID` (the target
+product environment's appId) from Vault. A missing key keeps the backend pod from starting. See
+[credential issuer](../../../docs/credential-issuer.md)
+for permissions, readiness limitations, and lifecycle behavior.
+
+The dev, PR, test and prod values files each declare their own issuer configuration. They use
+`https://api.gov.bc.ca/ds/api/v3` for the Directory API and
+`https://authz.apps.gov.bc.ca/auth/realms/aps/protocol/openid-connect/token` for service-account tokens.
+The gateway service's public route is the URL consumers call; it is not the Directory API URL.
+
+Dev, PR and test run `aps-credential-issuer-v3` with `backend.features.api-keys` on; the others run
+`credential-issuer-noop` with the feature off. PRs read dev's Vault secret, so they share dev's gateway ID
+and product environment appId, and a key made on a PR stays in dev's gateway after the PR closes. Follow
+[Obtain the product environment appId](../../../docs/credential-issuer.md#obtain-the-product-environment-appid)
+to log in to the Portal, query products for the deployment's gateway in the API console, and copy
+the appropriate service's `environments[].appId` into its Vault secret.
+
+Before selecting `aps-credential-issuer-v3` for an environment, add
+`PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_ID`, `PLUGIN_APS_CREDENTIAL_ISSUER_V3_CLIENT_SECRET` and
+`PLUGIN_APS_CREDENTIAL_ISSUER_V3_ENVIRONMENT_APP_ID` to that deployment's Vault secret. The service
+account needs `CredentialIssuer.Generate` on that environment's gateway. Set
+`backend.config.credentialIssuerDefaultCode` to `aps-credential-issuer-v3` after the keys are in place.
+The base chart retains the no-op default.

@@ -11,11 +11,11 @@ import { SecondaryText } from '@/src/components/SecondaryText';
 import { useKeycloak } from '@/lib/hooks/useKeycloak';
 import { useDictionary } from '@/app/[lang]/Providers';
 import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
-import { addSobaAdmin, removeSobaAdmin } from '@/src/shared/api/sobaApiAdmin';
 import { useCurrentUser, useRefreshCurrentUser } from '@/src/shared/api/useCurrentUser';
-import { useSobaAdmins } from '../useAdminData';
+import { useSobaAdmins, useSobaAdminWriter } from '../data/useAdminData';
 import { SOBA_ADMINS_LIST_QUERY } from '@/src/shared/list/listQueryMemory';
-import { PAGE_SIZE_OPTIONS, useListQuery } from '@/src/shared/list/useListQuery';
+import { useListQuery } from '@/src/shared/list/useListQuery';
+import { useDataTable } from '@/src/shared/list/useDataTable';
 import type { SobaAdminItem } from '@/src/types/admin';
 import styles from './AdminPanel.module.css';
 
@@ -34,38 +34,23 @@ export function SobaAdminsPanel() {
   const [saving, setSaving] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<SobaAdminItem | null>(null);
 
-  const reportLoadError = useCallback(
-    (cause: unknown) => {
-      addNotification({ text: dictAdmin.admins.loadError, type: 'error', consoleError: cause });
-    },
-    [addNotification, dictAdmin.admins.loadError],
-  );
-  const listQuery = useListQuery(SOBA_ADMINS_LIST_QUERY);
-  const {
-    admins,
-    total,
-    isLoading: loading,
-    error: loadError,
-    refresh: reload,
-  } = useSobaAdmins(
-    {
-      offset: listQuery.offset,
-      limit: listQuery.pageSize,
-      sort: listQuery.sort,
-      q: listQuery.q,
-    },
-    reportLoadError,
-  );
-  const error = loadError ? dictAdmin.admins.loadError : null;
+  const query = useListQuery(SOBA_ADMINS_LIST_QUERY);
+  const admins = useSobaAdmins({
+    offset: query.offset,
+    limit: query.pageSize,
+    sort: query.sort,
+    q: query.q,
+  });
+  const { table } = useDataTable(query, admins, dictAdmin.admins.loadError);
+  const adminWriter = useSobaAdminWriter();
 
   const handleAdd = useCallback(async () => {
     const trimmed = userId.trim();
     if (!token || !trimmed) return;
     setSaving(true);
     try {
-      await addSobaAdmin(token, trimmed);
+      await adminWriter.add(token, trimmed);
       setUserId('');
-      void reload();
       addNotification({ text: dictAdmin.admins.addSuccess, type: 'success' });
     } catch (cause) {
       addNotification({ text: dictAdmin.admins.addError, type: 'error', consoleError: cause });
@@ -75,7 +60,7 @@ export function SobaAdminsPanel() {
   }, [
     token,
     userId,
-    reload,
+    adminWriter,
     addNotification,
     dictAdmin.admins.addSuccess,
     dictAdmin.admins.addError,
@@ -85,9 +70,9 @@ export function SobaAdminsPanel() {
     const admin = confirmRemove;
     if (!token || !admin) return;
     setSaving(true);
-    removeSobaAdmin(token, admin.userId)
+    adminWriter
+      .remove(token, admin.userId)
       .then(() => {
-        void reload();
         // Removing your own grant ends your access to this console. `/me` is read once per page
         // load, so without this the console stays on screen while every control in it is refused.
         if (admin.userId === currentUser?.actor?.id) void refreshCurrentUser();
@@ -107,7 +92,7 @@ export function SobaAdminsPanel() {
   }, [
     token,
     confirmRemove,
-    reload,
+    adminWriter,
     currentUser,
     refreshCurrentUser,
     addNotification,
@@ -164,9 +149,9 @@ export function SobaAdminsPanel() {
       <p className={styles.panelIntro}>{dictAdmin.admins.intro}</p>
       <ListPageToolbar align="between">
         <ListPageSearchField
-          value={listQuery.searchInput}
-          onChange={listQuery.setSearchInput}
-          onSubmit={listQuery.commitSearch}
+          value={query.searchInput}
+          onChange={query.setSearchInput}
+          onSubmit={query.commitSearch}
           testIdPrefix="admins"
         />
         <Form
@@ -195,21 +180,11 @@ export function SobaAdminsPanel() {
       </ListPageToolbar>
 
       <DataTable<SobaAdminItem>
-        data={admins}
+        {...table}
         columns={columns}
-        loading={loading}
-        error={error}
         emptyMessage={dictAdmin.admins.empty}
         loadingMessage={dict.general.loading}
         caption={dictAdmin.admins.heading}
-        totalItems={total}
-        pageSize={listQuery.pageSize}
-        currentPage={listQuery.page}
-        onPageChange={listQuery.setPage}
-        onPageSizeChange={listQuery.setPageSize}
-        pageSizeOptions={PAGE_SIZE_OPTIONS}
-        sort={listQuery.sort}
-        onSortChange={listQuery.setSort}
         keyExtractor={(admin) => admin.userId}
       />
 

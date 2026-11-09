@@ -11,11 +11,11 @@ import { SecondaryText } from '@/src/components/SecondaryText';
 import { useKeycloak } from '@/lib/hooks/useKeycloak';
 import { useDictionary } from '@/app/[lang]/Providers';
 import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
-import { removeFeatureScope, upsertFeatureScope } from '@/src/shared/api/sobaApiAdmin';
 import { getLocaleFromPath } from '@/src/shared/util/locale';
-import { useFeatureScopes } from '../useAdminData';
+import { useFeatureScopes, useFeatureScopeWriter } from '../data/useAdminData';
 import { FEATURE_SCOPES_LIST_QUERY } from '@/src/shared/list/listQueryMemory';
-import { PAGE_SIZE_OPTIONS, useListQuery } from '@/src/shared/list/useListQuery';
+import { useListQuery } from '@/src/shared/list/useListQuery';
+import { useDataTable } from '@/src/shared/list/useDataTable';
 import type { FeatureScopeItem, FeatureScopeStatus } from '@/src/types/admin';
 import styles from './AdminPanel.module.css';
 
@@ -38,47 +38,34 @@ export function FeatureScopeListPanel({
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<FeatureScopeItem | null>(null);
 
-  const reportLoadError = useCallback(
-    (cause: unknown) => {
-      addNotification({ text: dictScopes.loadError, type: 'error', consoleError: cause });
-    },
-    [addNotification, dictScopes.loadError],
-  );
-  const listQuery = useListQuery(FEATURE_SCOPES_LIST_QUERY);
-  const {
-    featureScopes,
-    total,
-    isLoading: loading,
-    error: loadError,
-    refresh: reload,
-  } = useFeatureScopes(
-    scopedFeatureCodes,
-    {
-      offset: listQuery.offset,
-      limit: listQuery.pageSize,
-      sort: listQuery.sort,
-    },
-    reportLoadError,
-  );
-  const error = loadError ? dictScopes.loadError : null;
+  const query = useListQuery(FEATURE_SCOPES_LIST_QUERY);
+  const scopes = useFeatureScopes(scopedFeatureCodes, {
+    offset: query.offset,
+    limit: query.pageSize,
+    sort: query.sort,
+    q: query.q,
+  });
+  const { table, refresh: reload } = useDataTable(query, scopes, dictScopes.loadError);
+  const scopeWriter = useFeatureScopeWriter();
 
   const handleStatusChange = useCallback(
     (featureScope: FeatureScopeItem, selected: boolean) => {
       if (!token || pendingId) return;
       const nextStatus: FeatureScopeStatus = selected ? 'active' : 'inactive';
       setPendingId(featureScope.id);
-      upsertFeatureScope(token, {
-        featureCode: featureScope.featureCode,
-        scopeType: featureScope.scopeType,
-        scopeId: featureScope.scopeId,
-        status: nextStatus,
-      })
+      scopeWriter
+        .upsert(token, {
+          featureCode: featureScope.featureCode,
+          scopeType: featureScope.scopeType,
+          scopeId: featureScope.scopeId,
+          status: nextStatus,
+        })
         .then(() => {
-          void reload();
           addNotification({ text: dictScopes.saveSuccess, type: 'success' });
         })
         .catch((cause: unknown) => {
           addNotification({ text: dictScopes.saveError, type: 'error', consoleError: cause });
+          // A failed toggle leaves the switch on the value it snapped to; re-read to reset it.
           void reload();
         })
         .finally(() => {
@@ -88,6 +75,7 @@ export function FeatureScopeListPanel({
     [
       token,
       pendingId,
+      scopeWriter,
       addNotification,
       dictScopes.saveSuccess,
       dictScopes.saveError,
@@ -99,9 +87,9 @@ export function FeatureScopeListPanel({
     const featureScope = confirmDelete;
     if (!token || pendingId || !featureScope) return;
     setPendingId(featureScope.id);
-    removeFeatureScope(token, featureScope.id)
+    scopeWriter
+      .remove(token, featureScope.id)
       .then(() => {
-        void reload();
         addNotification({ text: dictScopes.deleteSuccess, type: 'success' });
       })
       .catch((cause: unknown) => {
@@ -116,10 +104,11 @@ export function FeatureScopeListPanel({
     token,
     pendingId,
     confirmDelete,
+    scopeWriter,
+    reload,
     addNotification,
     dictScopes.deleteSuccess,
     dictScopes.deleteError,
-    reload,
   ]);
 
   const columns: Column<FeatureScopeItem>[] = useMemo(
@@ -217,22 +206,12 @@ export function FeatureScopeListPanel({
         />
       ) : (
         <DataTable<FeatureScopeItem>
-          data={featureScopes}
+          {...table}
           columns={columns}
-          loading={loading}
-          error={error}
           emptyMessage={dictScopes.empty}
           loadingMessage={dict.general.loading}
           caption={dictScopes.heading}
           keyExtractor={(featureScope) => featureScope.id}
-          totalItems={total}
-          pageSize={listQuery.pageSize}
-          currentPage={listQuery.page}
-          onPageChange={listQuery.setPage}
-          onPageSizeChange={listQuery.setPageSize}
-          pageSizeOptions={PAGE_SIZE_OPTIONS}
-          sort={listQuery.sort}
-          onSortChange={listQuery.setSort}
         />
       )}
       <ConfirmModal

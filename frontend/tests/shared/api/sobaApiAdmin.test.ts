@@ -2,8 +2,12 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   fetchFeatureScope,
   fetchFeatureScopes,
+  fetchJobs,
+  fetchSobaAdmins,
   removeFeatureScope,
   removeSobaAdmin,
+  rerunJob,
+  stopJob,
   upsertFeatureScope,
 } from '@/src/shared/api/sobaApiAdmin';
 
@@ -107,6 +111,95 @@ describe('sobaApiAdmin feature-scope helpers', () => {
       scopeType: 'form',
       scopeId: '11111111-1111-4111-8111-111111111111',
       status: 'inactive',
+    });
+  });
+});
+
+describe('sobaApiAdmin list requests', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends the sort locale as both the locale param and Accept-Language', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ items: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchSobaAdmins('tok', { offset: 0, limit: 10, sort: 'displayLabel:asc', locale: 'fr' });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('locale=fr');
+    expect(init.headers['Accept-Language']).toBe('fr');
+  });
+
+  it('leaves the browser default when no sort locale is given', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ items: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchSobaAdmins('tok', { offset: 0, limit: 10, sort: 'displayLabel:asc' });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).not.toContain('locale=');
+    expect(init.headers['Accept-Language']).toBeUndefined();
+  });
+});
+
+describe('sobaApiAdmin job requests', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends the job filters alongside paging and sort', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ items: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchJobs('tok', {
+      offset: 20,
+      limit: 10,
+      sort: 'finishedAt:asc',
+      status: 'dead',
+      type: 'post-submission-email-addresses',
+      formId: 'form-1',
+    });
+
+    const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost');
+    expect(url.pathname).toContain('/admin/jobs');
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({
+      offset: '20',
+      limit: '10',
+      sort: 'finishedAt:asc',
+      status: 'dead',
+      type: 'post-submission-email-addresses',
+      formId: 'form-1',
+    });
+    expect(url.searchParams.has('workspaceId')).toBe(false);
+  });
+
+  it.each([
+    [200, true],
+    [202, false],
+  ])('reads a %i from stopping a job as stopped: %s', async (status, stopped) => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ id: 'job-1' }, status));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(stopJob('tok', 'job-1')).resolves.toEqual({ stopped, job: { id: 'job-1' } });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/admin/jobs/job-1/cancel');
+    expect(init.method).toBe('POST');
+  });
+
+  it("carries the server's reason when a re-run is refused", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          response({ error: 'Only a dead or cancelled job can be run again' }, 409),
+        ),
+    );
+
+    await expect(rerunJob('tok', 'job-1')).rejects.toMatchObject({
+      status: 409,
+      message: 'Only a dead or cancelled job can be run again',
     });
   });
 });

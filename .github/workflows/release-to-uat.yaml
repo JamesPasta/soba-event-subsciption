@@ -1,0 +1,254 @@
+name: Promote Release to UAT
+run-name: Promote ${{ github.event.pull_request.head.ref || inputs.release_branch }} to UAT
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: Release branch to promote, for example release/sprint-34
+        required: true
+        type: string
+
+# Jobs opt in to the minimum permissions needed for their work.
+permissions: {}
+
+# Do not let concurrent promotions mutate the UAT tags or Helm release together.
+concurrency:
+  group: openshift-uat
+  cancel-in-progress: false
+
+env:
+  ACRONYM: soba
+  OC_VERSION: "4.14"
+  REGISTRY: ghcr.io
+
+jobs:
+  set-vars:
+    name: Validate release
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/sprint-') &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      branch: ${{ steps.release.outputs.branch }}
+      chart_ref: ${{ steps.release.outputs.chart_ref }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      uat_tag: ${{ steps.release.outputs.uat_tag }}
+    steps:
+      - name: Select release branch
+        id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          RELEASE_BRANCH: ${{ github.event.pull_request.head.ref }}
+          DISPATCH_BRANCH: ${{ inputs.release_branch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            BRANCH="$DISPATCH_BRANCH"
+            CHART_REF="refs/heads/main"
+          else
+            BRANCH="$RELEASE_BRANCH"
+            CHART_REF="$MERGE_SHA"
+          fi
+
+          if ! [[ "$BRANCH" =~ ^release/sprint-[0-9]+$ ]]; then
+            echo "The release branch must match release/sprint-<number>." >&2
+            exit 1
+          fi
+
+          RELEASE_TAG="soba-${BRANCH//\//-}"
+          printf 'branch=%s\n' "$BRANCH" >> "$GITHUB_OUTPUT"
+          printf 'chart_ref=%s\n' "$CHART_REF" >> "$GITHUB_OUTPUT"
+          printf 'release_tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          printf 'uat_tag=soba-uat\n' >> "$GITHUB_OUTPUT"
+
+  promote-images:
+    name: Retag release images for UAT
+    needs: set-vars
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      packages: write
+    environment:
+      name: uat
+    env:
+      RELEASE_TAG: ${{ needs.set-vars.outputs.release_tag }}
+      UAT_TAG: ${{ needs.set-vars.outputs.uat_tag }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Copy release manifests to UAT tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPOSITORY_LOWER="${REPOSITORY,,}"
+          IMAGE_ROOT="$REGISTRY/$REPOSITORY_LOWER"
+
+          promote() {
+            local source="$1"
+            local uat_target="$2"
+            local latest_target="$3"
+
+            docker buildx imagetools inspect "$source" >/dev/null
+            docker buildx imagetools create \
+              -t "$uat_target" \
+              -t "$latest_target" \
+              "$source"
+          }
+
+          promote "$IMAGE_ROOT/backend:$RELEASE_TAG" \
+            "$IMAGE_ROOT/backend:$UAT_TAG" \
+            "$IMAGE_ROOT/backend:latest"
+          promote "$IMAGE_ROOT/frontend:$RELEASE_TAG-designer" \
+            "$IMAGE_ROOT/frontend:$UAT_TAG-designer" \
+            "$IMAGE_ROOT/frontend:latest-designer"
+          promote "$IMAGE_ROOT/frontend:$RELEASE_TAG-forms" \
+            "$IMAGE_ROOT/frontend:$UAT_TAG-forms" \
+            "$IMAGE_ROOT/frontend:latest-forms"
+          promote "$IMAGE_ROOT/temporal-worker:$RELEASE_TAG" \
+            "$IMAGE_ROOT/temporal-worker:$UAT_TAG" \
+            "$IMAGE_ROOT/temporal-worker:latest"
+
+  deploy:
+    name: Deploy promoted images to UAT
+    needs: [set-vars, promote-images]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    environment:
+      name: uat
+      url: https://${{ env.ACRONYM }}-uat.${{ vars.OC_DOMAIN }}/designer
+    env:
+      NAMESPACE: ${{ secrets.OC_NAMESPACE }}
+      OC_SERVER: ${{ vars.OC_SERVER }}
+      OC_TOKEN: ${{ secrets.OC_TOKEN }}
+      OC_DOMAIN: ${{ vars.OC_DOMAIN }}
+      DATABASE_SECRET_NAME: ${{ vars.DATABASE_SECRET_NAME }}
+      DATABASE_SECRET_KEY: ${{ vars.DATABASE_SECRET_KEY || 'pgbouncer-uri' }}
+      MONGODB_HOST: ${{ vars.MONGODB_HOST }}
+      MONGODB_PORT: ${{ vars.MONGODB_PORT || '27017' }}
+      MONGODB_AUTH_SECRET_NAME: ${{ vars.MONGODB_AUTH_SECRET_NAME }}
+      MONGODB_USERNAME: ${{ vars.MONGODB_USERNAME || 'formio' }}
+      MONGODB_DATABASE: ${{ vars.MONGODB_DATABASE || 'formio-ce' }}
+      MONGODB_AUTH_SOURCE: ${{ vars.MONGODB_AUTH_SOURCE || 'formio-ce' }}
+      MONGODB_REPLICA_SET: ${{ vars.MONGODB_REPLICA_SET || 'rs0' }}
+      VAULT_ROLE: ${{ vars.VAULT_ROLE }}
+      VAULT_SECRET_PATH: ${{ vars.VAULT_SECRET_PATH }}
+      VAULT_SERVICE_ACCOUNT_NAME: ${{ vars.VAULT_SERVICE_ACCOUNT_NAME }}
+      CHART_REF: ${{ needs.set-vars.outputs.chart_ref }}
+      RELEASE_TAG: ${{ needs.set-vars.outputs.release_tag }}
+      UAT_TAG: ${{ needs.set-vars.outputs.uat_tag }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Checkout deployment chart
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.CHART_REF }}
+
+      - name: Install OpenShift CLI
+        uses: redhat-actions/openshift-tools-installer@5e7ed524570215014ddfd1b67b7e547905ab88d8 # v3.0.0
+        with:
+          oc: ${{ env.OC_VERSION }}
+
+      - name: Authenticate to OpenShift
+        uses: redhat-actions/oc-login@5d1fcac1f6b6e8ced9ac359b9c6f31d1ebcd01b4 # v2.0.1
+        with:
+          openshift_server_url: ${{ env.OC_SERVER }}
+          openshift_token: ${{ env.OC_TOKEN }}
+          namespace: ${{ env.NAMESPACE }}
+
+      - name: Validate UAT configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${NAMESPACE:?Set the OC_NAMESPACE UAT environment secret.}"
+          : "${OC_SERVER:?Set the OC_SERVER UAT environment variable.}"
+          : "${OC_DOMAIN:?Set the OC_DOMAIN UAT environment variable.}"
+          : "${DATABASE_SECRET_NAME:?Set the DATABASE_SECRET_NAME UAT environment variable.}"
+          : "${MONGODB_HOST:?Set the MONGODB_HOST UAT environment variable.}"
+          : "${MONGODB_AUTH_SECRET_NAME:?Set the MONGODB_AUTH_SECRET_NAME UAT environment variable.}"
+          : "${VAULT_ROLE:?Set the VAULT_ROLE UAT environment variable.}"
+          : "${VAULT_SECRET_PATH:?Set the VAULT_SECRET_PATH UAT environment variable.}"
+          : "${VAULT_SERVICE_ACCOUNT_NAME:?Set the VAULT_SERVICE_ACCOUNT_NAME UAT environment variable.}"
+
+          oc -n "$NAMESPACE" get secret "$DATABASE_SECRET_NAME" >/dev/null
+          oc -n "$NAMESPACE" get secret "$DATABASE_SECRET_NAME" -o json |
+            jq -e --arg key "$DATABASE_SECRET_KEY" '.data[$key] != null' >/dev/null
+          oc -n "$NAMESPACE" get secret "$MONGODB_AUTH_SECRET_NAME" >/dev/null
+          oc -n "$NAMESPACE" get secret "$MONGODB_AUTH_SECRET_NAME" -o json |
+            jq -e '.data["mongodb-passwords"] != null' >/dev/null
+
+      - name: Recover pending Helm release
+        # Checkouts that predate the action skip recovery.
+        if: hashFiles('.github/actions/recover-helm-release/action.yaml') != ''
+        uses: ./.github/actions/recover-helm-release
+        with:
+          release: ${{ env.ACRONYM }}-uat
+          namespace: ${{ env.NAMESPACE }}
+
+      - name: Deploy application
+        shell: bash
+        run: |
+          set -euo pipefail
+          REPOSITORY_LOWER="${REPOSITORY,,}"
+          helm upgrade --install "$ACRONYM-uat" ./deployments/helm/soba \
+            --namespace "$NAMESPACE" \
+            --wait \
+            --wait-for-jobs \
+            --timeout 900s \
+            -f deployments/helm/soba/values-uat.yaml \
+            --set-string "backend.image.repository=ghcr.io/$REPOSITORY_LOWER/backend" \
+            --set-string "backend.image.tag=$UAT_TAG" \
+            --set-string "backend.config.appVersion=$RELEASE_TAG" \
+            --set-string "backend.config.gitTag=$UAT_TAG" \
+            --set-string "backend.config.imageTag=$UAT_TAG" \
+            --set-string "frontend.image.repository=ghcr.io/$REPOSITORY_LOWER/frontend" \
+            --set-string "frontend.image.tag=$UAT_TAG" \
+            --set-string "temporalWorkersImage.repository=ghcr.io/$REPOSITORY_LOWER/temporal-worker" \
+            --set-string "temporalWorkersImage.tag=$UAT_TAG" \
+            --set-string "temporalWorkersImage.pullPolicy=IfNotPresent" \
+            --set-string "global.domain=$OC_DOMAIN" \
+            --set-string "database.existingSecretName=$DATABASE_SECRET_NAME" \
+            --set-string "database.existingSecretKey=$DATABASE_SECRET_KEY" \
+            --set-string "mongodb.external.host=$MONGODB_HOST" \
+            --set-string "mongodb.external.port=$MONGODB_PORT" \
+            --set-string "mongodb.external.authSecretName=$MONGODB_AUTH_SECRET_NAME" \
+            --set-string "mongodb.external.username=$MONGODB_USERNAME" \
+            --set-string "mongodb.external.database=$MONGODB_DATABASE" \
+            --set-string "mongodb.external.authSource=$MONGODB_AUTH_SOURCE" \
+            --set-string "mongodb.external.replicaSet=$MONGODB_REPLICA_SET" \
+            --set-string "vault.role=$VAULT_ROLE" \
+            --set-string "vault.secretPath=$VAULT_SECRET_PATH" \
+            --set-string "vault.serviceAccountName=$VAULT_SERVICE_ACCOUNT_NAME"
+
+      - name: Write deployment summary
+        shell: bash
+        run: |
+          {
+            echo "## UAT deployment"
+            echo
+            echo "- Release tag: \`${RELEASE_TAG}\`"
+            echo "- Promoted UAT tag: \`${UAT_TAG}\`"
+            echo "- Namespace: \`${NAMESPACE}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

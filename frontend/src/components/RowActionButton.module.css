@@ -1,9 +1,9 @@
 /*
  * The row's primary/default action (form name, submission id) — bolder than the
  * secondary action links so the main thing to click reads first. Targets the
- * BCDS button directly because it manages its own className; `!important` beats
- * the button's `font` shorthand (which carries its own weight).
+ * BCDS button directly because it manages its own className; this selector
+ * outranks the button's `.small` rule, whose `font` shorthand carries its own weight.
  */
-.main :global(.bcds-react-aria-Button) {
-  font-weight: var(--typography-font-weights-bold) !important;
+.main :global(.bcds-react-aria-Button.small) {
+  font-weight: var(--typography-font-weights-bold);
 }

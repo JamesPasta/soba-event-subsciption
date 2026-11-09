@@ -4,8 +4,8 @@ import { sobaSchema, workspaces } from './core';
 
 /**
  * Stored-file metadata, one row per upload. The uuid id is the public reference; it maps to the
- * owning workspace and to the profile + backend ref where the bytes live. `submission_id` is an
- * optional tag (no FK) — uploads don't create submissions.
+ * owning workspace and to the profile + backend ref where the bytes live. The feature that owns a
+ * file links to it from its own table.
  */
 export const files = sobaSchema.table(
   'file',
@@ -19,11 +19,9 @@ export const files = sobaSchema.table(
     filename: text('filename').notNull(),
     contentType: text('content_type'),
     size: integer('size'),
-    submissionId: uuid('submission_id'),
     ...auditColumns(),
   },
   (table) => ({
     workspaceIdx: index('file_workspace_idx').on(table.workspaceId),
-    submissionIdx: index('file_submission_idx').on(table.submissionId),
   }),
 );

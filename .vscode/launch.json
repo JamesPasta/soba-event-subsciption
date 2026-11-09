@@ -6,7 +6,6 @@
       "configurations": [
         "SOBA Backend",
         "SOBA Temporal Worker (soba)",
-        "SOBA Temporal Worker (document-generation)",
         "SOBA Frontend"
       ]
     },
@@ -15,18 +14,13 @@
       "configurations": [
         "SOBA Backend",
         "SOBA Temporal Worker (soba)",
-        "SOBA Temporal Worker (document-generation)",
         "SOBA Frontend (Designer)",
         "SOBA Frontend (Forms)"
       ]
     },
     {
       "name": "SOBA (Backend + Temporal)",
-      "configurations": [
-        "SOBA Backend",
-        "SOBA Temporal Worker (soba)",
-        "SOBA Temporal Worker (document-generation)"
-      ]
+      "configurations": ["SOBA Backend", "SOBA Temporal Worker (soba)"]
     }
   ],
   "configurations": [
@@ -38,7 +32,8 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev"],
       "env": {
-        "CORS_DEV_ORIGIN": "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3100,http://127.0.0.1:3100"
+        "API_BASE_PATH": "/chefs",
+        "CORS_DEV_ORIGIN": "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3100,http://127.0.0.1:3100,http://localhost:3101,http://127.0.0.1:3101"
       },
       "skipFiles": ["<node_internals>/**"],
       "console": "integratedTerminal"
@@ -53,20 +48,6 @@
       "env": {
         "TEMPORAL_TASK_QUEUE": "soba",
         "TEMPORAL_WORKER_HEALTH_PORT": "9090"
-      },
-      "skipFiles": ["<node_internals>/**"],
-      "console": "integratedTerminal"
-    },
-    {
-      "name": "SOBA Temporal Worker (document-generation)",
-      "type": "node",
-      "request": "launch",
-      "cwd": "${workspaceFolder}/backend",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["exec", "tsx", "watch", "temporal-worker.ts"],
-      "env": {
-        "TEMPORAL_TASK_QUEUE": "document-generation",
-        "TEMPORAL_WORKER_HEALTH_PORT": "9091"
       },
       "skipFiles": ["<node_internals>/**"],
       "console": "integratedTerminal"
@@ -105,14 +86,21 @@
       "name": "SOBA Frontend (Chrome)",
       "type": "chrome",
       "request": "launch",
-      "url": "http://localhost:3000",
+      "url": "http://localhost:3000/chefs",
       "webRoot": "${workspaceFolder}/frontend"
     },
     {
       "name": "SOBA Frontend Forms (Chrome)",
       "type": "chrome",
       "request": "launch",
-      "url": "http://localhost:3100",
+      "url": "http://localhost:3100/forms",
+      "webRoot": "${workspaceFolder}/frontend"
+    },
+    {
+      "name": "SOBA Frontend Designer (Chrome)",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3101/designer",
       "webRoot": "${workspaceFolder}/frontend"
     },
     {

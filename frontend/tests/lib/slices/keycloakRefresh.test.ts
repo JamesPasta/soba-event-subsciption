@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 // The Keycloak instance is the external boundary; the store below is real.
 const kc = {
@@ -8,6 +8,7 @@ const kc = {
   idTokenParsed: {} as Record<string, unknown>,
   updateToken: vi.fn(),
   init: vi.fn().mockResolvedValue(true),
+  login: vi.fn(),
 };
 
 // A function expression, not an arrow: the slice calls `new Keycloak(...)`.
@@ -26,9 +27,8 @@ vi.mock('@/src/features/formio-v5/disableFormioBrowserAuth', () => ({
   disableFormioBrowserAuth: vi.fn(),
 }));
 
-const { initKeycloak, refreshAccessToken, getKeycloakInstance } = await import(
-  '@/lib/slices/keycloakSlice'
-);
+const { initKeycloak, login, refreshAccessToken, getKeycloakInstance } =
+  await import('@/lib/slices/keycloakSlice');
 const { default: makeStore } = await import('@/lib/store');
 
 type Store = ReturnType<typeof makeStore>;
@@ -39,6 +39,54 @@ async function storeWithSession(): Promise<Store> {
   return store;
 }
 
+// Drop any instance left by a previous test so initKeycloak builds a fresh one.
+function dropKeycloakInstance(): void {
+  if (getKeycloakInstance()) makeStore().dispatch({ type: 'keycloak/clear' });
+}
+
+describe('initKeycloak', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dropKeycloakInstance();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('points the silent check at the base path', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/chefs');
+    await makeStore().dispatch(initKeycloak());
+    expect(kc.init).toHaveBeenCalledWith(
+      expect.objectContaining({
+        silentCheckSsoRedirectUri: `${window.location.origin}/chefs/silent-check-sso.html`,
+      }),
+    );
+  });
+});
+
+describe('login', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dropKeycloakInstance();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // After page-load init, keycloak-js refuses a second init, so every sign-in takes this redirect.
+  it('returns to the base path after sign-in', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/chefs');
+    const store = await storeWithSession();
+    kc.init.mockRejectedValueOnce(new Error("A 'Keycloak' instance can only be initialized once."));
+
+    await store.dispatch(login());
+
+    expect(kc.login).toHaveBeenCalledWith({ redirectUri: `${window.location.origin}/chefs` });
+  });
+});
+
 describe('refreshAccessToken', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -46,9 +94,7 @@ describe('refreshAccessToken', () => {
     kc.refreshToken = 'refresh-token';
     kc.authenticated = true;
     kc.updateToken.mockReset();
-    // Drop any instance left by a previous test so initKeycloak builds a fresh one.
-    const store = makeStore();
-    if (getKeycloakInstance()) store.dispatch({ type: 'keycloak/clear' });
+    dropKeycloakInstance();
   });
 
   it('mirrors a real refresh into the store', async () => {

@@ -1,41 +1,40 @@
 import { extendZodWithOpenApi, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
+import {
+  PluginCatalogEntrySchema as LibPluginCatalogEntrySchema,
+  PluginsMetaResponseSchema as LibPluginsMetaResponseSchema,
+  FeatureMetaSchema as LibFeatureMetaSchema,
+  FeaturesMetaResponseSchema as LibFeaturesMetaResponseSchema,
+  FeatureAvailabilityResponseSchema as LibFeatureAvailabilityResponseSchema,
+  BuildMetaResponseSchema as LibBuildMetaResponseSchema,
+  FrontendConfigMetaResponseSchema as LibFrontendConfigMetaResponseSchema,
+  CodeRowWithSourceMetaSchema as LibCodeRowWithSourceMetaSchema,
+  FormEngineMetaSchema as LibFormEngineMetaSchema,
+  FormEnginesMetaResponseSchema as LibFormEnginesMetaResponseSchema,
+  LoginProviderMetaSchema as LibLoginProviderMetaSchema,
+  LoginProvidersMetaResponseSchema as LibLoginProvidersMetaResponseSchema,
+  RoleWithSourceMetaSchema as LibRoleWithSourceMetaSchema,
+  RolesMetaResponseSchema as LibRolesMetaResponseSchema,
+  FilesConfigMetaResponseSchema as LibFilesConfigMetaResponseSchema,
+} from '@soba/lib';
+import { SortLocaleQuerySchema } from '../shared/offsetPagination';
 
 extendZodWithOpenApi(z);
 
-export const PluginCatalogEntrySchema = z
-  .object({
-    code: z.string(),
-    enabled: z.boolean(),
-    hasApi: z.boolean(),
-    apiBasePath: z.string().optional(),
-  })
-  .openapi('Meta_PluginCatalogEntry');
+// @soba/lib builds its schemas before zod is extended, so they only get `.openapi()` once cloned.
+// Composites are rebuilt on the named children so the spec references them instead of inlining.
+export const PluginCatalogEntrySchema =
+  LibPluginCatalogEntrySchema.clone().openapi('Meta_PluginCatalogEntry');
 
-export const PluginsMetaResponseSchema = z
-  .object({
-    plugins: z.array(PluginCatalogEntrySchema),
-  })
-  .openapi('Meta_PluginsResponse');
+export const PluginsMetaResponseSchema = LibPluginsMetaResponseSchema.extend({
+  plugins: z.array(PluginCatalogEntrySchema),
+}).openapi('Meta_PluginsResponse');
 
-export const FeatureMetaSchema = z
-  .object({
-    code: z.string(),
-    name: z.string(),
-    description: z.string().nullable(),
-    version: z.string().nullable(),
-    status: z.string(),
-    /** How the feature is gated: 'fixed' (everywhere platform-enabled) or 'scoped' (per workspace/form grant). */
-    availability: z.string(),
-    platformAllowed: z.boolean(),
-  })
-  .openapi('Meta_Feature');
+export const FeatureMetaSchema = LibFeatureMetaSchema.clone().openapi('Meta_Feature');
 
-export const FeaturesMetaResponseSchema = z
-  .object({
-    features: z.array(FeatureMetaSchema),
-  })
-  .openapi('Meta_FeaturesResponse');
+export const FeaturesMetaResponseSchema = LibFeaturesMetaResponseSchema.extend({
+  features: z.array(FeatureMetaSchema),
+}).openapi('Meta_FeaturesResponse');
 
 export const FeatureAvailabilityQuerySchema = z
   .object({
@@ -46,64 +45,18 @@ export const FeatureAvailabilityQuerySchema = z
   })
   .openapi('Meta_FeatureAvailabilityQuery');
 
-export const FeatureAvailabilityResponseSchema = z
-  .object({
-    code: z.string(),
-    available: z.boolean(),
-  })
-  .openapi('Meta_FeatureAvailabilityResponse');
+export const FeatureAvailabilityResponseSchema =
+  LibFeatureAvailabilityResponseSchema.clone().openapi('Meta_FeatureAvailabilityResponse');
 
-export const BuildMetaResponseSchema = z
-  .object({
-    name: z.string(),
-    version: z.string(),
-    nodeVersion: z.string(),
-    gitSha: z.string(),
-    gitTag: z.string(),
-    imageTag: z.string(),
-  })
-  .openapi('Meta_BuildResponse');
+export const BuildMetaResponseSchema =
+  LibBuildMetaResponseSchema.clone().openapi('Meta_BuildResponse');
 
-export const FrontendConfigMetaResponseSchema = z
-  .object({
-    auth: z.object({
-      provider: z.literal('keycloak'),
-      idpPluginDefaultCode: z.string(),
-      keycloak: z.object({
-        url: z.string(),
-        realm: z.string(),
-        clientId: z.string(),
-        pkceMethod: z.literal('S256'),
-      }),
-    }),
-    api: z.object({
-      baseUrl: z.string(),
-    }),
-    // Public URLs of the two frontend apps. Absent when the deployment has not configured them, so
-    // the frontend falls back to its own env and then to the current origin.
-    app: z
-      .object({
-        designerUrl: z.string().optional(),
-        formsUrl: z.string().optional(),
-      })
-      .optional(),
-    build: z.object({
-      name: z.string(),
-      version: z.string(),
-      gitSha: z.string(),
-    }),
-  })
-  .openapi('Meta_FrontendConfigResponse');
+export const FrontendConfigMetaResponseSchema = LibFrontendConfigMetaResponseSchema.clone().openapi(
+  'Meta_FrontendConfigResponse',
+);
 
-export const CodeRowWithSourceMetaSchema = z
-  .object({
-    code: z.string(),
-    display: z.string(),
-    sort_order: z.number(),
-    is_active: z.boolean(),
-    source: z.string(),
-  })
-  .openapi('Meta_CodeRowWithSource');
+export const CodeRowWithSourceMetaSchema =
+  LibCodeRowWithSourceMetaSchema.clone().openapi('Meta_CodeRowWithSource');
 
 /** Response: object keyed by code set name, values = arrays of code rows with source */
 export const CodesKeyedMetaResponseSchema = z
@@ -119,35 +72,21 @@ export const ListCodesQuerySchema = z
   })
   .openapi('Meta_ListCodesQuery');
 
-export const FormEngineMetaSchema = z
-  .object({
-    id: z.string(),
-    code: z.string(),
-    name: z.string(),
-    engineVersion: z.string().nullable(),
-    isActive: z.boolean(),
-    isDefault: z.boolean(),
-    installedPlugin: z.boolean(),
-  })
-  .openapi('Meta_FormEngine');
+export const FormEngineMetaSchema = LibFormEngineMetaSchema.clone().openapi('Meta_FormEngine');
 
-export const FormEnginesMetaResponseSchema = z
-  .object({
-    items: z.array(FormEngineMetaSchema),
-  })
-  .openapi('Meta_FormEnginesResponse');
+export const FormEnginesMetaResponseSchema = LibFormEnginesMetaResponseSchema.extend({
+  items: z.array(FormEngineMetaSchema),
+}).openapi('Meta_FormEnginesResponse');
 
-export const RoleWithSourceMetaSchema = z
-  .object({
-    roleCode: z.string(),
-    name: z.string(),
-    description: z.string().nullable(),
-    status: z.string(),
-    source: z.string(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  })
-  .openapi('Meta_RoleWithSource');
+export const LoginProviderMetaSchema =
+  LibLoginProviderMetaSchema.clone().openapi('Meta_LoginProvider');
+
+export const LoginProvidersMetaResponseSchema = LibLoginProvidersMetaResponseSchema.extend({
+  items: z.array(LoginProviderMetaSchema),
+}).openapi('Meta_LoginProvidersResponse');
+
+export const RoleWithSourceMetaSchema =
+  LibRoleWithSourceMetaSchema.clone().openapi('Meta_RoleWithSource');
 
 export const ListRolesQuerySchema = z
   .object({
@@ -158,18 +97,13 @@ export const ListRolesQuerySchema = z
   })
   .openapi('Meta_ListRolesQuery');
 
-export const RolesMetaResponseSchema = z
-  .object({
-    roles: z.array(RoleWithSourceMetaSchema),
-  })
-  .openapi('Meta_RolesResponse');
+export const RolesMetaResponseSchema = LibRolesMetaResponseSchema.extend({
+  roles: z.array(RoleWithSourceMetaSchema),
+}).openapi('Meta_RolesResponse');
 
-export const FilesConfigMetaResponseSchema = z
-  .object({
-    maxFileSizeMb: z.number(),
-    blockedExtensions: z.array(z.string()),
-  })
-  .openapi('Meta_FilesConfigResponse');
+export const FilesConfigMetaResponseSchema = LibFilesConfigMetaResponseSchema.clone().openapi(
+  'Meta_FilesConfigResponse',
+);
 
 export const registerMetaOpenApi = (registry: OpenAPIRegistry) => {
   registry.registerPath({
@@ -221,11 +155,24 @@ export const registerMetaOpenApi = (registry: OpenAPIRegistry) => {
 
   registry.registerPath({
     method: 'get',
+    path: '/meta/login-providers',
+    tags: ['core.meta'],
+    request: { query: SortLocaleQuerySchema },
+    responses: {
+      200: {
+        description: 'Active login providers, by name: the providers an audience can name',
+        content: { 'application/json': { schema: LoginProvidersMetaResponseSchema } },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
     path: '/meta/form-engines',
     tags: ['core.meta'],
     responses: {
       200: {
-        description: 'Configured platform form engines and plugin installation status',
+        description: 'Installed form engine plugins and which one is the default',
         content: {
           'application/json': {
             schema: FormEnginesMetaResponseSchema,

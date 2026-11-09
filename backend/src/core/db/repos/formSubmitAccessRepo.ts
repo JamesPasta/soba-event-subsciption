@@ -1,27 +1,7 @@
-import { and, eq, inArray } from 'drizzle-orm';
-import { db } from '../client';
-import { workspaceGroupMemberships } from '../schema';
-import {
-  GroupMemberKind,
-  PUBLIC_PROVIDER_CODE,
-  Permissions,
-  SystemGroup,
-  WorkspaceGroupMembershipStatus,
-} from '../codes';
+import { formAccessAllows } from '@soba/lib';
+import { PUBLIC_PROVIDER_CODE } from '../codes';
 import type { PermissionCode } from '../codes';
-import { getSystemGroupId } from './workspaceGroupRepo';
-import { hasAllPermissions, resolveFormPermissions } from './formAccessRepo';
-
-/**
- * Permissions the Form submitters audience conveys to non-staff (idp/public) members: read the form,
- * submit to it, and read a submission (submissions on a form are visible to that form's audience —
- * on a public form they are public data). Anything else (mutations, submission list) stays staff-only.
- */
-const AUDIENCE_PERMISSIONS = new Set<PermissionCode>([
-  Permissions.form_read,
-  Permissions.submission_create,
-  Permissions.submission_read,
-]);
+import { findSubmitterFormFacts } from './submitterFormRepo';
 
 /** The identity of a caller on the public read/submit paths (the public user for anonymous). */
 export interface CallerIdentity {
@@ -31,63 +11,24 @@ export interface CallerIdentity {
   idpCode?: string | null;
 }
 
-/**
- * True when a workspace's Form submitters group admits the caller via a `public` idp member (matches
- * everyone, including anonymous) or an `idp` member matching the caller's provider. User members are
- * not checked here — they are resolved through the staff permission path. idp_group is not resolved yet.
- */
-const isSubmitterAudienceMember = async (
-  workspaceId: string,
-  caller: CallerIdentity,
-): Promise<boolean> => {
-  const groupId = await getSystemGroupId(workspaceId, SystemGroup.form_submitters);
-  if (!groupId) return false;
-
-  // `public` admits everyone; the caller's own provider admits an idp member. One lookup covers both.
-  const codes = [PUBLIC_PROVIDER_CODE];
-  if (caller.idpCode && caller.idpCode !== PUBLIC_PROVIDER_CODE) {
-    codes.push(caller.idpCode);
-  }
-
-  const row = await db
-    .select({ id: workspaceGroupMemberships.id })
-    .from(workspaceGroupMemberships)
-    .where(
-      and(
-        eq(workspaceGroupMemberships.groupId, groupId),
-        eq(workspaceGroupMemberships.memberKind, GroupMemberKind.idp),
-        inArray(workspaceGroupMemberships.identityProviderCode, codes),
-        eq(workspaceGroupMemberships.status, WorkspaceGroupMembershipStatus.active),
-      ),
-    )
-    .limit(1);
-
-  return row.length > 0;
-};
+/** The form an access check is for, with the workspace that owns it. */
+export interface FormAccessTarget {
+  workspaceId: string;
+  formId: string;
+}
 
 /**
- * Authorizes a caller to read a form or create a submission against it. Grants when the caller's
- * workspace group roles satisfy `required` (staff, incl. user members of the Form submitters group),
- * or — for form_read / submission_create only — when the caller is in the Form submitters audience via
- * a `public`/`idp` member. Replaces the retired per-form-version visibility check, re-sourced from the
- * group.
+ * Authorizes a caller for `required` on a form, by formAccessAllows over the form's facts: the
+ * roles of the groups the caller is an effective member of, or, for an audience permission, the
+ * form's audience.
  */
 export const hasFormSubmitAccess = async (
-  workspaceId: string,
+  target: FormAccessTarget,
   caller: CallerIdentity,
   required: PermissionCode,
 ): Promise<boolean> => {
-  // Staff permissions apply only to real (non-public) users. The anonymous public user belongs to no
-  // workspace, so skip the always-empty permission join and go straight to the audience check.
-  if (caller.actorId && caller.idpCode !== PUBLIC_PROVIDER_CODE) {
-    const perms = await resolveFormPermissions(caller.actorId, workspaceId);
-    if (hasAllPermissions(perms, [required])) return true;
-  }
-  if (
-    AUDIENCE_PERMISSIONS.has(required) &&
-    (await isSubmitterAudienceMember(workspaceId, caller))
-  ) {
-    return true;
-  }
-  return false;
+  // The anonymous public user belongs to no workspace, so its permissions are not read.
+  const userId = caller.actorId && caller.idpCode !== PUBLIC_PROVIDER_CODE ? caller.actorId : null;
+  const facts = await findSubmitterFormFacts({ userId, ...target });
+  return !!facts && formAccessAllows(facts, caller, required);
 };

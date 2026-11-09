@@ -3,6 +3,11 @@ backend:
   # Development data generator: stated explicitly rather than left to the default.
   features:
     dev-data: "disabled"
+    notifications: "disabled"
+    post-submission: "enabled"
+    post-submission-email: "enabled"
+    submission-export: "disabled"
+    user-search: "disabled"
   replicas: 3
   resources:
     requests:
@@ -16,16 +21,41 @@ backend:
     minReplicas: 3
     maxReplicas: 6
     targetCPUUtilizationPercentage: 75
+  # Files and templates in S3; credentials and bucket come from Vault.
+  storage:
+    defaultBackend: storage-s3
+    defaultPrefix: prod
+    s3VaultKeyInfix: PROD
   config:
     nodeEnv: production
     logLevel: warn
     documentGenerationDefaultCode: cdogs-v2
+    tenantEngineDefaultCode: cstar-v1
+    # Switch to aps-credential-issuer-v3 after adding the Vault keys.
+    credentialIssuerDefaultCode: credential-issuer-noop
+    # Email jobs end cancelled while notifications are disabled. Sending needs the notifications
+    # feature enabled, notificationDefaultCode notify-v1, notification.notifyV1.endpoint, and
+    # PLUGIN_NOTIFY_V1_API_KEY in the Vault secret.
+    postSubmissionActionPlugins: post-submission-email-addresses
+  notification:
+    notifyV1:
+      # Keeps one slow send well inside an email job's lease and timeout.
+      timeoutMs: "10000"
+  credentialIssuer:
+    apsCredentialIssuerV3:
+      apiBaseUrl: https://api.gov.bc.ca/ds/api/v3
+      gatewayId: "gw-6cd63"
+      tokenUrl: https://authz.apps.gov.bc.ca/auth/realms/aps/protocol/openid-connect/token
   documentGeneration:
     cdogsV2:
       endpoint: https://cdogs.api.gov.bc.ca/api
       tokenUrl: https://loginproxy.gov.bc.ca/auth/realms/comsvcauth/protocol/openid-connect/token
-    cdogsV3:
-      endpoint: http://common-document-generation-service-master.a12c97-prod:3000
+  tenantEngine:
+    cstarV1:
+      apiBaseUrl: https://connect.digital.gov.bc.ca/api/v1
+  workflowEngine:
+    csWorkflowV1:
+      apiBaseUrl: https://workflow.apps.gold.devops.gov.bc.ca/api/v1
 
 frontend:
   replicas: 3
@@ -55,3 +85,7 @@ mongodb:
     enabled: false
   external:
     uri: ""
+
+# The prod deploy supplies vault.role, vault.secretPath and vault.serviceAccountName.
+vault:
+  enabled: true

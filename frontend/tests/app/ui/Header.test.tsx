@@ -31,6 +31,11 @@ vi.mock('swr', () => ({ useSWRConfig: () => ({ mutate }) }));
 vi.mock('@/src/shared/list/listQueryMemory', () => ({ forgetListQueries }));
 vi.mock('@/src/shared/storage/sessionStore', () => ({ removeSessionValues }));
 
+vi.mock('@/src/components/WorkspaceModal', () => ({
+  WORKSPACE_MODAL_DISMISSED_KEY: 'soba.workspaceModalDismissed',
+  WorkspaceModal: () => <div data-testid="workspace-modal" />,
+}));
+
 vi.mock('@/src/shared/api/useCurrentUser', () => ({
   useCurrentUser: () => ({
     data: null,
@@ -38,9 +43,6 @@ vi.mock('@/src/shared/api/useCurrentUser', () => ({
     loaded: true,
     hasError: false,
   }),
-}));
-vi.mock('@/src/shared/api/useWorkspaces', () => ({
-  useWorkspaces: () => ({ workspaces: [], loaded: false }),
 }));
 
 vi.mock('@/app/[lang]/Providers', () => ({
@@ -52,7 +54,6 @@ vi.mock('@/app/[lang]/Providers', () => ({
       selectLanguage: 'Language',
       bcgovTitle: 'BC Gov',
       skipToMain: 'Skip',
-      primaryNavAria: 'Primary',
     },
   }),
 }));
@@ -65,8 +66,8 @@ vi.mock('next/navigation', () => ({
 
 import { Header } from '@/app/ui/Header';
 
-function renderHeader() {
-  return render(<Header headerNavItems={[]} overlayNavItems={[]} showWorkspaces={false} />);
+function renderHeader(designMode = false) {
+  return render(<Header designMode={designMode} />);
 }
 
 function cleared() {
@@ -118,7 +119,7 @@ describe('Header session cleanup', () => {
     session.token = undefined;
     session.idTokenParsed = undefined;
     await act(async () => {
-      view.rerender(<Header headerNavItems={[]} overlayNavItems={[]} showWorkspaces={false} />);
+      view.rerender(<Header designMode={false} />);
     });
 
     expect(cleared()).toBe(true);
@@ -142,5 +143,31 @@ describe('Header session cleanup', () => {
     // The session is still reporting the user as signed in: nothing but the press did this.
     expect(session.authenticated).toBe(true);
     expect(cleared()).toBe(true);
+  });
+});
+
+describe('Header workspace modal', () => {
+  beforeEach(() => {
+    session.authenticated = true;
+    session.token = 'token';
+    session.idTokenParsed = { sub: 'user-1' };
+    session.initStarted = true;
+    session.initializing = false;
+  });
+
+  it('prompts a user without workspaces when design mode is on', async () => {
+    await act(async () => {
+      renderHeader(true);
+    });
+
+    expect(screen.getByTestId('workspace-modal')).toBeInTheDocument();
+  });
+
+  it('does not prompt a user without workspaces when design mode is off', async () => {
+    await act(async () => {
+      renderHeader(false);
+    });
+
+    expect(screen.queryByTestId('workspace-modal')).not.toBeInTheDocument();
   });
 });

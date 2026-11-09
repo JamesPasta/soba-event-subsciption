@@ -1,16 +1,28 @@
 # Dev environment — single replica, moderate resources
 backend:
-  # Development data generator: on in dev.
+  # Development data generator: on in dev. Notifications send through notify-v1 below. API keys
+  # issue through the APS issuer below.
   features:
+    api-keys: "enabled"
     dev-data: "enabled"
+    notifications: "enabled"
+    post-submission: "enabled"
+    post-submission-email: "enabled"
+    submission-export: "enabled"
+    user-search: "enabled"
   replicas: 1
   resources:
     requests:
       cpu: 50m
-      memory: 256Mi
+      memory: 128Mi
     limits:
       cpu: 250m
       memory: 512Mi
+  # Files and templates in S3; credentials and bucket come from Vault.
+  storage:
+    defaultBackend: storage-s3
+    defaultPrefix: dev
+    s3VaultKeyInfix: DEV
   config:
     logLevel: debug
     nodeEnv: development
@@ -18,19 +30,46 @@ backend:
     messagebusDefaultCode: messagebus-redis
     eventStreamDefaultCode: eventstream-redis
     documentGenerationDefaultCode: cdogs-v2
+    tenantEngineDefaultCode: cstar-v1
+    credentialIssuerDefaultCode: aps-credential-issuer-v3
+    workflowEngineDefaultCode: cs-workflow-v1
+    notificationDefaultCode: notify-v1
+    userSearchPlugins: css-v1,user-search-soba
+    # Emails go through Notify test, which only delivers to its safelist.
+    postSubmissionActionPlugins: post-submission-email-addresses
+  credentialIssuer:
+    apsCredentialIssuerV3:
+      apiBaseUrl: https://api.gov.bc.ca/ds/api/v3
+      gatewayId: "gw-93f93"
+      tokenUrl: https://authz.apps.gov.bc.ca/auth/realms/aps/protocol/openid-connect/token
   documentGeneration:
     cdogsV2:
       endpoint: https://cdogs-dev.api.gov.bc.ca/api
       tokenUrl: https://dev.loginproxy.gov.bc.ca/auth/realms/comsvcauth/protocol/openid-connect/token
-    cdogsV3:
-      endpoint: http://common-document-generation-service-master.a12c97-prod:3000
+  tenantEngine:
+    cstarV1:
+      apiBaseUrl: https://test.connect.digital.gov.bc.ca/api/v1
+  workflowEngine:
+    csWorkflowV1:
+      apiBaseUrl: https://test-workflow.apps.gold.devops.gov.bc.ca/api/v1
+  notification:
+    notifyV1:
+      endpoint: https://gw-fe8c5-notify.test.api.gov.bc.ca/api/v1
+      # Keeps one slow send well inside an email job's lease and timeout.
+      timeoutMs: "10000"
+  userSearch:
+    cssV1:
+      apiBaseUrl: https://api.loginproxy.gov.bc.ca/api/v1
+      # Matches the SSO dev realm sign-in uses; BCeID accounts differ between CSS environments.
+      environment: dev
+      tokenUrl: https://loginproxy.gov.bc.ca/auth/realms/standard/protocol/openid-connect/token
 
 frontend:
   replicas: 1
   resources:
     requests:
-      cpu: 50m
-      memory: 256Mi
+      cpu: 25m
+      memory: 128Mi
     limits:
       cpu: 250m
       memory: 512Mi
@@ -38,18 +77,21 @@ frontend:
 formio:
   internal:
     enabled: true
-  replicas: 1
+  replicas: 2
+  nodeOptions: "--max-old-space-size=2048"
   resources:
     requests:
-      cpu: 50m
-      memory: 256Mi
-    limits:
       cpu: 250m
-      memory: 512Mi
+      memory: 1Gi
+    limits:
+      cpu: 1
+      memory: 3Gi
 
 mongodb:
+  # MongoDB runs as its own release from deployments/helm/action-mongodb. The deploy
+  # workflow supplies external.host and external.authSecretName.
   internal:
-    enabled: true
+    enabled: false
   replicas: 1
   persistence:
     size: 1Gi
@@ -74,21 +116,10 @@ temporalWorkers:
         cpu: 100m
         memory: 512Mi
 
-  - name: temporal-worker-document-generation
-    enabled: true
-    taskQueue: "document-generation"
-    replicas: 1
-    healthPort: 9091
-    resources:
-      requests:
-        cpu: 25m
-        memory: 128Mi
-      limits:
-        cpu: 100m
-        memory: 512Mi
+gatewayNetworkPolicy:
+  enabled: true
+  namespaceName: "b8840c"
+  environment: prod
 
 vault:
   enabled: true
-  role: acf456-nonprod
-  secretPath: acf456-nonprod/soba-dev
-  serviceAccountName: acf456-vault

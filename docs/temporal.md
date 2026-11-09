@@ -107,7 +107,7 @@ client.workflow.start(sendEmail, { taskQueue: "email-tasks" });
 client.workflow.start(generatePdf, { taskQueue: "pdf-tasks" });
 ```
 
-This codebase supports **multiple workers** and **multiple task queues**. The shared default queue is `soba` (`TEMPORAL_TASK_QUEUE`), and individual worker deployments can override `TEMPORAL_TASK_QUEUE` (for example `document-generation`) to isolate workload types.
+This codebase supports **multiple workers** and **multiple task queues**. The shared default queue is `soba` (`TEMPORAL_TASK_QUEUE`), and individual worker deployments can override `TEMPORAL_TASK_QUEUE` to isolate workload types.
 
 What that isolation currently is: every worker runs the same image and registers the same workflows and activities, so the separation is one of **capacity and rollout** — its own resource limits, its own scaling, its own restarts — not of code. Deciding which queue a job runs on is still the caller's choice at start time. Narrowing a worker to only part of the code (for example activities but no workflows) needs a change to `Worker.create` in `src/temporal/worker.ts`; it cannot be done from deployment config alone.
 
@@ -346,19 +346,12 @@ docker compose -f .devcontainer/docker-compose.yml up -d postgres temporal tempo
 
 **Step 2 — Start workers**
 
-Recommended (VS Code): run the compound debug config `SOBA (Backend + Temporal + Frontend)` or `SOBA (Backend + Temporal)`. These compounds start both known worker queues automatically using `.vscode/launch.json`:
-
-- `SOBA Temporal Worker (soba)`
-- `SOBA Temporal Worker (document-generation)`
+Recommended (VS Code): run the compound debug config `SOBA (Backend + Temporal + Frontend)` or `SOBA (Backend + Temporal)`. These compounds start `SOBA Temporal Worker (soba)` from `.vscode/launch.json`.
 
 Manual fallback (from `backend/`):
 
 ```bash
-# terminal A
 TEMPORAL_TASK_QUEUE=soba TEMPORAL_WORKER_HEALTH_PORT=9090 pnpm temporal-worker:dev
-
-# terminal B
-TEMPORAL_TASK_QUEUE=document-generation TEMPORAL_WORKER_HEALTH_PORT=9091 pnpm temporal-worker:dev
 ```
 
 One-shot (no watch): `pnpm temporal-worker`. After `pnpm run build`: `pnpm temporal-worker:start` runs `node dist/temporal-worker.js` (same as OpenShift worker command).
@@ -368,8 +361,7 @@ Important:
 - `.env` sets defaults; it does not create worker processes.
 - One process polls one queue value.
 - A second queue needs a second worker process.
-- The VS Code compounds automate this by launching multiple worker processes with queue-specific env overrides.
-- Health ports must be unique per process (for example 9090 and 9091).
+- Health ports must be unique per process.
 
 **Step 3 — Open the UI** to see running/completed/failed workflows:
 http://localhost:8088 (auto-forwarded by devcontainer)

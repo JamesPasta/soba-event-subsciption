@@ -17,6 +17,8 @@ services:
       - ../backend/.env.local
     environment:
       DATABASE_URL: postgres://postgres:postgres@host.docker.internal:5432/soba
+      # URL path the API is served under; matches backend/.env.example and the chart default.
+      API_BASE_PATH: /chefs
       # Both frontends run cross-origin against this backend; allow each port explicitly.
       CORS_ORIGIN: http://localhost:3000,http://127.0.0.1:3000,http://localhost:3100,http://127.0.0.1:3100
       # Form.io sidecar runs in sibling compose (host :3001). localhost here is this container.
@@ -33,10 +35,10 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_SOBA_API_BASE_URL: http://localhost:4000/api/v1
-      NEXT_PUBLIC_SOBA_FEATURES_ALLOWED: workspaces,design-mode,meta,marketing
+      NEXT_PUBLIC_SOBA_API_BASE_URL: http://localhost:4000/chefs/api/v1
+      NEXT_PUBLIC_SOBA_FEATURES_ALLOWED: design-mode,files,meta,marketing,templates,user-search,submission-export,api-keys
       # SSR / RSC fetch from inside this container (not localhost — that is this container)
-      SOBA_API_INTERNAL_URL: http://backend:4000/api/v1
+      SOBA_API_INTERNAL_URL: http://backend:4000/chefs/api/v1
     depends_on:
       - backend
     restart: unless-stopped
@@ -46,9 +48,9 @@ services:
     ports:
       - "3100:3000"
     environment:
-      NEXT_PUBLIC_SOBA_API_BASE_URL: http://localhost:4000/api/v1
-      NEXT_PUBLIC_SOBA_FEATURES_ALLOWED: submit-mode,files,meta
-      SOBA_API_INTERNAL_URL: http://backend:4000/api/v1
+      NEXT_PUBLIC_SOBA_API_BASE_URL: http://localhost:4000/chefs/api/v1
+      NEXT_PUBLIC_SOBA_FEATURES_ALLOWED: submit-mode,files,meta,templates
+      SOBA_API_INTERNAL_URL: http://backend:4000/chefs/api/v1
     depends_on:
       - backend
     restart: unless-stopped

@@ -74,6 +74,7 @@ add_glob() {
 add_path "node_modules"
 add_path "frontend/node_modules"
 add_path "backend/node_modules"
+add_path "lib/node_modules"
 add_path "integration/playwright/node_modules"
 add_path "integration/node_modules"
 add_path ".pnpm-store"
@@ -82,7 +83,9 @@ add_path ".devcontainer/.deps-installed"
 if [[ "$DEPS_ONLY" == false ]]; then
   # Build outputs
   add_path "backend/dist"
+  add_path "lib/dist"
   add_path "frontend/.next"
+  add_path "frontend/.next-designer"
   add_path "frontend/.next-forms"
   add_glob "frontend/*.tsbuildinfo"
   add_path "frontend/.vite"
@@ -90,6 +93,7 @@ if [[ "$DEPS_ONLY" == false ]]; then
   # Test output
   add_path "coverage"
   add_path "backend/coverage"
+  add_path "lib/coverage"
   add_path "integration/playwright/test-results"
   add_path "integration/playwright/playwright-report"
   add_path "integration/playwright/blob-report"

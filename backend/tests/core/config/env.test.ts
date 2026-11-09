@@ -70,6 +70,20 @@ describe('env', () => {
     expect(() => reader.getRequiredEnv('MISSING')).toThrow('MISSING is required');
   });
 
+  it.each([
+    [undefined, 2],
+    ['3', 3],
+    ['0', 2],
+    ['-1', 2],
+    ['1.5', 2],
+    ['Infinity', 2],
+  ])('createEnvReader getDocumentGenerationMaxConcurrent reads %j as %d', (value, expected) => {
+    const reader = createEnvReader(
+      value === undefined ? {} : { DOCUMENT_GENERATION_MAX_CONCURRENT: value },
+    );
+    expect(reader.getDocumentGenerationMaxConcurrent()).toBe(expected);
+  });
+
   it('createEnvReader getRequiredEnv throws when key is empty string', () => {
     const reader = createEnvReader({ EMPTY: '' });
     expect(() => reader.getRequiredEnv('EMPTY')).toThrow('EMPTY is required');
@@ -231,5 +245,21 @@ describe('env', () => {
   it('createEnvReader getTrustProxySetting delegates to resolveTrustProxySetting', () => {
     const reader = createEnvReader({ NODE_ENV: 'development' });
     expect(reader.getTrustProxySetting()).toBe(false);
+  });
+
+  it('createEnvReader getTenantEngineDefaultCode returns value when set', () => {
+    const reader = createEnvReader({ TENANT_ENGINE_DEFAULT_CODE: 'test-code' });
+    expect(reader.getTenantEngineDefaultCode()).toBe('test-code');
+  });
+
+  it('createEnvReader getTenantEngineDefaultCode returns undefined when unset', () => {
+    const reader = createEnvReader({});
+    expect(reader.getTenantEngineDefaultCode()).toBeUndefined();
+  });
+
+  it('createEnvReader getUserSearchPlugins reads the list in order, and none when unset', () => {
+    const reader = createEnvReader({ USER_SEARCH_PLUGINS: ' other-v1 , css-v1 ' });
+    expect(reader.getUserSearchPlugins()).toEqual(['other-v1', 'css-v1']);
+    expect(createEnvReader({}).getUserSearchPlugins()).toEqual([]);
   });
 });

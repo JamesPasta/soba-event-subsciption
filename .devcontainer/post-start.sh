@@ -16,10 +16,17 @@ echo "==> Syncing env files with templates..."
 sync_env_file backend/.env.example backend/.env backend/.env.hash
 sync_env_file backend/.env.local.example backend/.env.local backend/.env.local.hash
 sync_env_file frontend/.env.example frontend/.env frontend/.env.hash
+sync_env_file integration/playwright/.env.example integration/playwright/.env integration/playwright/.env.hash
+
 
 # shellcheck source=scripts/pnpm-setup.sh
 source "$SCRIPT_DIR/scripts/pnpm-setup.sh"
 configure_pnpm
 install_workspace_deps ensure
+
+# The install above is skipped unless the lockfile changed, and lib's dist is generated, so build it
+# here or a pulled lib change leaves it stale.
+echo "==> Building shared lib..."
+pnpm --filter @soba/lib run build
 
 echo "══════════════════════════════════════════════════════════════"

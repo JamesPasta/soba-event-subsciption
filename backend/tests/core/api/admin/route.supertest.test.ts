@@ -13,6 +13,7 @@ import {
 import { getFeatureGateCached } from '../../../../src/core/db/repos/featureRepo';
 import {
   addDirectSobaAdmin,
+  listSobaAdmins,
   removeDirectSobaAdmin,
 } from '../../../../src/core/db/repos/sobaAdminRepo';
 import { findAppUserById } from '../../../../src/core/db/repos/appUserRepo';
@@ -267,5 +268,68 @@ describe('adminRouter feature-scope routes', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Invalid request body');
     expect(upsertFeatureScopeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('adminRouter job routes', () => {
+  it.each([
+    ['get', '/jobs'],
+    ['get', '/jobs/types'],
+    ['get', `/jobs/${SCOPE_ID}`],
+    ['post', `/jobs/${SCOPE_ID}/rerun`],
+    ['post', `/jobs/${SCOPE_ID}/cancel`],
+  ] as const)('blocks %s %s without the SOBA admin role', async (method, url) => {
+    const res = await request(createAdminApp(false))[method](url);
+
+    expect(res.status).toBe(403);
+  });
+
+  it.each([
+    ['get', '/jobs/not-a-uuid'],
+    ['post', '/jobs/not-a-uuid/rerun'],
+    ['post', '/jobs/not-a-uuid/cancel'],
+  ] as const)('rejects %s %s before reading a job', async (method, url) => {
+    const res = await request(createAdminApp(true))[method](url);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid request params');
+  });
+
+  it.each([
+    ['status', '/jobs?status=failed'],
+    ['workspaceId', '/jobs?workspaceId=ws1'],
+    ['sort', '/jobs?sort=type:asc'],
+    ['cursor', '/jobs?cursor=abc'],
+  ])('rejects a list query with a bad %s', async (_field, url) => {
+    const res = await request(createAdminApp(true)).get(url);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid request query');
+  });
+
+  it('lists the job types this environment runs, not a job called "types"', async () => {
+    const res = await request(createAdminApp(true)).get('/jobs/types');
+
+    expect(res.status).toBe(200);
+    expect(res.body.items).toContainEqual({
+      type: 'submission.submitted',
+      name: 'Submission received',
+    });
+  });
+});
+
+describe('adminRouter soba-admins list', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.mocked(listSobaAdmins).mockResolvedValue({ items: [], total: 0 });
+  });
+
+  it('sorts in the language the request asks for', async () => {
+    const res = await request(createAdminApp(true))
+      .get('/soba-admins')
+      .set('Accept-Language', 'fr-CA');
+
+    expect(res.status).toBe(200);
+    expect(listSobaAdmins).toHaveBeenCalledWith(expect.objectContaining({ locale: 'fr' }));
   });
 });

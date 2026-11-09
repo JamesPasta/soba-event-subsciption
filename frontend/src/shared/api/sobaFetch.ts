@@ -7,6 +7,8 @@ export type SobaFetchOptions = {
   method?: string;
   /** JSON body; serialized and sent with a Content-Type: application/json header. */
   json?: unknown;
+  /** Multipart body; the browser sets the Content-Type (with its boundary) itself. */
+  form?: FormData;
   /** Additional query params. */
   query?: Record<string, string | number | boolean | undefined | null>;
   headers?: Record<string, string>;
@@ -25,11 +27,25 @@ function buildUrl(path: string, options: SobaFetchOptions): string {
   return `${getSobaApiBaseUrl()}${path}${queryString}`;
 }
 
-function send(
+/**
+ * Thrown when no response came back: fetch rejected, or the body was cut off mid-read. The request
+ * may or may not have reached the server.
+ */
+export class NetworkError extends Error {
+  constructor(cause: unknown) {
+    super('Network request failed', { cause });
+    this.name = 'NetworkError';
+  }
+}
+
+export const isNetworkError = (err: unknown): boolean =>
+  err instanceof Error && err.name === 'NetworkError';
+
+async function send(
   url: string,
   options: SobaFetchOptions,
   token: string | undefined,
-  body: string | undefined,
+  body: string | FormData | undefined,
 ): Promise<Response> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -38,16 +54,20 @@ function send(
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  if (body !== undefined) {
+  if (typeof body === 'string') {
     headers['Content-Type'] = 'application/json';
   }
 
-  return fetch(url, {
-    method: options.method ?? 'GET',
-    cache: options.cache ?? 'no-store',
-    headers,
-    body,
-  });
+  try {
+    return await fetch(url, {
+      method: options.method ?? 'GET',
+      cache: options.cache ?? 'no-store',
+      headers,
+      body,
+    });
+  } catch (err) {
+    throw new NetworkError(err);
+  }
 }
 
 /** Thrown instead of sending a call the caller meant to authenticate but no longer can. */
@@ -62,10 +82,8 @@ export const isSessionExpired = (err: unknown): boolean =>
   err instanceof Error && err.name === 'SessionExpiredError';
 
 /**
- * The token to send for an authenticated call. Only an affirmative `no-session` refuses to send:
- * the submit surface accepts an invalid bearer as anonymous, so a stale token there would silently
- * file the caller's work as the public user. Without a verdict we send what we have and let the
- * response decide.
+ * The token to send for an authenticated call. An affirmative `no-session` refuses to send; without
+ * a verdict we send what we have and let the response decide.
  */
 async function resolveToken(callerToken: string): Promise<string> {
   const outcome = await ensureFreshToken();
@@ -82,7 +100,8 @@ async function resolveToken(callerToken: string): Promise<string> {
  */
 export async function sobaFetch(path: string, options: SobaFetchOptions = {}): Promise<Response> {
   const url = buildUrl(path, options);
-  const body = options.json !== undefined ? JSON.stringify(options.json) : undefined;
+  const body =
+    options.form ?? (options.json !== undefined ? JSON.stringify(options.json) : undefined);
   const token = options.token ? await resolveToken(options.token) : undefined;
 
   const response = await send(url, options, token, body);

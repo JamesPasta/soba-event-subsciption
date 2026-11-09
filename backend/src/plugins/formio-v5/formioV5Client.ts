@@ -4,6 +4,9 @@
  */
 
 import type { PluginConfigReader } from '../../core/config/pluginConfig';
+import { resolveTimeoutMs } from '../../core/http/httpClient';
+
+const TIMEOUT_LABEL = 'PLUGIN_FORMIO_V5_TIMEOUT_MS';
 
 export class FormioApiError extends Error {
   readonly status: number;
@@ -19,7 +22,14 @@ export class FormioApiError extends Error {
   }
 }
 
-export type FormioQuery = { params?: Record<string, unknown> } | undefined;
+/** Form.io answers a read of a missing form or submission with 404, or 400 "Resource not found". */
+export const isFormioNotFound = (err: unknown): boolean =>
+  err instanceof FormioApiError &&
+  (err.status === 404 || (err.status === 400 && /resource not found/i.test(err.body)));
+
+export type FormioQuery =
+  | { params?: Record<string, string | number | boolean | null | undefined> }
+  | undefined;
 
 function buildQueryString(query?: FormioQuery): string {
   if (!query?.params || typeof query.params !== 'object') return '';
@@ -31,23 +41,37 @@ function buildQueryString(query?: FormioQuery): string {
   return s ? `?${s}` : '';
 }
 
+/** An id as one URL path segment: encoded, and refused when empty or a dot segment. */
+function idSegment(id: unknown): string {
+  const segment = encodeURIComponent(String(id));
+  if (segment === '' || segment === '.' || segment === '..') {
+    throw new Error('Formio id is not a valid path segment');
+  }
+  return segment;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type FormioForm = any;
+type FormioForm = Record<string, any>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type FormioSubmission = any;
+type FormioSubmission = Record<string, any>;
 
 export interface FormioCommunityEditionAPIv5Options {
   baseUrl: string;
   username: string;
   password: string;
   actor?: string;
+  /** Budget for one call, its re-login and its retry. Unset falls back to HTTP_OUTBOUND_TIMEOUT_MS. */
+  timeoutMs?: number;
 }
+
+const timedOut = (what: string): Error => new Error(`Formio ${what} timed out`);
 
 export class FormioCommunityEditionAPIv5Client {
   private readonly _baseUrl: string;
   private readonly username: string;
   private readonly password: string;
   private readonly actor: string | undefined;
+  private readonly timeoutMs: number;
   private token: string | null = null;
 
   constructor(options: FormioCommunityEditionAPIv5Options) {
@@ -55,41 +79,48 @@ export class FormioCommunityEditionAPIv5Client {
     this.username = options.username;
     this.password = options.password;
     this.actor = options.actor;
+    this.timeoutMs = resolveTimeoutMs(options.timeoutMs, TIMEOUT_LABEL);
   }
 
-  async login(): Promise<void> {
+  /** The call's own budget, cut short by the caller's signal when one is given. */
+  private budget(signal?: AbortSignal): AbortSignal {
+    const own = AbortSignal.timeout(this.timeoutMs);
+    return signal ? AbortSignal.any([own, signal]) : own;
+  }
+
+  async login(budget = this.budget()): Promise<void> {
     const body = JSON.stringify({ data: { email: this.username, password: this.password } });
     const loginPaths = ['/admin/login', '/user/login'];
-    let lastError: Error | null = null;
-    for (const path of loginPaths) {
-      const url = `${this._baseUrl}${path}`;
+    // In order, stopping at the first path that logs in.
+    const tryPath = async (index: number, lastError: Error | null): Promise<string> => {
+      if (index === loginPaths.length) throw lastError ?? new Error('Formio login failed');
+      const url = `${this._baseUrl}${loginPaths[index]}`;
+      const init = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        signal: budget,
+      };
       let res: Response;
+      let text: string;
       try {
-        res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-        });
+        res = await fetch(url, init);
+        text = await res.text();
       } catch (err) {
-        lastError = new Error(
-          `Formio login request failed: ${err instanceof Error ? err.message : err}`,
-        );
-        continue;
+        if (budget.aborted) throw timedOut('login');
+        const message = err instanceof Error ? err.message : err;
+        return tryPath(index + 1, new Error(`Formio login request failed: ${message}`));
       }
-      const text = await res.text();
       if (!res.ok) {
-        lastError = new Error(`Formio login failed ${res.status}: ${text}`);
-        continue;
+        return tryPath(index + 1, new Error(`Formio login failed ${res.status}: ${text}`));
       }
       const jwt = res.headers.get('x-jwt-token');
       if (!jwt) {
-        lastError = new Error('Formio login response missing x-jwt-token header');
-        continue;
+        return tryPath(index + 1, new Error('Formio login response missing x-jwt-token header'));
       }
-      this.token = jwt;
-      return;
-    }
-    throw lastError ?? new Error('Formio login failed');
+      return jwt;
+    };
+    this.token = await tryPath(0, null);
   }
 
   getToken(): string | null {
@@ -121,6 +152,7 @@ export class FormioCommunityEditionAPIv5Client {
     url: string,
     method: string,
     body: string | undefined,
+    budget: AbortSignal,
   ): Promise<{ ok: boolean; status: number; text: string }> {
     const token = this.token ?? undefined;
     const headers: Record<string, string> = {
@@ -128,71 +160,89 @@ export class FormioCommunityEditionAPIv5Client {
       'Content-Type': 'application/json',
     };
     if (token) headers['x-jwt-token'] = token;
-    const res = await fetch(url, {
-      method,
-      headers,
-      body,
-    });
-    const text = await res.text();
-    return { ok: res.ok, status: res.status, text };
+    try {
+      const res = await fetch(url, { method, headers, body, signal: budget });
+      const text = await res.text();
+      return { ok: res.ok, status: res.status, text };
+    } catch (err) {
+      if (budget.aborted) throw timedOut(`${method} request`);
+      throw err;
+    }
   }
 
   /**
    * Authenticates with `this.token` (the admin JWT from `login()`) as `x-jwt-token`.
    *
    * **HTTP 440** is treated as admin JWT expiry: clear `this.token`, `login()` once, and retry the same
-   * request. `refreshedFor440` allows at most one admin refresh per `request()` call.
+   * request once.
+   *
+   * The call, the re-login and the retry share one budget; `signal` cuts it short.
    */
-  private async request<T>(path: string, method: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    path: string,
+    method: string,
+    body?: unknown,
+    signal?: AbortSignal,
+  ): Promise<T> {
     const url = `${this._baseUrl}${path}`;
     const serializedBody = body !== undefined ? JSON.stringify(body) : undefined;
-    let refreshedFor440 = false;
+    const budget = this.budget(signal);
 
-    while (true) {
-      const { ok, status, text } = await this.performFetch(url, method, serializedBody);
-      if (ok) {
-        if (status === 204 || !text) return undefined as T;
-        try {
-          return JSON.parse(text) as T;
-        } catch {
-          return undefined as T;
-        }
-      }
-      if (!refreshedFor440 && status === 440 && this.hasAdminCredentials()) {
-        this.token = null;
-        await this.login();
-        refreshedFor440 = true;
-        continue;
-      }
-      throw new FormioApiError(status, text, url);
+    let response = await this.performFetch(url, method, serializedBody, budget);
+    // An expired session (440) re-logs in and retries once.
+    if (!response.ok && response.status === 440 && this.hasAdminCredentials()) {
+      this.token = null;
+      await this.login(budget);
+      response = await this.performFetch(url, method, serializedBody, budget);
+    }
+    const { ok, status, text } = response;
+    if (!ok) throw new FormioApiError(status, text, url);
+    if (status === 204 || !text) return undefined as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return undefined as T;
     }
   }
 
-  async loadForms(query?: FormioQuery): Promise<FormioForm[]> {
+  async loadForms(query?: FormioQuery, signal?: AbortSignal): Promise<FormioForm[]> {
     const qs = buildQueryString(query);
-    const result = await this.request<FormioForm[] | FormioForm>(`/form${qs}`, 'GET');
+    const result = await this.request<FormioForm[] | FormioForm>(
+      `/form${qs}`,
+      'GET',
+      undefined,
+      signal,
+    );
     return Array.isArray(result) ? result : [];
   }
 
   async loadForm(formId: string, query?: FormioQuery): Promise<FormioForm | null> {
     const qs = buildQueryString(query);
-    return this.request<FormioForm | null>(`/form/${formId}${qs}`, 'GET');
+    return this.request<FormioForm | null>(`/form/${idSegment(formId)}${qs}`, 'GET');
   }
 
-  async saveForm(data: FormioForm): Promise<FormioForm> {
-    if (data._id) return this.request<FormioForm>(`/form/${data._id}`, 'PUT', data);
-    return this.request<FormioForm>('/form', 'POST', data);
+  async saveForm(data: FormioForm, signal?: AbortSignal): Promise<FormioForm> {
+    if (data._id) {
+      return this.request<FormioForm>(`/form/${idSegment(data._id)}`, 'PUT', data, signal);
+    }
+    return this.request<FormioForm>('/form', 'POST', data, signal);
   }
 
-  async deleteForm(formId: string): Promise<void> {
-    await this.request(`/form/${formId}`, 'DELETE');
+  async deleteForm(formId: string, signal?: AbortSignal): Promise<void> {
+    await this.request(`/form/${idSegment(formId)}`, 'DELETE', undefined, signal);
   }
 
-  async loadSubmissions(formId: string, query?: FormioQuery): Promise<FormioSubmission[]> {
+  async loadSubmissions(
+    formId: string,
+    query?: FormioQuery,
+    signal?: AbortSignal,
+  ): Promise<FormioSubmission[]> {
     const qs = buildQueryString(query);
     const result = await this.request<FormioSubmission[] | FormioSubmission>(
-      `/form/${formId}/submission${qs}`,
+      `/form/${idSegment(formId)}/submission${qs}`,
       'GET',
+      undefined,
+      signal,
     );
     return Array.isArray(result) ? result : [];
   }
@@ -204,20 +254,36 @@ export class FormioCommunityEditionAPIv5Client {
   ): Promise<FormioSubmission | null> {
     const qs = buildQueryString(query);
     return this.request<FormioSubmission | null>(
-      `/form/${formId}/submission/${submissionId}${qs}`,
+      `/form/${idSegment(formId)}/submission/${idSegment(submissionId)}${qs}`,
       'GET',
     );
   }
 
-  async saveSubmission(formId: string, data: FormioSubmission): Promise<FormioSubmission> {
+  async saveSubmission(
+    formId: string,
+    data: FormioSubmission,
+    query?: FormioQuery,
+  ): Promise<FormioSubmission> {
+    const qs = buildQueryString(query);
     if (data._id) {
-      return this.request<FormioSubmission>(`/form/${formId}/submission/${data._id}`, 'PUT', data);
+      return this.request<FormioSubmission>(
+        `/form/${idSegment(formId)}/submission/${idSegment(data._id)}${qs}`,
+        'PUT',
+        data,
+      );
     }
-    return this.request<FormioSubmission>(`/form/${formId}/submission`, 'POST', data);
+    return this.request<FormioSubmission>(
+      `/form/${idSegment(formId)}/submission${qs}`,
+      'POST',
+      data,
+    );
   }
 
   async deleteSubmission(formId: string, submissionId: string): Promise<void> {
-    await this.request(`/form/${formId}/submission/${submissionId}`, 'DELETE');
+    await this.request(
+      `/form/${idSegment(formId)}/submission/${idSegment(submissionId)}`,
+      'DELETE',
+    );
   }
 
   async loadRoles(query?: FormioQuery): Promise<{ _id: string; title?: string; name?: string }[]> {
@@ -278,6 +344,7 @@ function getClientOptions(config: PluginConfigReader): FormioCommunityEditionAPI
     baseUrl: config.getRequired('ADMIN_API_URL'),
     username: config.getRequired('ADMIN_USERNAME'),
     password: config.getRequired('ADMIN_PASSWORD'),
+    timeoutMs: config.getOptionalNumber('TIMEOUT_MS'),
   };
 }
 
@@ -308,8 +375,9 @@ export async function getAuthenticatedFormioClient(
       authenticatedClientConfigKey = null;
     }
   }
+  // Outside the guarded login, so a bad timeout setting throws instead of reading as unavailable.
+  const client = new FormioCommunityEditionAPIv5Client(getClientOptions(config));
   authenticatedClientInit = (async () => {
-    const client = new FormioCommunityEditionAPIv5Client(getClientOptions(config));
     await client.login();
     authenticatedClient = client;
     authenticatedClientConfigKey = key;
@@ -350,6 +418,7 @@ export async function verifyFormioAuth(config: PluginConfigReader): Promise<{
       baseUrl,
       username,
       password,
+      timeoutMs: config.getOptionalNumber('TIMEOUT_MS'),
     });
     await client.login();
     return {

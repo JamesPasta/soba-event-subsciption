@@ -1,5 +1,5 @@
 import { DEV_FORM_FIXTURES, fixtureAt, getFixture } from '../../../src/features/dev-data/fixtures';
-import { normalizeSchema } from '../../../src/plugins/formio-v5/normalizeSchema';
+import { normalizeSchema } from '@soba/lib';
 
 type Node = Record<string, unknown>;
 

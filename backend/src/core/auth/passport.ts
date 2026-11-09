@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import passport from 'passport';
+import { findInOrder } from '../inOrder';
 import { getIdpPlugins, type IdpPluginInstance } from './idpRegistry';
 import type { IdpMapPayloadResult } from './IdpPlugin';
 
@@ -51,19 +52,20 @@ export async function authenticateWithIdpPlugins(
   req: Request,
   res: Response,
 ): Promise<CompositeAuthResult> {
-  const plugins = getIdpPlugins();
   let lastError: unknown;
 
-  for (const plugin of plugins) {
+  // One plugin at a time: each one writes to req.
+  const principal = await findInOrder(getIdpPlugins(), async (plugin) => {
     clearPluginAuthState(req);
     const err = await runPluginMiddleware(plugin, req, res);
-    const principal = err ? null : buildPrincipal(plugin, req);
-    if (principal) {
-      return { principal };
-    }
     if (err) {
       lastError = err;
+      return undefined;
     }
+    return buildPrincipal(plugin, req);
+  });
+  if (principal) {
+    return { principal };
   }
 
   clearPluginAuthState(req);

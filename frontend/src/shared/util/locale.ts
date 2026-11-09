@@ -9,7 +9,7 @@ const knownLocales = ['en', 'fr'] as const;
  */
 export function getLocaleFromPath(path?: string | null): string {
   try {
-    const firstSegment = path?.split('/').filter(Boolean)[0];
+    const firstSegment = path?.split('/').find(Boolean);
     const locale = knownLocales.find((locale) => locale === firstSegment);
     return locale || 'en';
   } catch {

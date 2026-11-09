@@ -2,7 +2,7 @@
  * A row per data set, recording the ids it creates as it creates them. These ids are the only thing
  * purge identifies its work by, so a generated row stays reachable however it is renamed.
  */
-import { eq, inArray, ne, sql } from 'drizzle-orm';
+import { desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { db, type DbOrTx } from '../../core/db/client';
@@ -116,6 +116,17 @@ export const markRunsPurged = async (
       updatedBy: stampedBy,
     })
     .where(inArray(devDataRuns.id, ids));
+};
+
+/** The manifest of the finished set, or null when none is present. */
+export const findActiveManifest = async (): Promise<unknown> => {
+  const rows = await db
+    .select({ manifest: devDataRuns.manifest })
+    .from(devDataRuns)
+    .where(eq(devDataRuns.status, DevDataRunStatus.active))
+    .orderBy(desc(devDataRuns.createdAt))
+    .limit(1);
+  return rows[0]?.manifest ?? null;
 };
 
 /** True when a set is already present, so a second generate cannot collide with it. */

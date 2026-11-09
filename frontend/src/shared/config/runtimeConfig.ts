@@ -1,3 +1,5 @@
+import { getBasePath } from '@/src/shared/config/basePath';
+
 export type FrontendRuntimeConfig = {
   auth: {
     provider: 'keycloak';
@@ -25,7 +27,7 @@ export type FrontendRuntimeConfig = {
   };
 };
 
-const DEFAULT_SOBA_API_BASE_URL = 'http://localhost:4000/api/v1';
+const DEFAULT_SOBA_API_BASE_URL = 'http://localhost:4000/chefs/api/v1';
 
 /**
  * API base URL used before runtime config is loaded (and for the initial
@@ -35,7 +37,7 @@ const DEFAULT_SOBA_API_BASE_URL = 'http://localhost:4000/api/v1';
  *
  * In Docker Compose, the browser must use host-exposed ports (NEXT_PUBLIC → localhost:4000).
  * Server Components run inside the frontend container and need SOBA_API_INTERNAL_URL
- * (e.g. http://backend:4000/api/v1) — localhost:4000 there is this container, not the API.
+ * (e.g. http://backend:4000/chefs/api/v1) — localhost:4000 there is this container, not the API.
  */
 export function getBootstrapApiBaseUrl(): string {
   if (typeof window !== 'undefined' && window.__SOBA_API_BASE_URL) {
@@ -107,7 +109,7 @@ export function getSobaApiBaseUrl(): string {
 
 /**
  * Public URL of a frontend app. Runtime config wins, then the value the server injected from its
- * own env, then this origin, which is correct for a deployment serving both modes.
+ * own env, then this app's own URL, which is correct for a deployment serving both modes.
  */
 function getAppBaseUrl(
   fromConfig: string | undefined,
@@ -116,7 +118,7 @@ function getAppBaseUrl(
 ): string {
   const configured = fromConfig || injected || fromEnv;
   if (configured) return configured;
-  return typeof window === 'undefined' ? '' : window.location.origin;
+  return typeof window === 'undefined' ? '' : window.location.origin + getBasePath();
 }
 
 export function getDesignerAppBaseUrl(): string {

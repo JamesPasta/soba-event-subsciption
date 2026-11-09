@@ -1,8 +1,10 @@
 import React, { act } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
-const { mockUseKeycloak, mockUseCurrentUser } = vi.hoisted(() => ({
+const { mockUseKeycloak, mockUseCurrentUser, mockPush } = vi.hoisted(() => ({
+  mockPush: vi.fn(),
   mockUseKeycloak: vi.fn(),
   mockUseCurrentUser: vi.fn(),
 }));
@@ -20,12 +22,12 @@ vi.mock('@/app/[lang]/Providers', () => ({
     locale: 'en',
     general: { notAuthenticated: 'Not authed', loading: 'Loading…' },
     admin: {
-      heading: 'Administration',
       forbidden: 'You do not have the platform administrator role required for this section.',
       admins: { heading: 'Platform administrators' },
       featureScopes: { heading: 'Feature access' },
       audits: { heading: 'Document generation' },
     },
+    jobs: { heading: 'Jobs' },
   }),
 }));
 
@@ -38,6 +40,9 @@ vi.mock('@/src/features/admin/ui/FeatureScopeListPanel', () => ({
 vi.mock('@/src/features/admin/ui/DocumentGenerationAuditsPanel', () => ({
   DocumentGenerationAuditsPanel: () => <div data-testid="audits-panel" />,
 }));
+vi.mock('@/src/features/admin/ui/JobsPanel', () => ({
+  JobsPanel: () => <div data-testid="jobs-panel" />,
+}));
 
 import { AdminDashboard } from '@/src/features/admin/ui/AdminDashboard';
 
@@ -45,7 +50,7 @@ vi.mock('next/navigation', async () => {
   const actual = await vi.importActual<unknown>('next/navigation');
   return {
     ...(actual as Record<string, unknown>),
-    useRouter: () => ({ push: vi.fn() }),
+    useRouter: () => ({ push: mockPush }),
     usePathname: () => '/en/admin',
     useSearchParams: () => new URLSearchParams(''),
   };
@@ -114,8 +119,9 @@ describe('AdminDashboard', () => {
 
     await renderDashboard();
 
-    expect(screen.getByText('Administration')).toBeInTheDocument();
     expect(screen.getByTestId('admins-panel')).toBeInTheDocument();
+    // The page heading belongs to PageLayout.
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Feature access' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Document generation' })).not.toBeInTheDocument();
   });
@@ -127,5 +133,41 @@ describe('AdminDashboard', () => {
     await renderDashboard({ documentGenerationEnabled: true });
 
     expect(screen.getByRole('tab', { name: 'Document generation' })).toBeInTheDocument();
+  });
+
+  it('opens on the Jobs tab when the jobs page asks for it', async () => {
+    signedIn();
+    currentUser(true);
+
+    await renderDashboard({ defaultActiveTab: 'jobs' });
+
+    expect(screen.getByRole('tab', { name: 'Jobs' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('jobs-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('admins-panel')).not.toBeInTheDocument();
+  });
+
+  // Each tab has its own page, so browser Back from a job returns to the Jobs tab.
+  it.each([
+    ['Jobs', '/en/admin/jobs'],
+    ['Feature access', '/en/admin/feature-scopes'],
+    ['Document generation', '/en/admin/document-generation'],
+  ])('opens the %s tab at its own address', async (name, path) => {
+    signedIn();
+    currentUser(true);
+    await renderDashboard({ documentGenerationEnabled: true });
+
+    await userEvent.click(screen.getByRole('tab', { name }));
+
+    expect(mockPush).toHaveBeenCalledWith(`${path}?from=nav`);
+    expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('opens the first tab at the document generation address when that feature is off', async () => {
+    signedIn();
+    currentUser(true);
+
+    await renderDashboard({ defaultActiveTab: 'audits' });
+
+    expect(screen.getByTestId('admins-panel')).toBeInTheDocument();
   });
 });

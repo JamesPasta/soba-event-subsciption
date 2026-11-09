@@ -18,19 +18,20 @@ const dbQueryTimeoutMs = Math.max(
   env.getDbQueryTimeoutMs(),
   dbStatementTimeoutMs + CLIENT_TIMEOUT_GRACE_MS,
 );
-const dbLockTimeoutMs = env.getDbLockTimeoutMs();
 
+// statement_timeout and lock_timeout are role defaults set by migrate.ts: PgBouncer refuses them as
+// startup parameters.
 const pool = new Pool({
   connectionString: databaseUrl,
   max: dbPoolMax,
   connectionTimeoutMillis: dbConnectionTimeoutMs,
   query_timeout: dbQueryTimeoutMs,
-  statement_timeout: dbStatementTimeoutMs,
-  lock_timeout: dbLockTimeoutMs,
 });
 // Pipeline performance fix: Revert if needed.
 
 export const db = drizzle(pool, { schema, logger: drizzleQueryLogger });
+/** Same pool without the query logger, for polling that would flood debug logs. */
+export const quietDb = drizzle(pool, { schema });
 export type Db = typeof db;
 /** Type of the argument passed to db.transaction callback; use for optional tx in repos. */
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];

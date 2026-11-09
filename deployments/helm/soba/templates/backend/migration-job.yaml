@@ -61,7 +61,7 @@ spec:
             - name: DB_NAME
               value: {{ .Values.database.name | quote }}
             - name: DB_PASSWORD
-              value: {{ .Values.database.password | quote }}
+              value: {{ .Values.database.password | default "" | quote }}
             {{- end }}
             {{- end }}
             - name: DB_ADMIN_DATABASE

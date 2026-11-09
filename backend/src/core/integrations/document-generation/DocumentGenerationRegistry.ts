@@ -10,6 +10,7 @@ import {
   getDocumentGenerationPluginDefinitions,
 } from '../plugins/PluginRegistry';
 import type { DocumentGenerationPluginCatalogEntry } from '../plugins/PluginRegistry';
+import { reportReadinessByKey } from '../plugins/readiness';
 
 let cachedDefinitions: Map<string, DocumentGenerationPluginDefinition> | null = null;
 
@@ -54,24 +55,10 @@ export const createDefaultDocumentGenerationAdapter = (): DocumentGenerationAdap
  * Run readiness on each registered document-generation backend. Only reachability (ok/message)
  * is returned; no config. A backend without a readinessCheck is reported ok.
  */
-export const checkDocumentGenerationReadiness = async (): Promise<
+export const checkDocumentGenerationReadiness = (): Promise<
   Record<string, DocumentGenerationReadinessResult>
-> => {
-  const catalog = getDocumentGenerationPluginCatalog();
-  const results: Record<string, DocumentGenerationReadinessResult> = {};
-  for (const entry of catalog) {
-    try {
-      const adapter = createDocumentGenerationAdapter(entry.code);
-      results[entry.code] =
-        typeof adapter.readinessCheck === 'function'
-          ? await adapter.readinessCheck()
-          : { ok: true };
-    } catch (err) {
-      results[entry.code] = {
-        ok: false,
-        message: err instanceof Error ? err.message : String(err),
-      };
-    }
-  }
-  return results;
-};
+> =>
+  reportReadinessByKey(
+    getDocumentGenerationPluginCatalog().map((entry) => entry.code),
+    (code) => createDocumentGenerationAdapter(code).readinessCheck?.(),
+  );

@@ -64,8 +64,8 @@ on:
         required: false
         default: false
         type: boolean
-      base_path:
-        description: "Next.js basePath for path-based routing (e.g. /pr-42)"
+      base_path_suffix:
+        description: "Suffix for the frontend base paths, e.g. -42 builds /designer-42 and /forms-42"
         required: false
         default: ""
         type: string
@@ -102,7 +102,6 @@ env:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   prepare:
@@ -141,20 +140,25 @@ jobs:
           fi
           echo "ref=$REF" >> $GITHUB_OUTPUT
           echo "platforms=$PLATFORMS" >> $GITHUB_OUTPUT
-          # Build matrix based on requested platforms
+          # Build matrix based on requested platforms. `component` names the digest artifact and so
+          # must be unique per build; `image` is the GHCR repository, shared by the frontend
+          # variants. Next bakes basePath at build time, so each frontend path needs its own build.
+          SUFFIX="${{ inputs.base_path_suffix }}"
           MATRIX='{"include":[]}'
           if echo "$PLATFORMS" | grep -q 'amd64'; then
-            MATRIX=$(echo "$MATRIX" | jq -c '.include += [
-              {"component":"backend","dockerfile_dir":"./backend","platform":"linux/amd64","platform_pair":"linux-amd64","runner":"ubuntu-24.04"},
-              {"component":"frontend","dockerfile_dir":"./frontend","platform":"linux/amd64","platform_pair":"linux-amd64","runner":"ubuntu-24.04"},
-              {"component":"temporal-worker","dockerfile_dir":"./backend","dockerfile":"Dockerfile.temporal-worker","platform":"linux/amd64","platform_pair":"linux-amd64","runner":"ubuntu-24.04"}
+            MATRIX=$(echo "$MATRIX" | jq -c --arg suffix "$SUFFIX" '.include += [
+              {"component":"backend","image":"backend","tag_suffix":"","base_path":"","dockerfile_dir":"./backend","platform":"linux/amd64","platform_pair":"linux-amd64","runner":"ubuntu-24.04"},
+              {"component":"frontend-designer","image":"frontend","tag_suffix":"-designer","base_path":("/designer"+$suffix),"dockerfile_dir":"./frontend","platform":"linux/amd64","platform_pair":"linux-amd64","runner":"ubuntu-24.04"},
+              {"component":"frontend-forms","image":"frontend","tag_suffix":"-forms","base_path":("/forms"+$suffix),"dockerfile_dir":"./frontend","platform":"linux/amd64","platform_pair":"linux-amd64","runner":"ubuntu-24.04"},
+              {"component":"temporal-worker","image":"temporal-worker","tag_suffix":"","base_path":"","dockerfile_dir":"./backend","dockerfile":"Dockerfile.temporal-worker","platform":"linux/amd64","platform_pair":"linux-amd64","runner":"ubuntu-24.04"}
             ]')
           fi
           if echo "$PLATFORMS" | grep -q 'arm64'; then
-            MATRIX=$(echo "$MATRIX" | jq -c '.include += [
-              {"component":"backend","dockerfile_dir":"./backend","platform":"linux/arm64","platform_pair":"linux-arm64","runner":"ubuntu-24.04-arm"},
-              {"component":"frontend","dockerfile_dir":"./frontend","platform":"linux/arm64","platform_pair":"linux-arm64","runner":"ubuntu-24.04-arm"},
-              {"component":"temporal-worker","dockerfile_dir":"./backend","dockerfile":"Dockerfile.temporal-worker","platform":"linux/arm64","platform_pair":"linux-arm64","runner":"ubuntu-24.04-arm"}
+            MATRIX=$(echo "$MATRIX" | jq -c --arg suffix "$SUFFIX" '.include += [
+              {"component":"backend","image":"backend","tag_suffix":"","base_path":"","dockerfile_dir":"./backend","platform":"linux/arm64","platform_pair":"linux-arm64","runner":"ubuntu-24.04-arm"},
+              {"component":"frontend-designer","image":"frontend","tag_suffix":"-designer","base_path":("/designer"+$suffix),"dockerfile_dir":"./frontend","platform":"linux/arm64","platform_pair":"linux-arm64","runner":"ubuntu-24.04-arm"},
+              {"component":"frontend-forms","image":"frontend","tag_suffix":"-forms","base_path":("/forms"+$suffix),"dockerfile_dir":"./frontend","platform":"linux/arm64","platform_pair":"linux-arm64","runner":"ubuntu-24.04-arm"},
+              {"component":"temporal-worker","image":"temporal-worker","tag_suffix":"","base_path":"","dockerfile_dir":"./backend","dockerfile":"Dockerfile.temporal-worker","platform":"linux/arm64","platform_pair":"linux-arm64","runner":"ubuntu-24.04-arm"}
             ]')
           fi
           # Use delimiter so JSON is not mangled by GITHUB_OUTPUT parsing
@@ -177,6 +181,9 @@ jobs:
 
   build:
     needs: prepare
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
@@ -208,8 +215,8 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ needs.prepare.outputs.image_version }}
-          build-args: ${{ matrix.component == 'frontend' && inputs.base_path != '' && format('BASE_PATH={0}', inputs.base_path) || '' }}
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.component }},push-by-digest=true,name-canonical=true,push=true
+          build-args: ${{ matrix.base_path != '' && format('BASE_PATH={0}', matrix.base_path) || '' }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
           provenance: false
           sbom: false
 
@@ -228,6 +235,9 @@ jobs:
 
   merge:
     needs: [prepare, build]
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-24.04
     outputs:
       short_sha: ${{ steps.vars.outputs.short_sha }}
@@ -280,24 +290,28 @@ jobs:
               -t ${IMAGE}:latest ${DIGESTS}
           fi
 
-      - name: Merge frontend
+      # One tag per variant: the chart appends the app name to frontend.image.tag.
+      - name: Merge frontend variants
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           IMAGE="ghcr.io/${{ github.repository }}/frontend"
           IMAGE_VERSION="${{ needs.prepare.outputs.image_version }}"
-          DIGESTS=""
-          for f in $(find digests -type f -name 'frontend-*' 2>/dev/null); do
-            DIGESTS="${DIGESTS} ${IMAGE}@$(cat $f)"
-          done
-          [ -n "$DIGESTS" ] || { echo "No frontend digests"; exit 1; }
-          docker buildx imagetools create \
-            --annotation "index:org.opencontainers.image.description=SOBA Next.js frontend for web form builder" \
-            -t ${IMAGE}:sha-${SHORT_SHA} -t ${IMAGE}:${IMAGE_VERSION} ${DIGESTS}
-          if [ "${{ inputs.publish_latest }}" = "true" ]; then
+          DESCRIPTION="index:org.opencontainers.image.description=SOBA Next.js frontend for web form builder"
+          for VARIANT in designer forms; do
+            DIGESTS=""
+            for f in $(find digests -type f -name "frontend-${VARIANT}-*" 2>/dev/null); do
+              DIGESTS="${DIGESTS} ${IMAGE}@$(cat $f)"
+            done
+            [ -n "$DIGESTS" ] || { echo "No frontend-${VARIANT} digests"; exit 1; }
             docker buildx imagetools create \
-              --annotation "index:org.opencontainers.image.description=SOBA Next.js frontend for web form builder" \
-              -t ${IMAGE}:latest ${DIGESTS}
-          fi
+              --annotation "$DESCRIPTION" \
+              -t ${IMAGE}:sha-${SHORT_SHA}-${VARIANT} -t ${IMAGE}:${IMAGE_VERSION}-${VARIANT} ${DIGESTS}
+            if [ "${{ inputs.publish_latest }}" = "true" ]; then
+              docker buildx imagetools create \
+                --annotation "$DESCRIPTION" \
+                -t ${IMAGE}:latest-${VARIANT} ${DIGESTS}
+            fi
+          done
 
       - name: Merge temporal-worker
         run: |

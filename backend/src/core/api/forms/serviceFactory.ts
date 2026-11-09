@@ -1,19 +1,38 @@
 import { FormService } from '../../services/formService';
 import { FormVersionService } from '../../services/formVersionService';
-import { resolveFormPermissions } from '../../db/repos/formAccessRepo';
-import type { FormListSort } from '../../db/repos/formRepo';
-import type { FormVersionListSort } from '../../db/repos/formVersionRepo';
+import type { FormAccessGrant } from '../../db/repos/formAccessRepo';
+import type { FormListRow, FormListSort, FormRecord } from '../../db/repos/formRepo';
+import type { SubmitterFormListRow } from '../../db/repos/submitterFormRepo';
+import type {
+  FormVersionListRow,
+  FormVersionListSort,
+  FormVersionRecord,
+} from '../../db/repos/formVersionRepo';
+import {
+  type CreateFormSettings,
+  type FormListItem,
+  type FormVersionListItem,
+  type ListMyFormsResponse,
+  type SubmitterForm,
+  type MyFormListSort,
+  type SortLocale,
+} from '@soba/lib';
+import { LOOKUP_FETCH_LIMIT, toLookupResponse } from '../shared/lookup';
 
-export interface FormsContextInput {
-  workspaceId: string;
-  actorId: string;
-  actorDisplayLabel: string | null;
-}
+import type { CoreRequestContext } from '../../middleware/requestContext';
 
-/** Scope for list/search: single workspace resolved from a scope anchor. */
+export type FormsContextInput = CoreRequestContext;
+
+/** Scope for list/search: the workspaces searched and the access grant rows must pass. */
 export interface FormsListScopeInput {
   workspaceIds: string[];
   actorId: string;
+  formAccess: FormAccessGrant;
+}
+
+/** Scope for a lookup: the workspaces searched. */
+export interface FormsLookupScopeInput {
+  workspaceIds: string[];
 }
 
 interface ListFormsQueryInput {
@@ -24,6 +43,16 @@ interface ListFormsQueryInput {
   q?: string;
   status?: string;
   sort: FormListSort;
+  locale: SortLocale;
+}
+
+interface ListMyFormsQueryInput {
+  offset: number;
+  limit: number;
+  workspaceId?: string;
+  q?: string;
+  sort: MyFormListSort;
+  locale: SortLocale;
 }
 
 interface ListFormVersionsQueryInput {
@@ -37,32 +66,30 @@ interface ListFormVersionsQueryInput {
 }
 
 interface CreateFormInput {
+  id?: string;
+  versionId?: string;
   name: string;
   description?: string;
   formEngineCode?: string;
+  schema?: Record<string, unknown>;
+  settings?: CreateFormSettings;
 }
 
 interface UpdateFormInput {
   name?: string;
   description?: string | null;
+  org?: string;
+  useCase?: string;
   status?: string;
 }
 
-const toFormDto = (item: {
-  id: string;
-  workspaceId: string;
-  name: string;
-  description: string | null;
-  status: string;
-  createdAt: Date;
-  updatedAt: Date;
-  createdBy: string | null;
-  updatedBy: string | null;
-}) => ({
+const toFormDto = (item: FormRecord) => ({
   id: item.id,
   workspaceId: item.workspaceId,
   name: item.name,
   description: item.description,
+  org: item.org,
+  useCase: item.useCase,
   status: item.status,
   createdAt: item.createdAt.toISOString(),
   updatedAt: item.updatedAt.toISOString(),
@@ -70,19 +97,13 @@ const toFormDto = (item: {
   updatedBy: item.updatedBy,
 });
 
-const toFormListItemDto = (item: {
-  id: string;
-  workspaceId: string;
-  name: string;
-  status: string;
-  createdAt: Date;
-  updatedAt: Date;
-  createdBy: string | null;
-  updatedBy: string | null;
-}) => ({
+const toFormListItemDto = (item: FormListRow): FormListItem => ({
   id: item.id,
   workspaceId: item.workspaceId,
+  workspaceName: item.workspaceName,
   name: item.name,
+  org: item.org,
+  useCase: item.useCase,
   status: item.status,
   createdAt: item.createdAt.toISOString(),
   updatedAt: item.updatedAt.toISOString(),
@@ -90,20 +111,21 @@ const toFormListItemDto = (item: {
   updatedBy: item.updatedBy,
 });
 
-const toFormVersionDto = (item: {
-  id: string;
-  formId: string;
-  versionNo: number;
-  state: string;
-  engineSyncStatus: string;
-  engineSchemaRef: string | null;
-  currentRevisionNo: number;
-  publishedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-  createdBy: string | null;
-  updatedBy: string | null;
-}) => ({
+/** A form as a submitter sees it: a My Forms row, and the fill bundle's form. */
+export const toSubmitterFormDto = (item: SubmitterFormListRow): SubmitterForm => ({
+  id: item.id,
+  name: item.name,
+  workspaceId: item.workspaceId,
+  workspaceName: item.workspaceName,
+  publishedVersionId: item.publishedVersionId,
+  permissions: [...item.permissions],
+  audienceMode: item.audienceMode,
+  audienceIdps: [...item.audienceIdps],
+  allowSubmitterDrafts: item.allowSubmitterDrafts,
+  allowSubmitterRevision: item.allowSubmitterRevision,
+});
+
+const toFormVersionDto = (item: FormVersionRecord) => ({
   id: item.id,
   formId: item.formId,
   versionNo: item.versionNo,
@@ -118,18 +140,7 @@ const toFormVersionDto = (item: {
   updatedBy: item.updatedBy,
 });
 
-const toFormVersionListItemDto = (item: {
-  id: string;
-  formId: string;
-  versionNo: number;
-  state: string;
-  engineSyncStatus: string;
-  engineSchemaRef: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  createdBy: string | null;
-  updatedBy: string | null;
-}) => ({
+const toFormVersionListItemDto = (item: FormVersionListRow): FormVersionListItem => ({
   id: item.id,
   formId: item.formId,
   versionNo: item.versionNo,
@@ -148,15 +159,19 @@ export function createFormsApiService(
 ) {
   return {
     createForm: async (ctx: FormsContextInput, input: CreateFormInput) => {
-      const { form, version } = await formService.create({
+      const { form, version, created } = await formService.create({
+        id: input.id,
+        versionId: input.versionId,
         workspaceId: ctx.workspaceId,
         actorId: ctx.actorId,
         actorDisplayLabel: ctx.actorDisplayLabel,
         name: input.name,
         description: input.description,
         formEngineCode: input.formEngineCode,
+        schema: input.schema,
+        settings: input.settings,
       });
-      return { ...toFormDto(form), formVersion: toFormVersionDto(version) };
+      return { created, form: { ...toFormDto(form), formVersion: toFormVersionDto(version) } };
     },
 
     normalizeSchema: (_ctx: FormsContextInput, schema: Record<string, unknown>) =>
@@ -170,6 +185,8 @@ export function createFormsApiService(
         formId,
         name: input.name,
         description: input.description,
+        org: input.org,
+        useCase: input.useCase,
         status: input.status,
       });
       return row ? toFormDto(row) : null;
@@ -178,11 +195,12 @@ export function createFormsApiService(
     getForm: async (ctx: FormsContextInput, formId: string) => {
       const row = await formService.get(ctx.workspaceId, formId);
       if (!row) return null;
-      // Caller's permissions on this form, so the UI can gate actions. Workspace-scoped today.
-      const permissions = await resolveFormPermissions(ctx.actorId, ctx.workspaceId);
+      const currentVersion = await formVersionService.getCurrent(ctx.workspaceId, formId);
       return {
         ...toFormDto(row),
-        permissions: [...permissions].sort((a, b) => a.localeCompare(b)),
+        // The caller's permissions on this form, as requireFormPermissions resolved them.
+        permissions: [...(ctx.permissions ?? [])].sort((a, b) => a.localeCompare(b)),
+        currentVersion,
       };
     },
 
@@ -190,12 +208,14 @@ export function createFormsApiService(
       const result = await formService.list({
         workspaceIds: scope.workspaceIds,
         actorId: scope.actorId,
+        formAccess: scope.formAccess,
         offset: query.offset,
         limit: query.limit,
         formId: query.formId,
         q: query.q,
         status: query.status,
         sort: query.sort,
+        locale: query.locale,
       });
 
       return {
@@ -215,6 +235,27 @@ export function createFormsApiService(
       };
     },
 
+    listMine: async (
+      userId: string,
+      query: ListMyFormsQueryInput,
+    ): Promise<ListMyFormsResponse> => {
+      const result = await formService.listForSubmitter({
+        userId,
+        offset: query.offset,
+        limit: query.limit,
+        workspaceId: query.workspaceId,
+        q: query.q,
+        sort: query.sort,
+        locale: query.locale,
+      });
+      return {
+        items: result.items.map((item) => toSubmitterFormDto(item)),
+        page: { offset: query.offset, limit: query.limit, total: result.total },
+        filters: { workspaceId: query.workspaceId, q: query.q },
+        sort: query.sort,
+      };
+    },
+
     getFormVersion: async (ctx: FormsContextInput, formVersionId: string) => {
       const row = await formVersionService.get(ctx.workspaceId, formVersionId);
       return row ? toFormVersionDto(row) : null;
@@ -224,6 +265,7 @@ export function createFormsApiService(
       const result = await formVersionService.list({
         workspaceIds: scope.workspaceIds,
         actorId: scope.actorId,
+        formAccess: scope.formAccess,
         offset: query.offset,
         limit: query.limit,
         formId: query.formId,
@@ -249,36 +291,45 @@ export function createFormsApiService(
       };
     },
 
-    createDraft: async (ctx: FormsContextInput, formId: string) =>
-      toFormVersionDto(
-        await formVersionService.createDraft({
-          workspaceId: ctx.workspaceId,
-          actorId: ctx.actorId,
-          actorDisplayLabel: ctx.actorDisplayLabel,
-          formId,
+    lookupFormVersions: async (
+      scope: FormsLookupScopeInput,
+      query: { formId: string; q?: string },
+    ) =>
+      toLookupResponse(
+        await formVersionService.lookup({
+          workspaceIds: scope.workspaceIds,
+          formId: query.formId,
+          q: query.q,
+          limit: LOOKUP_FETCH_LIMIT,
         }),
       ),
 
-    save: (
+    createDraft: async (
       ctx: FormsContextInput,
-      formVersionId: string,
       input: {
-        eventType?: string;
-        note?: string;
-        formioFormDefinition?: Record<string, unknown>;
-        engine_schema_ref?: string;
+        id?: string;
+        formId: string;
+        fromFormVersionId?: string;
+        schema?: Record<string, unknown>;
       },
-    ) =>
+    ) => {
+      const { version, created } = await formVersionService.createDraft({
+        ...input,
+        workspaceId: ctx.workspaceId,
+        actorId: ctx.actorId,
+        actorDisplayLabel: ctx.actorDisplayLabel,
+      });
+      return { created, version: toFormVersionDto(version) };
+    },
+
+    save: (ctx: FormsContextInput, formVersionId: string, input: { note?: string }) =>
       formVersionService
         .save({
           workspaceId: ctx.workspaceId,
           actorId: ctx.actorId,
           actorDisplayLabel: ctx.actorDisplayLabel,
           formVersionId,
-          eventType: input.eventType || 'save_draft',
           note: input.note,
-          formioFormDefinition: input.formioFormDefinition,
-          engineSchemaRef: input.engine_schema_ref || null,
         })
         .then((row) => toFormVersionDto(row)),
 
@@ -302,16 +353,6 @@ export function createFormsApiService(
 
     unpublish: async (ctx: FormsContextInput, formVersionId: string) => {
       const row = await formVersionService.unpublish({
-        workspaceId: ctx.workspaceId,
-        actorId: ctx.actorId,
-        actorDisplayLabel: ctx.actorDisplayLabel,
-        formVersionId,
-      });
-      return row ? toFormVersionDto(row) : null;
-    },
-
-    restore: async (ctx: FormsContextInput, formVersionId: string) => {
-      const row = await formVersionService.restore({
         workspaceId: ctx.workspaceId,
         actorId: ctx.actorId,
         actorDisplayLabel: ctx.actorDisplayLabel,

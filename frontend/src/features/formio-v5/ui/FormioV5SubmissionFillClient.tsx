@@ -1,216 +1,119 @@
 'use client';
 
-import { useParams, useRouter, usePathname } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Submission } from '@formio/react';
-import type { FormType } from '@formio/react';
+import { useRouter, usePathname } from 'next/navigation';
+import { useCallback, useEffect, useState } from 'react';
 import { InlineAlert } from '@bcgov/design-system-react-components';
 import { CenteredProgress } from '@/app/ui/base/CenteredProgress';
 import { useDictionary } from '@/app/[lang]/Providers';
 import { getLocaleFromPath } from '@/src/shared/util/locale';
-import { normalizeFormioRenderError } from '@/src/features/formio-v5/normalizeFormioRenderError';
-import { FormioV5FormRenderErrorBoundary } from '@/src/features/formio-v5/ui/FormioV5FormRenderErrorBoundary';
-import { DynamicForm } from '@/src/features/formio-v5/ui/DynamicForm';
+import { canSaveDraftOnSubmission, canWriteSubmission } from '@/src/shared/util/permissions';
 import { useBcgovFileOption } from '@/src/features/formio-v5/useBcgovFileOption';
+import { useMountedLoad, type MountedLoad } from '@/src/features/formio-v5/fillMount';
+import { useFillSession } from '@/src/features/formio-v5/data/useFillSession';
+import { useSubmitFill } from '@/src/features/formio-v5/data/useSubmitFill';
 import {
-  setActiveSubmissionId,
-  clearActiveSubmissionId,
-} from '@/src/features/formio-v5/activeSubmission';
-import { getSubmitFillBundle, submitSobaFormSubmission } from '@/src/shared/api/sobaApi';
-import { useKeycloak } from '@/lib/hooks/useKeycloak';
-import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
-
-type FillLabels = {
-  loading: string;
-  loadError: string;
-  unavailable: string;
-  rendererError: string;
-  submitSuccess: string;
-  sessionExpired: string;
-};
+  SubmissionFillForm,
+  type FillLabels,
+} from '@/src/features/formio-v5/ui/SubmissionFillForm';
+import { useFillLabels } from '@/src/features/formio-v5/ui/useFillLabels';
+import { SubmissionLoadAlert } from '@/src/features/submissions/ui/SubmissionLoadAlert';
+import { useAccessCaller } from '@/src/shared/api/useAccessCaller';
+import { SubmissionWorkflowState } from '@/src/types/submissions';
 
 /**
- * Renders an already-opened submission for filling, keyed on its id. The submission record exists
- * before this mounts (opened in the start step), so this component only renders + submits — it never
- * creates. Loads the submission's own version schema and any saved answers, so a refresh resumes.
+ * Loads an already-opened submission for filling and decides, with the @soba/lib rules over the
+ * bundle's facts, whether the caller may write it and save a draft. The form mounts once the
+ * bundle, the caller and the file limits are known, since Form.io reads its options only then.
  */
-function SubmissionFillBody({
+function SubmissionFill({
   submissionId,
   labels,
 }: Readonly<{
   submissionId: string;
   labels: FillLabels;
 }>) {
-  // Token is optional: a public-audience submission is fillable without signing in.
-  const { token, initializing } = useKeycloak();
-  const { addNotification } = useNotificationStore();
   const router = useRouter();
   const locale = getLocaleFromPath(usePathname());
+  const session = useFillSession();
+  const fill = useSubmitFill(submissionId, session);
+  const { caller, pending: callerPending } = useAccessCaller();
+  const files = useBcgovFileOption();
+  // Each load the filler asks for mounts a new form; no other bundle reaches Form.io.
+  const [loadId, setLoadId] = useState(0);
 
-  const [schema, setSchema] = useState<FormType | null>(null);
-  const [initialData, setInitialData] = useState<Record<string, unknown>>({});
-  // Host file constraints (blocked extensions + max size) for the BCGovFile component; {} when files off.
-  const bcgovFileOption = useBcgovFileOption();
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [renderError, setRenderError] = useState<string | null>(null);
-  // Load the bundle once. A ref (not state) guard dedupes StrictMode's dev double-invoke, so /fill
-  // isn't fetched twice; no unmount/active flag, so the one in-flight load always applies its result.
-  const loadStartedRef = useRef(false);
-  // The Form.io webform instance; in JSON mode (no `src`) we must signal it on a failed submit,
-  // or its submit button spins forever. On success we navigate away instead.
-  const formInstanceRef = useRef<{
-    emit: (event: string, ...args: unknown[]) => void;
-  } | null>(null);
+  const bundle = fill.data;
+  const submitted = bundle?.workflowState === SubmissionWorkflowState.submitted;
+  const submissionPath = `/${locale}/submission/${submissionId}`;
 
   useEffect(() => {
-    // Wait for auth to settle so an authenticated caller sends their token; anonymous proceeds with none.
-    if (initializing || loadStartedRef.current) return;
-    loadStartedRef.current = true;
-    void (async () => {
-      try {
-        const authToken = token ?? undefined;
-        // One call: workflow state + schema + any saved answers. `content` is null for a just-opened
-        // submission, so there's no separate (404-ing) data fetch.
-        const bundle = await getSubmitFillBundle(authToken, submissionId);
-        // An already-submitted submission isn't fillable; send them to its confirmation.
-        if (bundle.workflowState === 'submitted') {
-          router.replace(`/${locale}/submission/${submissionId}`);
-          return;
-        }
-        if (!bundle.schema) {
-          setLoadError(labels.unavailable);
-          return;
-        }
-        setSchema(bundle.schema as FormType);
-        // Resume: prefill with any saved answers (a just-opened submission has none).
-        setInitialData((bundle.content?.data ?? {}) as Record<string, unknown>);
-      } catch (err) {
-        setLoadError(normalizeFormioRenderError(err, labels.loadError, labels.sessionExpired));
-      }
-    })();
-  }, [
-    initializing,
-    token,
-    submissionId,
-    locale,
-    router,
-    labels.loadError,
-    labels.unavailable,
-    labels.sessionExpired,
-  ]);
+    if (submitted) router.replace(submissionPath);
+  }, [submitted, submissionPath, router]);
 
-  // Expose the submission being filled to the CHEFS upload provider; clear it when leaving so a stale
-  // id can't tag an unrelated upload (e.g. a designer preview).
-  useEffect(() => {
-    setActiveSubmissionId(submissionId);
-    return () => clearActiveSubmissionId();
-  }, [submissionId]);
+  const { refresh } = fill;
+  const reload = useCallback(async () => {
+    await refresh();
+    setLoadId((id) => id + 1);
+  }, [refresh]);
 
-  // Form.io resets the live webform when the submission prop isn't deep-equal to what the user has
-  // typed, and a token refresh re-renders this — a fresh literal would discard answers in progress.
-  const submissionProp = useMemo(
-    () => ({ data: initialData as Submission['data'] }),
-    [initialData],
-  );
-  // We own all submit messaging (success toast + redirect, inline error), so suppress Form.io's
-  // built-in green "Submission Complete" alert.
-  const formOptions = useMemo(() => ({ noAlerts: true, ...bcgovFileOption }), [bcgovFileOption]);
+  // A submitted submission isn't fillable; the effect above leaves for its view.
+  const ready = !!bundle && !fill.error && !submitted && !callerPending && files.ready;
+  let live: MountedLoad | null = null;
+  if (ready) {
+    const access = { role: bundle.role, workflowState: bundle.workflowState };
+    live = {
+      loadId: String(loadId),
+      bundle,
+      canWrite: canWriteSubmission(access, bundle.form, caller),
+      canSaveDraft: canSaveDraftOnSubmission(access, bundle.form, caller),
+    };
+  }
+  const mounted = useMountedLoad(live, String(loadId));
 
-  const submitForm = async (submission: Submission) => {
-    try {
-      await submitSobaFormSubmission(
-        token ?? undefined,
-        submissionId,
-        (submission?.data ?? {}) as Record<string, unknown>,
-      );
-      addNotification({ text: labels.submitSuccess, type: 'success' });
-      // Straight to the read-only confirmation; navigating away unmounts the form, so there's no
-      // need to emit `submitDone` and no flash of Form.io's own success screen.
-      router.push(`/${locale}/submission/${submissionId}`);
-    } catch (err) {
-      setRenderError(normalizeFormioRenderError(err, labels.rendererError, labels.sessionExpired));
-      formInstanceRef.current?.emit('submitError', labels.rendererError);
-    }
-  };
-
-  if (loadError) {
-    return (
-      <InlineAlert variant="danger" role="alert" data-testid="submission-fill-error">
-        {loadError}
-      </InlineAlert>
+  if (!mounted) {
+    return fill.error ? (
+      <SubmissionLoadAlert error={fill.error} />
+    ) : (
+      <CenteredProgress label={labels.loading} />
     );
   }
 
-  if (!schema) {
-    return <CenteredProgress label={labels.loading} />;
-  }
-
+  const { canWrite, canSaveDraft } = mounted;
   return (
-    <>
-      {renderError ? (
-        <InlineAlert variant="danger" role="alert" data-testid="submission-fill-render-error">
-          {renderError}
-        </InlineAlert>
-      ) : null}
-      <FormioV5FormRenderErrorBoundary
-        fallback={
-          <InlineAlert variant="danger" role="alert">
-            {labels.rendererError}
-          </InlineAlert>
-        }
-      >
-        <div className="formio-v5-chrome" data-soba-formio-chrome data-testid="submission-fill">
-          <DynamicForm
-            className="formio-v5-form-root"
-            src=""
-            form={schema}
-            submission={submissionProp}
-            options={formOptions}
-            onFormReady={(instance) => {
-              formInstanceRef.current = instance;
-            }}
-            onError={(err) => {
-              setRenderError(
-                normalizeFormioRenderError(err, labels.loadError, labels.sessionExpired),
-              );
-            }}
-            onSubmit={submitForm}
-          />
-        </div>
-      </FormioV5FormRenderErrorBoundary>
-    </>
+    <SubmissionFillForm
+      // A wider decision mounts a new form; it can only open the form up, so no typed answers are lost.
+      key={`${mounted.loadId}:${canWrite}:${canSaveDraft}`}
+      submissionId={submissionId}
+      submissionPath={submissionPath}
+      view={{
+        snapshot: mounted.bundle,
+        canWrite,
+        canSaveDraft,
+        fileOption: files.option,
+        signedIn: session.signedIn,
+      }}
+      labels={labels}
+      onReload={reload}
+    />
   );
 }
 
-export default function FormioV5SubmissionFillClient() {
-  const params = useParams();
-  const raw = params?.submissionId;
-  const submissionId = typeof raw === 'string' ? decodeURIComponent(raw) : '';
+export default function FormioV5SubmissionFillClient({
+  submissionId,
+}: Readonly<{ submissionId: string }>) {
   const dict = useDictionary();
-  const labels = dict.formioV5.formRender;
+  const labels = useFillLabels();
 
   if (!submissionId) {
     return (
       <InlineAlert variant="danger" role="alert">
-        {labels.missingId}
+        {dict.formioV5.formRender.missingId}
       </InlineAlert>
     );
   }
 
   return (
     <div className="mt-3">
-      <SubmissionFillBody
-        key={submissionId}
-        submissionId={submissionId}
-        labels={{
-          loading: dict.form?.loading || 'Loading…',
-          loadError: labels.loadError,
-          unavailable: labels.unavailable,
-          rendererError: labels.rendererError,
-          submitSuccess: labels.submitSuccess,
-          sessionExpired: dict.general.sessionExpired,
-        }}
-      />
+      <SubmissionFill key={submissionId} submissionId={submissionId} labels={labels} />
     </div>
   );
 }

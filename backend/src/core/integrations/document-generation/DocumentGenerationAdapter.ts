@@ -1,3 +1,5 @@
+import type { TemplateFileType } from './templateFileType';
+
 /** Result of a document-generation readiness check; exposes no config or credentials. */
 export interface DocumentGenerationReadinessResult {
   ok: boolean;
@@ -10,12 +12,17 @@ export interface DocumentRenderResult {
   contentType?: string;
 }
 
+/** A document to render: the template file, the answer data it renders, and backend options. */
+export interface DocumentRenderRequest {
+  template: { content: Buffer; fileType: TemplateFileType };
+  data: Record<string, unknown>;
+  /** Backend-specific render options, passed through unchanged. */
+  options: Record<string, unknown>;
+}
+
 export interface DocumentGenerationAdapter {
-  /**
-   * Render a document from a backend-specific payload and return the raw bytes.
-   * The payload shape is defined by the selected backend, not by this contract.
-   */
-  render(payload: Record<string, unknown>): Promise<DocumentRenderResult>;
+  /** Render a document and return the raw bytes. The backend shapes the request for its API. */
+  render(request: DocumentRenderRequest): Promise<DocumentRenderResult>;
   /** Optional: report whether the backend is reachable (readiness). No config in the result. */
   readinessCheck?(): Promise<DocumentGenerationReadinessResult>;
 }

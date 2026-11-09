@@ -9,6 +9,7 @@ import type {
 } from '../../core/integrations/eventstream/EventStreamAdapter';
 import type { PluginConfigReader } from '../../core/config/pluginConfig';
 import { resolveStreamRetention } from '../../core/integrations/eventstream/streamRetention';
+import { mapInOrder } from '../../core/inOrder';
 import { createRedisClient, optionalNumber } from '../shared/redis/redisClient';
 import { log } from '../../core/logging';
 
@@ -175,11 +176,12 @@ export function buildRedisEventStreamAdapter(config: PluginConfigReader): {
   };
 
   const adapter: EventStreamAdapter = {
-    async ensureStream(stream: string): Promise<void> {
+    ensureStream(stream: string): Promise<void> {
       // Redis auto-creates a stream on first append (and consume passes MKSTREAM), so there is
       // nothing to provision. Resolve retention now so a bad override or an unapplied maxAgeMs is
       // logged at wiring time rather than on the first append.
       retentionFor(stream);
+      return Promise.resolve();
     },
 
     async append(stream: string, event: EventEnvelope): Promise<{ id: string }> {
@@ -244,17 +246,17 @@ export function buildRedisEventStreamAdapter(config: PluginConfigReader): {
           BATCH,
         )) as PendingEntry[] | null;
         if (!Array.isArray(pend)) return;
-        for (const [id, , , deliveryCount] of pend) {
+        // One message at a time, so a consumer never runs its handler concurrently.
+        await mapInOrder(pend, async ([id, , , deliveryCount]) => {
           if (stopped) return;
           if (Number(deliveryCount) >= maxDeliveries) {
             await deadLetter(key, group, id);
-            continue;
+            return;
           }
-          const claimed = (await client.call('XCLAIM', key, group, consumer, minIdleMs, id)) as
-            | StreamEntry[]
-            | null;
+          const reply = await client.call('XCLAIM', key, group, consumer, minIdleMs, id);
+          const claimed = reply as StreamEntry[] | null;
           if (claimed?.[0]) await process(id, claimed[0][1], Number(deliveryCount) + 1);
-        }
+        });
       };
 
       const readNew = async (): Promise<void> => {
@@ -272,37 +274,41 @@ export function buildRedisEventStreamAdapter(config: PluginConfigReader): {
           key,
           '>',
         );
-        for (const [id, fields] of extractEntries(reply)) {
+        // One message at a time, in order.
+        await mapInOrder(extractEntries(reply), async ([id, fields]) => {
           if (stopped) return;
           await process(id, fields, 1);
-        }
+        });
       };
 
+      // Each pass finishes before the next starts: the read blocks, and errors back off first.
       const loop = async (): Promise<void> => {
-        while (!stopped) {
-          try {
-            await reclaimPending();
-            await readNew();
-          } catch (err) {
-            if (stopped) break;
-            // The group/stream can vanish under us (backend restart without persistence, or an
-            // explicit delete). Recreate it and carry on rather than spinning on NOGROUP forever.
-            if (err instanceof Error && err.message.includes('NOGROUP')) {
-              log.warn({ stream, group }, `[${CODE}] consumer group missing; recreating`);
-              await ensureGroup(key, group, options?.from ?? 'new').catch(() => undefined);
-              continue;
-            }
+        if (stopped) return;
+        try {
+          await reclaimPending();
+          await readNew();
+        } catch (err) {
+          if (stopped) return;
+          // The group/stream can vanish under us (backend restart without persistence, or an
+          // explicit delete). Recreate it and carry on rather than spinning on NOGROUP forever.
+          if (err instanceof Error && err.message.includes('NOGROUP')) {
+            log.warn({ stream, group }, `[${CODE}] consumer group missing; recreating`);
+            await ensureGroup(key, group, options?.from ?? 'new').catch(() => undefined);
+          } else {
             log.warn({ err, stream, group }, `[${CODE}] consume loop error; retrying`);
             await new Promise((resolve) => setTimeout(resolve, 500));
           }
         }
+        // Not awaited, so pending promises do not pile up per pass.
+        void loop();
       };
 
       void loop();
 
-      return async () => {
+      return () => {
         stopped = true;
         reader.disconnect(); // interrupt the blocking XREADGROUP
+        return Promise.resolve();
       };
     },
 

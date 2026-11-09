@@ -59,6 +59,11 @@ describe('getFormsAppBaseUrl', () => {
     expect(getFormsAppBaseUrl()).toBe(window.location.origin);
   });
 
+  it('keeps the base path on the fallback', () => {
+    vi.stubEnv('NEXT_PUBLIC_BASE_PATH', '/chefs');
+    expect(getFormsAppBaseUrl()).toBe(`${window.location.origin}/chefs`);
+  });
+
   it('prefers the injected value over the build-time env', () => {
     vi.stubEnv('NEXT_PUBLIC_SOBA_FORMS_APP_URL', 'https://built-in.example.ca');
     window.__SOBA_FORMS_APP_URL = 'https://injected.example.ca';

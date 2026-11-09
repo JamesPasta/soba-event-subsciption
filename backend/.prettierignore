@@ -17,5 +17,8 @@ Dockerfile
 # Generated migration artifacts
 drizzle/
 
+# Written by eslint
+eslint-suppressions.json
+
 # Ignore lockfile
 package-lock.json

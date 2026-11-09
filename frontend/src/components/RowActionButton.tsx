@@ -7,8 +7,10 @@ import styles from './RowActionButton.module.css';
 type RowActionButtonProps = {
   /** Marks the row's primary/default action (e.g. the form name or submission id). */
   main?: boolean;
+  isDisabled?: boolean;
   onPress: () => void;
   children: React.ReactNode;
+  'aria-label'?: string;
   'data-testid'?: string;
 };
 
@@ -22,13 +24,22 @@ type RowActionButtonProps = {
  */
 export function RowActionButton({
   main = false,
+  isDisabled,
   onPress,
   children,
+  'aria-label': ariaLabel,
   'data-testid': testId,
-}: RowActionButtonProps) {
+}: Readonly<RowActionButtonProps>) {
   return (
     <span className={main ? styles.main : undefined}>
-      <Button variant="link" size="small" data-testid={testId} onPress={onPress}>
+      <Button
+        variant="link"
+        size="small"
+        aria-label={ariaLabel}
+        data-testid={testId}
+        isDisabled={isDisabled}
+        onPress={onPress}
+      >
         {children}
       </Button>
     </span>

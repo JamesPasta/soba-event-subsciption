@@ -1,18 +1,9 @@
-import { and, asc, eq, inArray, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, or, type InferSelectModel } from 'drizzle-orm';
 import { db } from '../client';
 import { roles, features } from '../schema';
 import { CODE_SOURCE_CORE } from '../schema/codes';
 
-export interface RoleRow {
-  code: string;
-  name: string;
-  description: string | null;
-  status: string;
-  source: string;
-  featureCode: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
+export type RoleRow = InferSelectModel<typeof roles>;
 
 export interface ListRolesFilters {
   code?: string[];

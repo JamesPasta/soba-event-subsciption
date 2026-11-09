@@ -1,0 +1,105 @@
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--layout-margin-medium);
+}
+
+.select {
+  min-width: 12rem;
+}
+
+/* Laid out like a BCDS TextField; the design system has no combobox. */
+.comboBox {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 20rem;
+  min-width: 12rem;
+}
+
+.label {
+  display: block;
+  font: var(--typography-regular-small-body);
+  color: var(--typography-color-secondary);
+  padding: var(--layout-padding-xsmall) var(--layout-padding-none);
+}
+
+.input {
+  font: var(--typography-regular-body);
+  color: var(--typography-color-primary);
+  background: var(--surface-color-forms-default);
+  border: var(--layout-border-width-small) solid var(--surface-color-border-default);
+  border-radius: var(--layout-border-radius-medium);
+  padding: var(--layout-padding-small) 12px;
+  min-height: var(--layout-margin-xxlarge);
+}
+
+.input::placeholder {
+  color: var(--typography-color-placeholder);
+}
+
+.input[data-focused] {
+  outline: var(--layout-border-width-medium) solid var(--surface-color-border-active);
+  outline-offset: var(--layout-margin-hair);
+}
+
+.popover {
+  width: var(--trigger-width);
+  max-height: 18rem;
+  overflow-y: auto;
+  background: var(--surface-color-menus-default);
+  border: var(--layout-border-width-small) solid var(--surface-color-border-default);
+  border-radius: var(--layout-border-radius-medium);
+  box-shadow: var(--surface-shadow-medium);
+}
+
+.listBox {
+  outline: none;
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  gap: var(--layout-margin-hair);
+  padding: var(--layout-padding-small) 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.option[data-focused],
+.option[data-hovered] {
+  background: var(--surface-color-menus-hover);
+}
+
+.optionName {
+  font: var(--typography-bold-body);
+  display: flex;
+  align-items: center;
+  gap: var(--layout-margin-small);
+}
+
+.accountType {
+  font: var(--typography-regular-small-body);
+  color: var(--typography-color-secondary);
+  border: var(--layout-border-width-small) solid var(--surface-color-border-default);
+  border-radius: var(--layout-border-radius-large);
+  padding: 0 var(--layout-padding-small);
+}
+
+.badge {
+  font: var(--typography-regular-small-body);
+  color: var(--typography-color-primary);
+  background: var(--surface-color-background-light-gray);
+  border-radius: var(--layout-border-radius-large);
+  padding: 0 var(--layout-padding-small);
+}
+
+.optionDetail {
+  font: var(--typography-regular-small-body);
+  color: var(--typography-color-secondary);
+}
+
+.status {
+  margin-top: var(--layout-margin-small);
+  font: var(--typography-regular-small-body);
+}

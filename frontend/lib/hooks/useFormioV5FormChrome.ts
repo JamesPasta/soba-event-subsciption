@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { disableFormioBrowserAuth } from '@/src/features/formio-v5/disableFormioBrowserAuth';
+import { withBasePath } from '@/src/shared/config/basePath';
 
 /**
  * Form.io renderer/builder stylesheet, injected only while a Form.io component
@@ -13,6 +14,7 @@ import { disableFormioBrowserAuth } from '@/src/features/formio-v5/disableFormio
  * `formio.form.min.css` has no icons, so submitters lost icons like the calendar.
  * (The renderer could be slimmed later with an extracted icons-only stylesheet.)
  * It does not bundle Bootstrap — it relies on the app's own (unlayered) Bootstrap.
+ * `bcgov-file.css` follows it with Form.io's file component rules for the BC Gov file component.
  *
  * It's loaded into a low-priority `formio` cascade layer via a `<style>` doing
  * `@import url(...) layer(formio)` (a `<link>` can't be assigned a layer). Unlayered
@@ -24,7 +26,7 @@ import { disableFormioBrowserAuth } from '@/src/features/formio-v5/disableFormio
  */
 type Variant = 'render' | 'build';
 
-const STYLESHEET = '/formio-v5/formio.full.min.css';
+const STYLESHEETS = ['/formio-v5/formio.full.min.css', '/formio-v5/bcgov-file.css'];
 
 export function useFormioV5FormChrome(variant: Variant | null): void {
   useEffect(() => {
@@ -38,7 +40,9 @@ export function useFormioV5FormChrome(variant: Variant | null): void {
 
     const style = document.createElement('style');
     style.id = id;
-    style.textContent = `@import url("${STYLESHEET}") layer(formio);`;
+    style.textContent = STYLESHEETS.map(
+      (href) => `@import url("${withBasePath(href)}") layer(formio);`,
+    ).join('\n');
     document.head.appendChild(style);
 
     return () => {

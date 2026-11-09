@@ -39,9 +39,9 @@ export function useAuthedSWR<T>(
 }
 
 /**
- * Read that works signed in or anonymously: the submit surface authorizes against the form's
- * audience, not against membership. The caller's key must say which of the two it is, or signing in
- * is served the payload already cached for the anonymous reader.
+ * Read that works signed in or anonymously: the submit surface authorizes by the caller's
+ * participation in the submission, not by membership. The caller's key must say which of the two it
+ * is, or signing in is served the payload already cached for the anonymous reader.
  */
 export function useMaybeAuthedSWR<T>(
   key: AuthedKey,

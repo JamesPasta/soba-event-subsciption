@@ -36,6 +36,30 @@ describe('diskTempStorage', () => {
     expect(await streamToString(adapter.createReadStream(resource))).toBe('streamed');
   });
 
+  it('removes what a failed write staged', async () => {
+    const adapter = createDiskTempStorageAdapter(base);
+    const failing = new Readable({
+      read() {
+        this.push(Buffer.from('partial'));
+        this.destroy(new Error('source failed'));
+      },
+    });
+    await expect(adapter.write(failing, { prefix: 'scan' })).rejects.toThrow('source failed');
+    expect(fs.readdirSync(base)).toEqual([]);
+  });
+
+  it('reserves a path in the base dir without creating the file', async () => {
+    const adapter = createDiskTempStorageAdapter(base);
+    const resource = adapter.reserve({ prefix: 'export' });
+    expect(path.dirname(resource.path)).toBe(path.resolve(base));
+    expect(path.basename(resource.path).startsWith('export-')).toBe(true);
+    expect(fs.existsSync(resource.path)).toBe(false);
+    fs.writeFileSync(resource.path, 'written by the caller');
+    await adapter.remove(resource);
+    await adapter.remove(resource);
+    expect(fs.existsSync(resource.path)).toBe(false);
+  });
+
   it('remove deletes the file', async () => {
     const adapter = createDiskTempStorageAdapter(base);
     const resource = await adapter.write(Buffer.from('x'));
@@ -53,13 +77,14 @@ describe('diskTempStorage', () => {
 
   it('ping resolves false when the base dir cannot be created', async () => {
     // A regular file as the parent makes mkdir fail (ENOTDIR).
-    const file = path.join(os.tmpdir(), `soba-notadir-${randomUUID()}`);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'soba-notadir-'));
+    const file = path.join(dir, 'file');
     fs.writeFileSync(file, 'x');
     try {
       const adapter = createDiskTempStorageAdapter(path.join(file, 'sub'));
       await expect(adapter.ping()).resolves.toBe(false);
     } finally {
-      fs.rmSync(file, { force: true });
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 

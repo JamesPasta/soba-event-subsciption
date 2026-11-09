@@ -1,0 +1,212 @@
+name: Gateway proxy check
+run-name: Gateway health check for ${{ inputs.release }}
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      release:
+        required: true
+        type: string
+      gateway_hostname:
+        description: Optional route hostname; PR and Dev use APS_GATEWAY_HOST_PREFIX with APS_HOST
+        default: ""
+        type: string
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment holding OpenShift and APS credentials
+        type: choice
+        options: [dev, pr, test]
+        default: dev
+      release:
+        description: Existing Helm release (e.g. soba-dev or soba-pr-156)
+        required: true
+        type: string
+      gateway_hostname:
+        description: Route hostname in the <name>.api.gov.bc.ca form (no scheme/path)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: aps-gateway-${{ inputs.release }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: ${{ inputs.environment }}
+    env:
+      RELEASE: ${{ inputs.release }}
+      OPENSHIFT_NAMESPACE: ${{ vars.OC_NAMESPACE }}
+      APP_ENVIRONMENT: ${{ inputs.environment }}
+      APS_HOST: ${{ vars.APS_HOST }}
+      GATEWAY_ID: ${{ vars.APS_GATEWAY_ID }}
+      GATEWAY_HOSTNAME: ${{ inputs.gateway_hostname }}
+      APS_GATEWAY_HOST_PREFIX: ${{ vars.APS_GATEWAY_HOST_PREFIX }}
+      GATEWAY_QUALIFIER: proxy-proof-${{ inputs.release }}
+      GWA_SHA256: ${{ vars.GWA_LINUX_AMD64_SHA256 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate settings and render gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 49 leaves room for the -api-gov-bc-ca suffix in a 63-character DNS label.
+          [[ "$RELEASE" =~ ^soba-[a-z0-9-]+$ && ${#RELEASE} -le 49 ]]
+          [[ "$OPENSHIFT_NAMESPACE" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] \
+            || { echo '::error::Set OC_NAMESPACE on the selected environment'; exit 1; }
+          case "$APP_ENVIRONMENT" in
+            pr|dev|test|prod)
+              : "${APS_HOST:?Set APS_HOST repository variable.}"
+              ;;
+            *)
+              echo "::error::Unsupported application environment: $APP_ENVIRONMENT"
+              exit 1
+              ;;
+          esac
+          if [[ ! "$GWA_SHA256" =~ ^[a-fA-F0-9]{64}$ ]]; then
+            echo '::error::Set Actions variable GWA_LINUX_AMD64_SHA256 to the reviewed 64-character SHA256 of the pinned GWA release archive'
+            exit 1
+          fi
+          if [[ ! "$GATEWAY_ID" =~ ^gw-[a-z0-9-]+$ ]]; then
+            echo '::error::Set the Gold gateway ID for the selected environment (gw-...)'
+            exit 1
+          fi
+          if [[ -z "$GATEWAY_HOSTNAME" ]]; then
+            if [[ "$APP_ENVIRONMENT" == prod ]]; then
+              echo '::error::Production requires an explicit gateway_hostname'
+              exit 1
+            fi
+            if [[ "$APP_ENVIRONMENT" == pr ]]; then
+              export GATEWAY_HOSTNAME="${APS_GATEWAY_HOST_PREFIX:?Set APS_GATEWAY_HOST_PREFIX in the pr environment.}.${APS_HOST}"
+            elif [[ "$APP_ENVIRONMENT" == dev ]]; then
+              export GATEWAY_HOSTNAME="${APS_GATEWAY_HOST_PREFIX:?Set APS_GATEWAY_HOST_PREFIX in the dev environment.}.${APS_HOST}"
+            else
+              export GATEWAY_HOSTNAME="${RELEASE}.api.gov.bc.ca"
+            fi
+          fi
+          export GATEWAY_ROUTE_PATH=/
+          if [[ "$APP_ENVIRONMENT" == pr ]]; then
+            [[ "$RELEASE" =~ ^soba-pr-([1-9][0-9]*)$ ]] || exit 1
+            export GATEWAY_ROUTE_PATH="/pr/${BASH_REMATCH[1]}/"
+          fi
+          echo "GATEWAY_ROUTE_PATH=$GATEWAY_ROUTE_PATH" >> "$GITHUB_ENV"
+          export GATEWAY_SERVICE_NAME="soba-${GATEWAY_QUALIFIER}"
+          export BACKEND_HOST="${RELEASE}-backend.${OPENSHIFT_NAMESPACE}.svc"
+          node deployments/gateway/scripts/generate-gateway-config.mjs \
+            --output "$RUNNER_TEMP/gateway-kong.yaml"
+          cat "$RUNNER_TEMP/gateway-kong.yaml"
+
+      - name: Install OpenShift CLI
+        uses: redhat-actions/openshift-tools-installer@e3b32c2ab7b064b2ce189121c4a49f509a99a7b4 # v3.0
+        with:
+          oc: "4.14"
+
+      - name: Login to OpenShift
+        uses: redhat-actions/oc-login@2a1614bc977c054c8786c8e35fc9534bd0ddc156 # v2.0.1
+        with:
+          openshift_server_url: ${{ vars.OC_SERVER }}
+          openshift_token: ${{ secrets.OC_TOKEN }}
+          namespace: ${{ vars.OC_NAMESPACE }}
+
+      - name: Check existing backend and APS NetworkPolicy
+        shell: bash
+        run: |
+          set -euo pipefail
+          oc rollout status "deployment/${RELEASE}-backend" \
+            -n "$OPENSHIFT_NAMESPACE" --timeout=120s
+          oc get service "${RELEASE}-backend" -n "$OPENSHIFT_NAMESPACE" -o json \
+            | jq -e '.spec.ports | any(.port == 4000)'
+          oc get endpoints "${RELEASE}-backend" -n "$OPENSHIFT_NAMESPACE" -o json \
+            | jq -e '[.subsets[]?.addresses[]?] | length > 0'
+          oc get configmap "${RELEASE}-backend-app" -n "$OPENSHIFT_NAMESPACE" -o json \
+            | jq -e '.data.API_BASE_PATH == "/chefs"'
+          if ! oc get networkpolicy "${RELEASE}-aps" -n "$OPENSHIFT_NAMESPACE" > /dev/null; then
+            echo "::error::NetworkPolicy ${RELEASE}-aps not found; enable gatewayNetworkPolicy in the release values"
+            exit 1
+          fi
+
+      - name: Install pinned GWA
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gwa-bin"
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            https://github.com/bcgov/gwa-cli/releases/download/v3.2.0/gwa_Linux_x86_64.tgz \
+            -o "$RUNNER_TEMP/gwa.tgz"
+          printf '%s  %s\n' "$GWA_SHA256" "$RUNNER_TEMP/gwa.tgz" | sha256sum --check -
+          tar -xzf "$RUNNER_TEMP/gwa.tgz" -C "$RUNNER_TEMP/gwa-bin"
+          echo "$RUNNER_TEMP/gwa-bin" >> "$GITHUB_PATH"
+
+      - name: Ensure PR is still open before publishing
+        if: ${{ inputs.environment == 'pr' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE" =~ ^soba-pr-([1-9][0-9]*)$ ]]
+          PR_NUMBER="${BASH_REMATCH[1]}"
+          STATE=$(gh api "repos/${GH_REPO}/pulls/${PR_NUMBER}" --jq '.state')
+          if [[ "$STATE" != open ]]; then
+            echo '::error::PR is no longer open; refusing to recreate its gateway configuration'
+            exit 1
+          fi
+
+      - name: Publish isolated reverse proxy
+        shell: bash
+        env:
+          GWA_CLIENT_ID: ${{ secrets.GWA_CLIENT_ID }}
+          GWA_CLIENT_SECRET: ${{ secrets.GWA_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          : "${GWA_CLIENT_ID:?Missing GWA_CLIENT_ID for the selected environment}"
+          : "${GWA_CLIENT_SECRET:?Missing GWA_CLIENT_SECRET for the selected environment}"
+          gwa config set host "$APS_HOST"
+          gwa config set gateway "$GATEWAY_ID"
+          gwa login --client-id "$GWA_CLIENT_ID" --client-secret "$GWA_CLIENT_SECRET"
+          # GWA resolves config paths relative to the current working directory.
+          cd "$RUNNER_TEMP"
+          gwa publish-gateway gateway-kong.yaml \
+            --qualifier "$GATEWAY_QUALIFIER" --dry-run
+          gwa publish-gateway gateway-kong.yaml \
+            --qualifier "$GATEWAY_QUALIFIER"
+
+      - name: Verify APS upstream and public health response
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..12}; do
+            if gwa status --json > "$RUNNER_TEMP/gateway-status.json" \
+              && PUBLIC_GATEWAY_HOST=$(jq -er --arg name "soba-${GATEWAY_QUALIFIER}" '
+                [.[] | select(.name == $name and .status == "UP") | .env_host
+                  | select(type == "string" and length > 0)] | unique
+                | if length == 1 then .[0] else error("Expected one public hostname for the deployed service") end
+              ' "$RUNNER_TEMP/gateway-status.json") \
+              && GATEWAY_HOSTNAME="$PUBLIC_GATEWAY_HOST" node deployments/gateway/scripts/verify-health.mjs; then
+              printf 'Gateway health URL: https://%s%shealth\n' "$PUBLIC_GATEWAY_HOST" "$GATEWAY_ROUTE_PATH" >> "$GITHUB_STEP_SUMMARY"
+              printf 'Verified gateway %shealth -> %s-backend.%s.svc:4000/chefs/api/v1/health\n' \
+                "$GATEWAY_ROUTE_PATH" "$RELEASE" "$OPENSHIFT_NAMESPACE" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'Gateway health verification failed; inspect status and NetworkPolicy.' >&2
+          cat "$RUNNER_TEMP/gateway-status.json"
+          exit 1
+
+      - name: Remove local GWA credentials
+        if: always()
+        shell: bash
+        run: rm -f "$HOME/.gwa-config.yaml"

@@ -1,0 +1,19 @@
+# Render with scripts/generate-gateway-config.mjs, then publish with gwa publish-gateway --qualifier.
+# String placeholders are emitted as quoted YAML scalars by the generator.
+services:
+  - name: ${GATEWAY_SERVICE_NAME}
+    tags: [${CONFIG_TAG}]
+    host: ${BACKEND_HOST}
+    port: 4000
+    protocol: http
+    path: /chefs/api/v1
+    routes:
+      - name: ${GATEWAY_SERVICE_NAME}
+        tags: [${CONFIG_TAG}]
+        hosts:
+          - ${GATEWAY_HOSTNAME}
+        protocols: [https]
+        paths: [${GATEWAY_ROUTE_PATH}]
+        preserve_host: false
+        strip_path: ${GATEWAY_STRIP_PATH}
+        path_handling: v0

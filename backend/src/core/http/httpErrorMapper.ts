@@ -13,6 +13,15 @@ const MAX_DETAIL = 500;
 const boundedDetail = (body: string): string =>
   body.length > MAX_DETAIL ? `${body.slice(0, MAX_DETAIL)}…` : body;
 
+const withUpstreamStatus = <E extends AppError>(error: E, status: number): E =>
+  Object.assign(error, { upstreamStatus: status });
+
+/** The status an upstream service answered with, on an error mapped from its response. */
+export const upstreamStatusOf = (err: unknown): number | undefined => {
+  const status = (err as { upstreamStatus?: unknown } | null)?.upstreamStatus;
+  return typeof status === 'number' ? status : undefined;
+};
+
 /**
  * Translate an outbound HttpClientError into the app error hierarchy so the central error
  * handler renders a sensible status. Only bad-request statuses (400/415/422) become client
@@ -28,10 +37,14 @@ export function httpErrorToAppError(err: unknown, service: string): AppError {
   const detail = boundedDetail(err.body) || err.statusText;
   const message = `${service} error ${err.status}: ${detail}`;
 
-  if (err.status === 400) return new ValidationError(message);
-  if (err.status === 415) return new UnsupportedMediaTypeError(message);
-  if (err.status === 422) return new UnprocessableEntityError(message);
-  return new ServiceUnavailableError(message);
+  if (err.status === 400) return withUpstreamStatus(new ValidationError(message), err.status);
+  if (err.status === 415) {
+    return withUpstreamStatus(new UnsupportedMediaTypeError(message), err.status);
+  }
+  if (err.status === 422) {
+    return withUpstreamStatus(new UnprocessableEntityError(message), err.status);
+  }
+  return withUpstreamStatus(new ServiceUnavailableError(message), err.status);
 }
 
 /** POST a JSON payload for binary bytes, translating any transport/HTTP failure to an AppError. */

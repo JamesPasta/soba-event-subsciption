@@ -37,25 +37,30 @@ export async function messageBusSelfTest(
   let resolveGot!: () => void;
   const got = new Promise<void>((resolve) => (resolveGot = resolve));
 
-  const unsubscribe = adapter.subscribe(topic, async (payload) => {
+  const unsubscribe = adapter.subscribe(topic, (payload) => {
     if (payload.probe === probe) {
       received = true;
       resolveGot();
     }
+    return Promise.resolve();
   });
 
   try {
     const deadline = Date.now() + timeoutMs;
-    while (!received && Date.now() < deadline) {
+    // Publishes again each interval until delivery or the deadline.
+    const publishUntilDelivered = async (): Promise<void> => {
+      if (received || Date.now() >= deadline) return;
       await adapter.publish(topic, { probe });
       // Cancelable retry cadence: clear it when delivery wins, so no orphaned timer lingers.
       let timer: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([
-        got,
-        new Promise<void>((resolve) => (timer = setTimeout(resolve, RETRY_INTERVAL_MS))),
-      ]);
+      const interval = new Promise<void>(
+        (resolve) => (timer = setTimeout(resolve, RETRY_INTERVAL_MS)),
+      );
+      await Promise.race([got, interval]);
       clearTimeout(timer);
-    }
+      return publishUntilDelivered();
+    };
+    await publishUntilDelivered();
     return received
       ? { delivered: true }
       : { delivered: false, message: 'no delivery within timeout' };

@@ -21,15 +21,17 @@ export const ROUTE_KIND_BY_SEGMENT: Readonly<Record<string, RouteKind>> = {
   // backend `/admin/*` routes gate on the `soba_admin` role.
   admin: WORKSPACES, // app/[lang]/admin
   forms: WORKSPACE_APP, // app/[lang]/forms
-  designer: WORKSPACE_APP, // app/[lang]/designer
+  build: WORKSPACE_APP, // app/[lang]/build
+  'my-forms': WORKSPACE_APP, // app/[lang]/my-forms
+  'my-submissions': WORKSPACE_APP, // app/[lang]/my-submissions
   // Public fill/submit route: reachable without signing in; the backend authorizes against the
-  // form's Form submitters audience (a non-public form returns 401 and the renderer shows an error).
+  // form's audience (a non-public form returns 401 and the renderer shows an error).
   form: PUBLIC, // app/[lang]/form/[formId]
-  // Public fill route for an already-opened submission (resume by id); same audience authorization.
+  // Public fill route for an already-opened submission (resume by id); the backend allows only
+  // participants on the submission.
   submit: PUBLIC, // app/[lang]/submit/[submissionId]
-  submissions: WORKSPACE_APP, // app/[lang]/submissions (staff management table)
   // Single-submission view: public so an anonymous submitter sees their confirmation; the backend
-  // authorizes the read against the form's audience (public-form submissions are public data).
+  // allows only participants on the submission.
   submission: PUBLIC, // app/[lang]/submission/[submissionId]
   workspaces: WORKSPACES, // app/[lang]/workspaces
   workspace: WORKSPACES, // app/[lang]/workspace

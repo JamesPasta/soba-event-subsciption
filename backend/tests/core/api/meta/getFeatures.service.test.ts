@@ -33,6 +33,8 @@ describe('MetaApiService.getFeatures', () => {
         availability: 'fixed',
         createdAt: new Date(),
         updatedAt: new Date(),
+        createdBy: null,
+        updatedBy: null,
       },
       {
         code: 'x-off',
@@ -43,6 +45,8 @@ describe('MetaApiService.getFeatures', () => {
         availability: 'scoped',
         createdAt: new Date(),
         updatedAt: new Date(),
+        createdBy: null,
+        updatedBy: null,
       },
     ]);
 

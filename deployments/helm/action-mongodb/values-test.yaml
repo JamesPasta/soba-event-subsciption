@@ -1,0 +1,44 @@
+# Test MongoDB runs independently from the SOBA application release.
+# Create soba-test-mongodb-auth before deploying this chart; do not put
+# credentials in this file or in the workflow.
+mongodb:
+  enabled: true
+  fullnameOverride: soba-test-mongodb
+
+  replicaCount: 1
+
+  auth:
+    existingSecret: soba-test-mongodb-auth
+    usernames:
+      - formio
+    databases:
+      - formio-ce
+
+  persistence:
+    storageClass: netapp-block-standard
+    size: 2Gi
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+
+  pdb:
+    create: false
+
+  podAntiAffinityPreset: soft
+
+  networkPolicy:
+    ingressPodMatchLabels:
+      app.kubernetes.io/name: soba
+      app.kubernetes.io/instance: soba-test
+      app.kubernetes.io/component: formio
+    extraEgress:
+      - ports:
+          - port: 5353
+            protocol: UDP
+          - port: 5353
+            protocol: TCP

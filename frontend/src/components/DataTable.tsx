@@ -83,7 +83,7 @@ export function DataTable<T>({
   sort,
   onSortChange,
   keyExtractor,
-}: DataTableProps<T>) {
+}: Readonly<DataTableProps<T>>) {
   const scrollerRef = useScrollableRegion<HTMLElement>();
 
   const dict = useDictionary();
@@ -131,6 +131,9 @@ export function DataTable<T>({
         type="button"
         className={styles.sortButton}
         data-testid={`datatable-sort-${col.key}`}
+        aria-label={
+          col.label ? `${dict.general.sortBy} ${col.label}` : `${dict.general.sortBy} ${col.key}`
+        }
         onClick={() => onSortChange(`${col.sortField}:${nextDirection}`)}
       >
         {col.label}
@@ -162,9 +165,11 @@ export function DataTable<T>({
     if (error || data.length === 0) {
       return (
         <tr>
+          {/* No divider under the only row: the container clips it on a page, but not under a
+              taller inherited line height such as a design-system accordion's. */}
           <td
             colSpan={columns.length}
-            className="text-center py-5 text-muted"
+            className="text-center py-5 text-muted border-bottom-0"
             data-testid={error ? 'datatable-error' : 'datatable-empty'}
           >
             {/* Callers pass a sentence the reader can act on. Prefixing it turns "Your session has
@@ -221,7 +226,7 @@ export function DataTable<T>({
             <span>{t.itemsPerPage}</span>
             {onPageSizeChange ? (
               <Select
-                aria-label={t.itemsPerPageAria}
+                aria-label={t.itemsPerPageAria || 'Items per page'}
                 data-testid="datatable-page-size-select"
                 size="small"
                 value={effectivePageSize}
@@ -249,7 +254,7 @@ export function DataTable<T>({
               {totalPages <= 1 && <span>{effectivePage}</span>}
               {onPageChange && totalPages > 1 && (
                 <Select
-                  aria-label={t.pageAria}
+                  aria-label={t.pageAria || 'Page'}
                   data-testid="datatable-page-select-select"
                   size="small"
                   value={effectivePage}
@@ -271,7 +276,7 @@ export function DataTable<T>({
                   isIconButton
                   onPress={() => onPageChange?.(effectivePage - 1)}
                   data-testid="datatable-prev-page-button"
-                  aria-label={t.previousPage}
+                  aria-label={t.previousPage || 'Previous page'}
                   isDisabled={effectivePage === 1}
                 >
                   <FaChevronLeft />
@@ -284,7 +289,7 @@ export function DataTable<T>({
                   isIconButton
                   onPress={() => onPageChange?.(effectivePage + 1)}
                   data-testid="datatable-next-page-button"
-                  aria-label={t.nextPage}
+                  aria-label={t.nextPage || 'Next page'}
                   isDisabled={effectivePage >= totalPages}
                 >
                   <FaChevronRight />

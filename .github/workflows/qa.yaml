@@ -1,8 +1,11 @@
-# Reusable static analysis and unit tests (pnpm qa).
+# Static analysis and unit tests (pnpm qa), plus lint and format for integration/playwright.
 name: QA
 
 on:
   workflow_call:
+  # PRs to develop run this through PR Open.
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -19,14 +22,26 @@ jobs:
             command: pnpm --filter frontend run type-check
           - name: Frontend · lint
             command: pnpm --filter frontend run lint
+          - name: Frontend · format
+            command: pnpm --filter frontend run format:check
           - name: Backend · type-check
             command: pnpm --filter backend run type-check
           - name: Backend · lint
             command: pnpm --filter backend run lint
+          - name: Backend · format
+            command: pnpm --filter backend run format:check
+          - name: Lib · type-check
+            command: pnpm --filter @soba/lib run type-check
+          - name: Lib · lint
+            command: pnpm --filter @soba/lib run lint
+          - name: Lib · format
+            command: pnpm --filter @soba/lib run format:check
           - name: Frontend · unit tests
             command: pnpm --filter frontend run test
           - name: Backend · unit tests
             command: pnpm --filter backend run test
+          - name: Lib · unit tests
+            command: pnpm --filter @soba/lib run test
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,6 +57,38 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Run check
+        run: ${{ matrix.command }}
+
+  # integration/playwright is its own npm project, outside the pnpm workspace.
+  integration:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Integration · lint
+            command: npm run lint
+          - name: Integration · format
+            command: npm run format:check
+    defaults:
+      run:
+        working-directory: integration/playwright
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: integration/playwright/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
 
       - name: Run check
         run: ${{ matrix.command }}

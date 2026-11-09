@@ -17,12 +17,6 @@
     "typeRoots": ["./node_modules/@types", "./typings"],
     "skipLibCheck": true
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.d.ts",
-    "tests/**/*.ts",
-    "scripts/**/*.ts",
-    "temporal-worker.ts"
-  ],
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "tests/**/*.ts", "temporal-worker.ts"],
   "exclude": ["node_modules", "bin", "test", "dist"]
 }

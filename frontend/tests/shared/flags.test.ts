@@ -9,8 +9,8 @@ import type { FeaturesMetaPayload } from '@/src/shared/config/featuresMeta';
 const sampleMeta = {
   features: [
     {
-      code: 'workspaces',
-      name: 'Workspaces',
+      code: 'meta',
+      name: 'Meta',
       description: null,
       version: null,
       status: 'active',
@@ -43,16 +43,16 @@ describe('feature flags utilities', () => {
   it('parseFrontendFeaturesAllowlist handles undefined and wildcard', () => {
     expect(parseFrontendFeaturesAllowlist(undefined)).toEqual(new Set());
     expect(parseFrontendFeaturesAllowlist('*')).toBe('all');
-    const set = parseFrontendFeaturesAllowlist(' workspaces , design-mode ');
+    const set = parseFrontendFeaturesAllowlist(' meta , design-mode ');
     expect(set instanceof Set).toBeTruthy();
-    expect((set as Set<string>).has('workspaces')).toBeTruthy();
+    expect((set as Set<string>).has('meta')).toBeTruthy();
   });
 
   it('createIsFeatureAllowed respects platform and frontend policy', () => {
     const meta = sampleMeta as unknown as FeaturesMetaPayload;
     const fn = createIsFeatureAllowed(meta);
     // By default process.env likely doesn't include features so none allowed
-    expect(fn('workspaces')).toBe(false);
+    expect(fn('meta')).toBe(false);
   });
 
   it('createIsFeatureAllowed hides scoped features (can only be resolved with scope)', () => {

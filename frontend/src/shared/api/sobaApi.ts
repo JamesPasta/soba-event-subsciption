@@ -4,28 +4,33 @@ import { getSobaApiBaseUrl } from '../config/runtimeConfig';
 import { parseJson } from './sobaHelpers';
 import { sobaFetch } from './sobaFetch';
 
-import type { SobaFormType } from '../../types/forms';
 import type {
   WorkspaceItem,
   WorkspacesResponse,
+  WorkspaceLookupResponse,
   CreateWorkspaceBody,
   UpdateWorkspaceBody,
+  WorkspaceNameAvailabilityResponse,
 } from '../../types/workspaces';
 import type { CurrentUserResponse } from '../../types/user';
+import type { SortLocale } from '@soba/lib/sort';
+import type { LoginProvidersMetaResponse, RolesMetaResponse } from '@soba/lib';
 import type { ListQueryArgs } from '../../types/list';
+import { sortLocaleHeaders } from './sortLocaleRequest';
 
-export type { SobaFormType, WorkspaceItem, WorkspacesResponse, CurrentUserResponse };
+export type { SobaFormType } from '../../types/forms';
+export type { WorkspaceItem, WorkspacesResponse } from '../../types/workspaces';
+export type { CurrentUserResponse } from '../../types/user';
 // Design-mode (staff, /design/*)
 export {
   createSobaFormioForm,
-  normalizeFormSchema,
   publishSobaFormVersion,
   getSobaForm,
   getSobaForms,
   getSobaSubmissions,
   getSobaSubmission,
   getSobaSubmissionData,
-  getSobaFormVersions,
+  lookupFormVersions,
   getSobaFormVersion,
   getSobaFormVersionPage,
   createFormVersion,
@@ -33,14 +38,32 @@ export {
   getFormVersionSchema,
   updateSobaForm,
   deleteSobaSubmission,
+  getSobaSubmissionReview,
+  addSobaSubmissionNote,
+  updateSobaSubmissionStatus,
+  getSobaSubmissionReviewers,
+  downloadSobaSubmissionFile,
+  updateSobaSubmissionData,
+  getSobaExportFields,
+  startSobaSubmissionExport,
+  listSobaSubmissionExports,
+  stopSobaSubmissionExport,
+  downloadSobaSubmissionExport,
 } from './sobaApiDesign';
 // Submit-mode (public-capable, /submit/*)
 export {
   getSubmitFillBundle,
+  getSubmitForm,
+  getSubmitFormVersionSchema,
   getSubmitSubmissionSchema,
   openSobaFormSubmission,
   saveSobaFormSubmission,
   submitSobaFormSubmission,
+  deleteSubmitSubmission,
+  reviseSubmitSubmission,
+  getMyForms,
+  getMySubmissions,
+  getMyWorkspaces,
   getSubmitSubmission,
   getSubmitSubmissionData,
 } from './sobaApiSubmit';
@@ -125,6 +148,19 @@ export async function fetchFormEnginesMeta(): Promise<unknown> {
   return parseJson(response);
 }
 
+/** The providers people sign in through, by name in the sort locale. */
+export async function fetchLoginProviders(
+  locale?: SortLocale,
+): Promise<LoginProvidersMetaResponse> {
+  const q = locale ? `?locale=${locale}` : '';
+  const response = await fetch(`${getSobaApiBaseUrl()}/meta/login-providers${q}`, {
+    method: 'GET',
+    cache: 'no-store',
+    headers: { Accept: 'application/json', ...sortLocaleHeaders(locale) },
+  });
+  return parseJson(response);
+}
+
 export async function fetchFrontendConfigMeta(): Promise<unknown> {
   const response = await fetch(`${getSobaApiBaseUrl()}/meta/frontend-config`, {
     method: 'GET',
@@ -144,7 +180,7 @@ export async function fetchCodesMeta(onlyEnabledFeatures = true): Promise<unknow
   return parseJson(response);
 }
 
-export async function fetchRolesMeta(onlyEnabledFeatures = true): Promise<unknown> {
+export async function fetchRolesMeta(onlyEnabledFeatures = true): Promise<RolesMetaResponse> {
   const q = onlyEnabledFeatures ? '?only_enabled_features=true' : '';
   const response = await fetch(`${getSobaApiBaseUrl()}/meta/roles${q}`, {
     method: 'GET',
@@ -156,7 +192,7 @@ export async function fetchRolesMeta(onlyEnabledFeatures = true): Promise<unknow
 
 export async function fetchWorkspaces(
   token: string,
-  options: Partial<ListQueryArgs> & { requiredPermission?: string } = {},
+  options: Partial<ListQueryArgs> = {},
 ): Promise<WorkspacesResponse> {
   const response = await sobaFetch('/workspaces', {
     token,
@@ -165,8 +201,30 @@ export async function fetchWorkspaces(
       limit: options.limit,
       sort: options.sort,
       q: options.q || undefined,
-      requiredPermission: options.requiredPermission,
+      locale: options.locale,
     },
+    headers: sortLocaleHeaders(options.locale),
+  });
+  return parseJson(response);
+}
+
+/** Workspaces for a select. The caller must hold every one of `requiredPermissions`. */
+export async function lookupWorkspaces(
+  token: string,
+  options: {
+    requiredPermissions?: readonly string[];
+    disclaimerAccepted?: boolean;
+    locale?: SortLocale;
+  } = {},
+): Promise<WorkspaceLookupResponse> {
+  const response = await sobaFetch('/workspaces/lookup', {
+    token,
+    query: {
+      requiredPermissions: options.requiredPermissions?.join(','),
+      disclaimerAccepted: options.disclaimerAccepted,
+      locale: options.locale,
+    },
+    headers: sortLocaleHeaders(options.locale),
   });
   return parseJson(response);
 }
@@ -196,5 +254,17 @@ export async function updateWorkspace(
   body: UpdateWorkspaceBody,
 ): Promise<WorkspaceItem> {
   const response = await sobaFetch(`/workspaces/${id}`, { token, method: 'PATCH', json: body });
+  return parseJson(response);
+}
+
+/** Whether a team workspace name is free in `org`, case-insensitively; `excludeId` is the workspace being edited. */
+export async function checkWorkspaceNameAvailable(
+  token: string,
+  params: { org: string; name: string; excludeId?: string },
+): Promise<WorkspaceNameAvailabilityResponse> {
+  const response = await sobaFetch('/workspaces/name-availability', {
+    token,
+    query: { org: params.org, name: params.name, excludeId: params.excludeId },
+  });
   return parseJson(response);
 }

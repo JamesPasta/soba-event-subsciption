@@ -6,10 +6,10 @@ import { DataTable, type Column } from '@/src/components/DataTable';
 import { SecondaryText } from '@/src/components/SecondaryText';
 import { StatusTag } from '@/src/components/StatusTag';
 import { useDictionary } from '@/app/[lang]/Providers';
-import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
-import { useDocumentGenerationAudits } from '../useAdminData';
+import { useDocumentGenerationAudits } from '../data/useAdminData';
 import { DOCGEN_AUDITS_LIST_QUERY } from '@/src/shared/list/listQueryMemory';
-import { PAGE_SIZE_OPTIONS, useListQuery } from '@/src/shared/list/useListQuery';
+import { useListQuery } from '@/src/shared/list/useListQuery';
+import { useDataTable } from '@/src/shared/list/useDataTable';
 import type { DocumentGenerationAuditItem } from '@/src/types/admin';
 import styles from './AdminPanel.module.css';
 
@@ -18,7 +18,6 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export function DocumentGenerationAuditsPanel() {
   const dict = useDictionary();
   const dictAudits = dict.admin.audits;
-  const { addNotification } = useNotificationStore();
 
   const [workspaceId, setWorkspaceId] = useState('');
   const [formId, setFormId] = useState('');
@@ -26,35 +25,20 @@ export function DocumentGenerationAuditsPanel() {
   // does not re-read until they search again.
   const [filter, setFilter] = useState<{ workspaceId?: string; formId?: string } | null>(null);
 
-  const listQuery = useListQuery(DOCGEN_AUDITS_LIST_QUERY);
-  const reportLoadError = useCallback(
-    (cause: unknown) => {
-      addNotification({ text: dictAudits.loadError, type: 'error', consoleError: cause });
-    },
-    [addNotification, dictAudits.loadError],
-  );
-  const {
-    audits,
-    total,
-    isLoading: loading,
-    error: loadError,
-  } = useDocumentGenerationAudits(
-    filter,
-    {
-      offset: listQuery.offset,
-      limit: listQuery.pageSize,
-      sort: listQuery.sort,
-    },
-    reportLoadError,
-  );
-  const error = loadError ? dictAudits.loadError : null;
+  const query = useListQuery(DOCGEN_AUDITS_LIST_QUERY);
+  const auditsResult = useDocumentGenerationAudits(filter, {
+    offset: query.offset,
+    limit: query.pageSize,
+    sort: query.sort,
+  });
+  const { table } = useDataTable(query, auditsResult, dictAudits.loadError);
 
   // Both ids are sent when filled, so every filled one has to be a uuid or the backend rejects the
   // whole request. At least one is required.
   const filledIds = [workspaceId.trim(), formId.trim()].filter((value) => value !== '');
   const valid = filledIds.length > 0 && filledIds.every((value) => UUID_PATTERN.test(value));
 
-  const { setPage } = listQuery;
+  const { setPage } = query;
   const handleSearch = useCallback(() => {
     if (!valid) return;
     // A new filter is a different set of rows, so the page number no longer refers to anything.
@@ -129,20 +113,20 @@ export function DocumentGenerationAuditsPanel() {
           label={dictAudits.workspaceIdLabel}
           value={workspaceId}
           onChange={setWorkspaceId}
-          isDisabled={loading}
+          isDisabled={table.loading}
           data-testid="audits-workspace-id"
         />
         <TextField
           label={dictAudits.formIdLabel}
           value={formId}
           onChange={setFormId}
-          isDisabled={loading}
+          isDisabled={table.loading}
           data-testid="audits-form-id"
         />
         <Button
           type="submit"
           variant="primary"
-          isDisabled={loading || !valid}
+          isDisabled={table.loading || !valid}
           data-testid="audits-search"
         >
           {dict.general.search}
@@ -151,21 +135,11 @@ export function DocumentGenerationAuditsPanel() {
 
       {filter ? (
         <DataTable<DocumentGenerationAuditItem>
-          data={audits}
+          {...table}
           columns={columns}
-          loading={loading}
-          error={error}
           emptyMessage={dictAudits.empty}
           loadingMessage={dict.general.loading}
           caption={dictAudits.heading}
-          totalItems={total}
-          pageSize={listQuery.pageSize}
-          currentPage={listQuery.page}
-          onPageChange={listQuery.setPage}
-          onPageSizeChange={listQuery.setPageSize}
-          pageSizeOptions={PAGE_SIZE_OPTIONS}
-          sort={listQuery.sort}
-          onSortChange={listQuery.setSort}
           keyExtractor={(audit) => audit.id}
         />
       ) : (

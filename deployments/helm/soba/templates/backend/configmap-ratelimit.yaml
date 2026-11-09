@@ -11,3 +11,5 @@ data:
   RATE_LIMIT_API_MAX: {{ .Values.backend.rateLimit.apiMax | quote }}
   RATE_LIMIT_PUBLIC_WINDOW_MS: {{ .Values.backend.rateLimit.publicWindowMs | quote }}
   RATE_LIMIT_PUBLIC_MAX: {{ .Values.backend.rateLimit.publicMax | quote }}
+  RATE_LIMIT_RENDER_WINDOW_MS: {{ .Values.backend.rateLimit.renderWindowMs | quote }}
+  RATE_LIMIT_RENDER_MAX: {{ .Values.backend.rateLimit.renderMax | quote }}

@@ -2,7 +2,7 @@
 {{- if .Values.frontend.ingress.enabled }}
 {{- range $name, $app := .Values.frontend.apps }}
 {{- if ne $app.enabled false }}
-{{- $host := include "soba.frontendHostFor" (dict "root" $root "name" $name "app" $app) }}
+{{- $host := include "soba.frontendHost" $root }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -30,7 +30,7 @@ spec:
     - host: {{ $host }}
       http:
         paths:
-          - path: /
+          - path: {{ $app.routePath | default "/" }}
             pathType: Prefix
             backend:
               service:

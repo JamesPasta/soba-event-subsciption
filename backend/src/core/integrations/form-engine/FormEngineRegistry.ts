@@ -6,6 +6,7 @@ import {
   getFormEnginePluginDefinitions,
 } from '../plugins/PluginRegistry';
 import type { FormEnginePluginCatalogEntry } from '../plugins/PluginRegistry';
+import { reportReadinessByKey } from '../plugins/readiness';
 
 let cachedDefinitions: Map<string, FormEnginePluginDefinition> | null = null;
 
@@ -36,25 +37,8 @@ export const createFormEngineAdapter = (engineCode: string): FormEngineAdapter =
 /**
  * Run readiness check on each registered form engine. Only reachability (ok/message) is returned; no config.
  */
-export const checkFormEngineReadiness = async (): Promise<
-  Record<string, FormEngineReadinessResult>
-> => {
-  const catalog = getFormEnginePluginCatalog();
-  const results: Record<string, FormEngineReadinessResult> = {};
-  for (const entry of catalog) {
-    try {
-      const adapter = createFormEngineAdapter(entry.code);
-      if (typeof adapter.readinessCheck === 'function') {
-        results[entry.code] = await adapter.readinessCheck();
-      } else {
-        results[entry.code] = { ok: true };
-      }
-    } catch (err) {
-      results[entry.code] = {
-        ok: false,
-        message: err instanceof Error ? err.message : String(err),
-      };
-    }
-  }
-  return results;
-};
+export const checkFormEngineReadiness = (): Promise<Record<string, FormEngineReadinessResult>> =>
+  reportReadinessByKey(
+    getFormEnginePluginCatalog().map((entry) => entry.code),
+    (code) => createFormEngineAdapter(code).readinessCheck?.(),
+  );

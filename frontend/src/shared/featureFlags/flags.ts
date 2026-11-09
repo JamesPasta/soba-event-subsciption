@@ -2,7 +2,6 @@ import type { FeaturesMetaPayload } from '@/src/shared/config/featuresMeta';
 
 /** Feature `code` values aligned with `GET /meta/features` and `soba.feature`. */
 export const FEATURE_CODES = {
-  WORKSPACES: 'workspaces',
   DESIGN_MODE: 'design-mode',
   SUBMIT_MODE: 'submit-mode',
   /** Backend `soba.feature` seed code `meta` (API meta & health). Mirrored here so
@@ -13,6 +12,16 @@ export const FEATURE_CODES = {
   DOCUMENT_GENERATION: 'document-generation',
   /** BC File Upload component + CHEFS storage provider (backend `soba.feature` code `files`). */
   FILES: 'files',
+  /** Document templates stored per form version, managed by staff. */
+  TEMPLATES: 'templates',
+  /** Finding people to add to a workspace or a form's team. */
+  USER_SEARCH: 'user-search',
+  /** What happens after a submission is received, set on the After Submission tab. */
+  POST_SUBMISSION: 'post-submission',
+  /** Exporting a form's submissions to a file. */
+  SUBMISSION_EXPORT: 'submission-export',
+  /** Generating and managing gateway API keys for a workspace and its forms. */
+  API_KEYS: 'api-keys',
 } as const;
 
 export type FeatureCode = (typeof FEATURE_CODES)[keyof typeof FEATURE_CODES];

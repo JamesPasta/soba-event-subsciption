@@ -1,0 +1,307 @@
+# Scans every file on a branch with SonarQube Cloud and CodeQL. PR checks only report issues on
+# changed lines; this run lists all of them, in the run summary and the full-scan-* artifacts.
+#
+#   gh workflow run full-scan.yaml --ref develop -f target=219      # a PR's head branch
+#   gh workflow run full-scan.yaml --ref develop -f target=develop  # any branch
+name: Full Scan
+run-name: Full scan of ${{ inputs.target || github.ref_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Pull request number or branch name
+        required: true
+        type: string
+      codeql-suite:
+        description: CodeQL query suite (default is the one the PR checks run)
+        type: choice
+        options:
+          - default
+          - security-extended
+          - security-and-quality
+        default: default
+  # Scans the pushed branch when this file changes. That run also registers the workflow, so it
+  # can be dispatched from develop before main has it.
+  push:
+    branches-ignore: [develop, main]
+    paths: [.github/workflows/full-scan.yaml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.target || github.ref_name }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  resolve:
+    name: Resolve target
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      branch: ${{ steps.target.outputs.branch }}
+      sha: ${{ steps.target.outputs.sha }}
+      sonar-branch: ${{ steps.target.outputs.sonar-branch }}
+    steps:
+      - name: Resolve branch and commit
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ inputs.target || github.ref_name }}
+        run: |
+          requested="${TARGET#\#}"
+          if [[ "$requested" =~ ^[0-9]+$ ]]; then
+            pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$requested" \
+              --jq '[.head.repo.full_name // "", .head.ref, .head.sha] | @tsv')
+            IFS=$'\t' read -r repo branch sha <<<"$pr"
+            if [[ "$repo" != "$GITHUB_REPOSITORY" ]]; then
+              echo "::error::PR #$requested is not from a branch in $GITHUB_REPOSITORY."
+              exit 1
+            fi
+            label="PR #$requested ($branch)"
+          else
+            branch="$requested"
+            encoded=$(jq -rn --arg branch "$branch" '$branch | @uri')
+            sha=$(gh api "repos/$GITHUB_REPOSITORY/branches/$encoded" --jq .commit.sha) || {
+              echo "::error::No branch named $branch."
+              exit 1
+            }
+            label="$branch"
+          fi
+
+          # SonarQube Cloud only reports issues in changed files on short-lived branches. Other
+          # branches go into one long-lived branch, named to match the project's
+          # (branch|release)-.* pattern, so every file is reported.
+          case "$branch" in
+            develop | main) sonar_branch="$branch" ;;
+            *) sonar_branch="branch-full-scan" ;;
+          esac
+
+          {
+            echo "branch=$branch"
+            echo "sha=$sha"
+            echo "sonar-branch=$sonar_branch"
+          } >> "$GITHUB_OUTPUT"
+          echo "Scanning $label at \`$sha\`." >> "$GITHUB_STEP_SUMMARY"
+
+  sonar:
+    name: SonarQube Cloud
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Runs sharing a SonarQube Cloud branch take turns.
+    concurrency:
+      group: full-scan-sonar-${{ needs.resolve.outputs.sonar-branch }}
+    env:
+      SONAR_BRANCH: ${{ needs.resolve.outputs.sonar-branch }}
+      BRANCH: ${{ needs.resolve.outputs.branch }}
+      SHA: ${{ needs.resolve.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Branches cut before the CI scan landed have no scanner settings.
+      - name: Use develop's scanner settings if missing
+        run: |
+          if [[ ! -f sonar-project.properties ]]; then
+            git show origin/develop:sonar-project.properties > sonar-project.properties
+          fi
+
+      - name: Scan with SonarQube Cloud
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >-
+            -Dsonar.branch.name=${{ needs.resolve.outputs.sonar-branch }}
+            -Dsonar.scm.revision=${{ needs.resolve.outputs.sha }}
+
+      - name: Collect issues and hotspots
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          RESULTS: ${{ runner.temp }}/full-scan-sonar
+        run: |
+          report_task() { local key=$1; sed -n "s/^$key=//p" .scannerwork/report-task.txt; }
+          server=$(report_task serverUrl)
+          project=$(report_task projectKey)
+          ce_task=$(report_task ceTaskUrl)
+          sonar() { local endpoint=$1; shift; curl -fsS -u "$SONAR_TOKEN:" --get "$server/api/$endpoint" "$@"; }
+
+          # The issues API only sees the analysis once SonarQube Cloud has processed it.
+          for _ in {1..60}; do
+            task=$(curl -fsS -u "$SONAR_TOKEN:" "$ce_task" | jq -c .task)
+            status=$(jq -r .status <<<"$task")
+            [[ "$status" =~ ^(PENDING|IN_PROGRESS)$ ]] || break
+            sleep 5
+          done
+          if [[ "$status" != SUCCESS ]]; then
+            echo "::error::SonarQube Cloud processing status is $status."
+            exit 1
+          fi
+          if [[ "$(jq -r .branch <<<"$task")" != "$SONAR_BRANCH" ]]; then
+            echo "::error::The analysis was recorded on branch $(jq -r .branch <<<"$task"), not $SONAR_BRANCH."
+            exit 1
+          fi
+
+          # Search endpoints return 500 per page and stop at 10,000 results.
+          fetch_all() {
+            local endpoint=$1 field=$2 page=1 body total
+            shift 2
+            while :; do
+              body=$(sonar "$endpoint" "$@" -d ps=500 -d "p=$page")
+              jq -c ".${field}[]" <<<"$body"
+              total=$(jq .paging.total <<<"$body")
+              ((page * 500 < total && page < 20)) || break
+              page=$((page + 1))
+            done
+          }
+
+          mkdir -p "$RESULTS"
+          fetch_all issues/search issues \
+            --data-urlencode "componentKeys=$project" --data-urlencode "branch=$SONAR_BRANCH" \
+            -d resolved=false | jq -s . > "$RESULTS/issues.json"
+          fetch_all hotspots/search hotspots \
+            --data-urlencode "projectKey=$project" --data-urlencode "branch=$SONAR_BRANCH" \
+            -d status=TO_REVIEW | jq -s . > "$RESULTS/hotspots.json"
+          for list in issues hotspots; do
+            if (($(jq length "$RESULTS/$list.json") >= 10000)); then
+              echo "::warning::Only the first 10,000 $list are listed."
+            fi
+          done
+
+          jq -nr \
+            --slurpfile issues "$RESULTS/issues.json" --slurpfile hotspots "$RESULTS/hotspots.json" \
+            --arg server "$server" --arg project "$project" --arg sonar_branch "$SONAR_BRANCH" \
+            --arg branch "$BRANCH" --arg sha "$SHA" --arg repo "$GITHUB_REPOSITORY" '
+            def cell: gsub("\\|"; "\\|") | gsub("\\s+"; " ");
+            def place:
+              (.component | sub("^[^:]+:"; "")) as $path
+              | if .line then "[\($path):\(.line)](https://github.com/\($repo)/blob/\($sha)/\($path)#L\(.line))"
+                else "[\($path)](https://github.com/\($repo)/blob/\($sha)/\($path))" end;
+            def rank: {BLOCKER: 0, CRITICAL: 1, MAJOR: 2, MINOR: 3, INFO: 4}[.] // 5;
+            def risk: {HIGH: 0, MEDIUM: 1, LOW: 2}[.] // 3;
+            ($issues[0]) as $issues | ($hotspots[0]) as $hotspots
+            | "\($server)/project/issues?id=\($project)&branch=\($sonar_branch)" as $issue_url
+            | "\($server)/project/security_hotspots?id=\($project)&branch=\($sonar_branch)" as $hotspot_url
+            | "### SonarQube Cloud",
+              "",
+              "\($issues | length) open issues and \($hotspots | length) hotspots to review on `\($branch)` at `\($sha[:7])`, analysed as SonarQube Cloud branch [\($sonar_branch)](\($issue_url)&resolved=false).",
+              "",
+              if ($issues | length) > 0 then
+                "| Severity | Type | Rule | Location | Message |",
+                "| --- | --- | --- | --- | --- |",
+                ($issues | sort_by((.severity | rank), .component, .line // 0)[]
+                  | "| \(.severity // "-") | \(.type // "-") | [\(.rule)](\($issue_url)&open=\(.key)) | \(place) | \(.message | cell) |"),
+                ""
+              else empty end,
+              if ($hotspots | length) > 0 then
+                "| Risk | Category | Rule | Location | Message |",
+                "| --- | --- | --- | --- | --- |",
+                ($hotspots | sort_by((.vulnerabilityProbability | risk), .component, .line // 0)[]
+                  | "| \(.vulnerabilityProbability) | \(.securityCategory) | [\(.ruleKey)](\($hotspot_url)&hotspots=\(.key)) | \(place) | \(.message | cell) |"),
+                ""
+              else empty end
+          ' > "$RESULTS/report.md"
+
+          if (($(wc -c < "$RESULTS/report.md") < 1000000)); then
+            cat "$RESULTS/report.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            head -n 3 "$RESULTS/report.md" >> "$GITHUB_STEP_SUMMARY"
+            echo "The full list is too long for this page; see the full-scan-sonar artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: full-scan-sonar
+          path: ${{ runner.temp }}/full-scan-sonar
+
+  codeql:
+    name: CodeQL · ${{ matrix.language }}
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # The CodeQL action reads its feature flags from the code scanning API.
+      security-events: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, actions]
+    env:
+      BRANCH: ${{ needs.resolve.outputs.branch }}
+      SHA: ${{ needs.resolve.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: ${{ inputs.codeql-suite != 'default' && inputs.codeql-suite || '' }}
+
+      # Code scanning default setup owns this repository's alerts, so results stay in the run.
+      - name: Analyze
+        uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          upload: never
+          upload-database: false
+          output: ${{ runner.temp }}/full-scan-codeql
+
+      - name: List results
+        env:
+          LANGUAGE: ${{ matrix.language }}
+          RESULTS: ${{ runner.temp }}/full-scan-codeql
+        run: |
+          jq -sr --arg language "$LANGUAGE" --arg repo "$GITHUB_REPOSITORY" \
+            --arg branch "$BRANCH" --arg sha "$SHA" '
+            def cell: gsub("\\[(?<text>[^\\]]*)\\]\\(\\d+\\)"; "\(.text)") | gsub("\\|"; "\\|") | gsub("\\s+"; " ");
+            def severity:
+              if .score >= 9 then "critical" elif .score >= 7 then "high"
+              elif .score >= 4 then "medium" elif .score > 0 then "low" else .level end;
+            [.[].runs[] as $run | $run.results[]
+              | (try $run.tool.extensions[.rule.toolComponent.index].rules[.rule.index] catch null) as $rule
+              | {
+                  rule: .ruleId,
+                  score: ($rule.properties["security-severity"] // "0" | tonumber),
+                  level: (.level // $rule.defaultConfiguration.level // "warning"),
+                  path: .locations[0].physicalLocation.artifactLocation.uri,
+                  line: .locations[0].physicalLocation.region.startLine,
+                  message: .message.text
+                }]
+            | sort_by(-.score, .path, .line)
+            | "### CodeQL · \($language)",
+              "",
+              "\(length) results on `\($branch)` at `\($sha[:7])`.",
+              "",
+              if length > 0 then
+                "| Severity | Rule | Location | Message |",
+                "| --- | --- | --- | --- |",
+                (.[] | "| \(severity) | \(.rule) | [\(.path):\(.line)](https://github.com/\($repo)/blob/\($sha)/\(.path)#L\(.line)) | \(.message | cell) |"),
+                ""
+              else empty end
+          ' "$RESULTS"/*.sarif > "$RESULTS/report.md"
+          cat "$RESULTS/report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: full-scan-codeql-${{ matrix.language }}
+          path: ${{ runner.temp }}/full-scan-codeql

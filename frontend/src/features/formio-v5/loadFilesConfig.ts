@@ -1,9 +1,5 @@
+import type { FilesConfigMetaResponse as FilesConfig } from '@soba/lib';
 import { getSobaApiBaseUrl } from '@/src/shared/config/runtimeConfig';
-
-export interface FilesConfig {
-  maxFileSizeMb: number;
-  blockedExtensions: string[];
-}
 
 let cached: FilesConfig | null = null;
 let inflight: Promise<FilesConfig | null> | null = null;

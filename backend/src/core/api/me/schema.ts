@@ -1,52 +1,39 @@
 import { extendZodWithOpenApi, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
+import {
+  MeActorSchema as LibMeActorSchema,
+  MeProfileSchema as LibMeProfileSchema,
+  MePreferencesSchema as LibMePreferencesSchema,
+  MeCapabilitiesSchema as LibMeCapabilitiesSchema,
+  MeResponseSchema as LibMeResponseSchema,
+  PatchMeBodySchema as LibPatchMeBodySchema,
+  TenantSchema as LibTenantSchema,
+  ListTenantsResponseSchema as LibListTenantsResponseSchema,
+} from '@soba/lib';
 
 extendZodWithOpenApi(z);
 
-export const MeActorSchema = z
-  .object({
-    id: z.string(),
-    displayLabel: z.string().nullable(),
-    status: z.string(),
-  })
-  .openapi('Me_Actor');
+export const MeActorSchema = LibMeActorSchema.clone().openapi('Me_Actor');
+export const MeProfileSchema = LibMeProfileSchema.clone().openapi('Me_Profile');
+export const MePreferencesSchema = LibMePreferencesSchema.clone().openapi('Me_Preferences');
+export const MeCapabilitiesSchema = LibMeCapabilitiesSchema.clone().openapi('Me_Capabilities');
 
-export const MeProfileSchema = z
-  .object({
-    displayName: z.string().nullable(),
-    email: z.string().nullable(),
-    preferredUsername: z.string().nullable(),
-  })
-  .openapi('Me_Profile');
+export const MeResponseSchema = LibMeResponseSchema.extend({
+  actor: MeActorSchema,
+  profile: MeProfileSchema,
+  preferences: MePreferencesSchema,
+  capabilities: MeCapabilitiesSchema,
+}).openapi('Me_Response');
 
-export const MePreferencesSchema = z
-  .object({
-    defaultWorkspaceId: z.string().uuid().nullable().optional(),
-  })
-  .openapi('Me_Preferences');
+export const PatchMeBodySchema = LibPatchMeBodySchema.extend({
+  preferences: MePreferencesSchema,
+}).openapi('Me_PatchBody');
 
-export const MeCapabilitiesSchema = z
-  .object({
-    canCreateWorkspace: z.boolean(),
-    /** Platform admin via the soba_admin table: IdP-sourced or granted directly. */
-    isSobaAdmin: z.boolean(),
-  })
-  .openapi('Me_Capabilities');
+export const MeTenantSchema = LibTenantSchema.clone().openapi('Me_Tenant');
 
-export const MeResponseSchema = z
-  .object({
-    actor: MeActorSchema,
-    profile: MeProfileSchema,
-    preferences: MePreferencesSchema,
-    capabilities: MeCapabilitiesSchema,
-  })
-  .openapi('Me_Response');
-
-export const PatchMeBodySchema = z
-  .object({
-    preferences: MePreferencesSchema,
-  })
-  .openapi('Me_PatchBody');
+export const MeTenantsResponseSchema = LibListTenantsResponseSchema.extend({
+  tenants: z.array(MeTenantSchema),
+}).openapi('Me_TenantsResponse');
 
 export const registerMeOpenApi = (registry: OpenAPIRegistry) => {
   registry.registerPath({
@@ -100,6 +87,30 @@ export const registerMeOpenApi = (registry: OpenAPIRegistry) => {
       },
       404: {
         description: 'Current actor not found',
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/me/tenants',
+    tags: ['core.me'],
+    security: [{ bearerAuth: [] }],
+    responses: {
+      200: {
+        description:
+          "The caller's tenants from the default tenant engine; empty when the engine does not serve the caller's identity provider",
+        content: {
+          'application/json': {
+            schema: MeTenantsResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: 'Missing actor identity or bearer token',
+      },
+      503: {
+        description: 'The tenant engine is unavailable',
       },
     },
   });

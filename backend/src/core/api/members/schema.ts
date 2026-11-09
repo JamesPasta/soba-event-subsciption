@@ -1,12 +1,13 @@
 import { extendZodWithOpenApi, OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
+import { makeSortEnum } from '@soba/lib';
 import {
-  makeSortEnum,
   offsetQueryFields,
   rejectedCursorField,
   searchQueryField,
   OffsetPageSchema,
   OFFSET_DRIFT_NOTE,
+  sortLocaleQueryField,
 } from '../shared/offsetPagination';
 import { MEMBER_SORT_FIELDS } from '../../db/repos/membershipRepo';
 import { workspaceIdQueryField } from '../shared/schema';
@@ -34,6 +35,7 @@ export const ListMembersQuerySchema = z
     status: z.string().trim().min(1).optional(),
     q: searchQueryField.openapi({ description: 'Matches anywhere in the member display label.' }),
     sort: MemberSortSchema.default('displayLabel:asc'),
+    locale: sortLocaleQueryField,
   })
   .openapi('Members_ListMembersQuery');
 
@@ -70,6 +72,7 @@ export const registerMembersOpenApi = (registry: OpenAPIRegistry) => {
         },
       },
       400: { description: 'Invalid query' },
+      403: { description: 'Actor is not a member of the workspace, or is a viewer' },
     },
   });
 };

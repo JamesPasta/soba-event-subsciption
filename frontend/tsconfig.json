@@ -30,7 +30,9 @@
     "**/*.mts",
     ".next/dev/types/**/*.ts",
     ".next-forms/types/**/*.ts",
-    ".next-forms/dev/types/**/*.ts"
+    ".next-forms/dev/types/**/*.ts",
+    ".next-designer/types/**/*.ts",
+    ".next-designer/dev/types/**/*.ts"
   ],
   "exclude": ["node_modules", "eslint.config.mts"]
 }

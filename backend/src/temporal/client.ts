@@ -8,9 +8,7 @@ export function getClient(): Promise<Client> {
   if (!env.getTemporalAllowed()) {
     return Promise.reject(new Error('Temporal is disabled (TEMPORAL_ALLOWED is not true).'));
   }
-  if (!clientPromise) {
-    clientPromise = createClient();
-  }
+  clientPromise ??= createClient();
   return clientPromise;
 }
 

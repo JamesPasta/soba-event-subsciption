@@ -9,17 +9,16 @@ import shellStyles from '../ui/AppShell.module.css';
 import { loadFeaturesMeta } from '@/src/shared/config/featuresMeta';
 import { formatAppVersion, loadBuildMeta } from '@/src/shared/config/runtimeConfig';
 import { createIsFeatureAllowed, FEATURE_CODES } from '@/src/shared/featureFlags/flags';
-import { getHeaderNavigationItems, getOverlayNavigationItems } from '@/src/app/plugins/registry';
 import { AppAccessGuard } from '@/src/app/routing/AppAccessGuard';
 import React from 'react';
 
 export default async function RootLayout({
   children,
   params,
-}: {
+}: Readonly<{
   children: React.ReactNode;
   params: Promise<{ lang: string }>;
-}) {
+}>) {
   const { lang } = await params;
   // Every first path segment routes here, including /robots.txt and scanner traffic. The dictionary
   // is a lookup over the known locales, so an unchecked value throws and the request 500s.
@@ -32,34 +31,22 @@ export default async function RootLayout({
   const [featuresMeta, build] = await Promise.all([loadFeaturesMeta(), loadBuildMeta()]);
   const appVersion = build ? formatAppVersion(build) : undefined;
   const isFeatureAllowed = createIsFeatureAllowed(featuresMeta);
-  const headerNavItems = getHeaderNavigationItems(locale, dictionary, isFeatureAllowed);
-  const overlayNavItems = getOverlayNavigationItems(locale, dictionary, isFeatureAllowed);
 
-  const showAppLinks =
-    isFeatureAllowed(FEATURE_CODES.SUBMIT_MODE) || isFeatureAllowed(FEATURE_CODES.DESIGN_MODE);
-  const showHome = isFeatureAllowed(FEATURE_CODES.MARKETING);
-  const showWorkspaces = isFeatureAllowed(FEATURE_CODES.WORKSPACES);
+  const designMode = isFeatureAllowed(FEATURE_CODES.DESIGN_MODE);
+  const submitMode = isFeatureAllowed(FEATURE_CODES.SUBMIT_MODE);
 
   return (
     <DictionaryProvider dictionary={dictionary} locale={locale}>
       <div className={shellStyles.shell}>
         <div className={shellStyles.header}>
-          <Header
-            headerNavItems={headerNavItems}
-            overlayNavItems={overlayNavItems}
-            showWorkspaces={showWorkspaces}
-          />
+          <Header designMode={designMode} />
         </div>
         <div className={shellStyles.row}>
           <AppAside>
-            <SideNav
-              showAppLinks={showAppLinks}
-              showHome={showHome}
-              showWorkspaces={showWorkspaces}
-            />
+            <SideNav designMode={designMode} submitMode={submitMode} />
           </AppAside>
           <main id="main-content" tabIndex={-1} className={shellStyles.main}>
-            <AppAccessGuard locale={locale} workspacesEnabled={showWorkspaces}>
+            <AppAccessGuard locale={locale} designMode={designMode}>
               {children}
             </AppAccessGuard>
           </main>

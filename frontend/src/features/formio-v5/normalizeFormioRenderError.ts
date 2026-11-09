@@ -1,4 +1,4 @@
-import { isSessionExpired } from '@/src/shared/api/sobaFetch';
+import { isSessionExpired } from '@/src/shared/api/dataError';
 
 /**
  * Turn Form.io `@formio/react` <Form /> `onError` payloads into a single user-facing string.
@@ -31,7 +31,7 @@ export function normalizeFormioRenderError(
   if (typeof err === 'string') return err;
   if (err instanceof Error) return err.message;
   if (Array.isArray(err)) {
-    const parts = err.map(formioErrorPartToMessage).filter((s): s is string => Boolean(s));
+    const parts = err.map(formioErrorPartToMessage).filter(Boolean);
     return parts.length > 0 ? parts.join('; ') : fallbackMessage;
   }
   const single = formioErrorPartToMessage(err);

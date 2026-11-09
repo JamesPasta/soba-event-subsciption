@@ -6,7 +6,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   Button,
   Form,
-  Heading,
   InlineAlert,
   Select,
   TextField,
@@ -16,10 +15,9 @@ import { ListPageAuthGate } from '@/src/components/ListPageLayout';
 import { useKeycloak } from '@/lib/hooks/useKeycloak';
 import { useDictionary } from '@/app/[lang]/Providers';
 import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
-import { upsertFeatureScope } from '@/src/shared/api/sobaApiAdmin';
 import { getLocaleFromPath } from '@/src/shared/util/locale';
 import type { FeatureScopeItem, FeatureScopeStatus, FeatureScopeType } from '@/src/types/admin';
-import { useFeatureScope } from '../useAdminData';
+import { useFeatureScope, useFeatureScopeWriter } from '../data/useAdminData';
 import { useIsSobaAdmin } from '../useIsSobaAdmin';
 import styles from './AdminPanel.module.css';
 
@@ -37,6 +35,7 @@ function FeatureScopeForm({ scopedFeatureCodes, featureScope }: Readonly<Feature
   const dictScopes = dict.admin.featureScopes;
   const { token } = useKeycloak();
   const { addNotification } = useNotificationStore();
+  const scopeWriter = useFeatureScopeWriter();
   const router = useRouter();
   const pathname = usePathname();
   const locale = getLocaleFromPath(pathname);
@@ -61,7 +60,7 @@ function FeatureScopeForm({ scopedFeatureCodes, featureScope }: Readonly<Feature
     if (!token || !valid) return;
     setSaving(true);
     try {
-      await upsertFeatureScope(token, {
+      await scopeWriter.upsert(token, {
         featureCode: featureCode.trim(),
         scopeType,
         scopeId: scopeId.trim(),
@@ -81,6 +80,7 @@ function FeatureScopeForm({ scopedFeatureCodes, featureScope }: Readonly<Feature
     scopeType,
     scopeId,
     status,
+    scopeWriter,
     router,
     locale,
     addNotification,
@@ -228,9 +228,6 @@ export function FeatureScopePanel({
 
   return (
     <div>
-      <Heading level={1} id="feature-scope-form-heading">
-        {isEdit ? dictScopes.manageHeading : dictScopes.createHeading}
-      </Heading>
       <p className={styles.panelIntro}>{dictScopes.intro}</p>
       {unavailable ? (
         <InlineAlert

@@ -37,11 +37,12 @@ export async function eventStreamSelfTest(
       stream,
       `selftest-${uuidv7()}`,
       'selftest',
-      async (message) => {
+      (message) => {
         if (message.event.data.probe === probe) {
           received = true;
           resolveGot();
         }
+        return Promise.resolve();
       },
       { from: 'beginning' },
     );

@@ -30,6 +30,9 @@ export type StoredProfile = NormalizedProfile;
  */
 export type IdpAttributes = Record<string, unknown>;
 
+/** A stored profile or raw token attributes, possibly missing. */
+export type ProfileSource = StoredProfile | IdpAttributes | null | undefined;
+
 /** True if value looks like a normalized profile (has displayName, email, or preferredUsername) rather than raw token claims. */
 function isStoredProfile(v: Record<string, unknown>): boolean {
   return 'displayName' in v || 'email' in v || 'preferredUsername' in v;
@@ -39,9 +42,7 @@ function isStoredProfile(v: Record<string, unknown>): boolean {
  * Resolve a normalized profile from either app_user.profile (StoredProfile) or user_identity.idp_attributes (raw token).
  * When source is raw token, returns it as-is; displayLabel and other fields may be absent (plugins set them when creating users).
  */
-export function profileFromSource(
-  source: StoredProfile | IdpAttributes | null | undefined,
-): NormalizedProfile {
+export function profileFromSource(source: ProfileSource): NormalizedProfile {
   if (!source || typeof source !== 'object') return {};
   if (isStoredProfile(source as Record<string, unknown>)) return source as NormalizedProfile;
   return source as NormalizedProfile;
@@ -52,23 +53,23 @@ export function profileFromSource(
  * IdP-agnostic: only uses common fields and displayLabel (no idir_username/bceid_username precedence).
  */
 export const profileHelpers = {
-  getDisplayName(source: StoredProfile | IdpAttributes | null | undefined): string | null {
+  getDisplayName(source: ProfileSource): string | null {
     const p = profileFromSource(source);
     return (p.displayName as string | null | undefined) ?? null;
   },
-  getEmail(source: StoredProfile | IdpAttributes | null | undefined): string | null {
+  getEmail(source: ProfileSource): string | null {
     const p = profileFromSource(source);
     return (p.email as string | null | undefined) ?? null;
   },
-  getPreferredUsername(source: StoredProfile | IdpAttributes | null | undefined): string | null {
+  getPreferredUsername(source: ProfileSource): string | null {
     const p = profileFromSource(source);
     return (p.preferredUsername as string | null | undefined) ?? null;
   },
-  getFirstName(source: StoredProfile | IdpAttributes | null | undefined): string | null {
+  getFirstName(source: ProfileSource): string | null {
     const p = profileFromSource(source);
     return (p.firstName as string | null | undefined) ?? null;
   },
-  getLastName(source: StoredProfile | IdpAttributes | null | undefined): string | null {
+  getLastName(source: ProfileSource): string | null {
     const p = profileFromSource(source);
     return (p.lastName as string | null | undefined) ?? null;
   },
@@ -76,10 +77,7 @@ export const profileHelpers = {
    * Best single value for user stamps / audit display.
    * Prefers plugin-set displayLabel, then displayName, email, name, preferredUsername, fallbackSub.
    */
-  getDisplayLabel(
-    source: StoredProfile | IdpAttributes | null | undefined,
-    fallbackSub?: string | null,
-  ): string | null {
+  getDisplayLabel(source: ProfileSource, fallbackSub?: string | null): string | null {
     const p = profileFromSource(source);
     const displayLabel = (p.displayLabel as string | null | undefined) ?? null;
     const displayName = (p.displayName as string | null | undefined) ?? null;
@@ -93,7 +91,7 @@ export const profileHelpers = {
     if (preferred && preferred.length > 0) return preferred;
     return fallbackSub ?? null;
   },
-  getDefaultWorkspaceId(source: StoredProfile | IdpAttributes | null | undefined): string | null {
+  getDefaultWorkspaceId(source: ProfileSource): string | null {
     const p = profileFromSource(source);
     const prefs = p.preferences;
     if (!prefs || typeof prefs !== 'object') return null;

@@ -43,4 +43,35 @@ describe('Modal Component', () => {
 
     expect(screen.getByRole('button', { name: 'Footer Button' })).toBeInTheDocument();
   });
+
+  it('shows the close button by default', () => {
+    render(
+      <Modal show={true} title="Closeable" onClose={vi.fn()}>
+        <div>Content</div>
+      </Modal>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
+  it('keeps the close button when isDismissable is off', () => {
+    render(
+      <Modal show={true} title="Not Dismissable" onClose={vi.fn()} isDismissable={false}>
+        <div>Content</div>
+      </Modal>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
+  it('hides the close button when isCloseable is off', () => {
+    render(
+      <Modal show={true} title="Not Closeable" onClose={vi.fn()} isCloseable={false}>
+        <div>Content</div>
+      </Modal>,
+    );
+
+    expect(screen.getByText('Content')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+  });
 });

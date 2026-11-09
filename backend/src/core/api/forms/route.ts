@@ -1,12 +1,13 @@
 import express from 'express';
 import { validateRequest } from '../shared/validation';
+import { sortLocale } from '../../middleware/sortLocale';
 import {
   workspaceFromBody,
   workspaceListScope,
   workspaceFromResource,
 } from '../../middleware/workspaceContext';
 import { requireFormPermissions } from '../../middleware/requireFormPermissions';
-import { Permissions } from '../../db/codes';
+import { FormCreatePermissions, Permissions } from '../../db/codes';
 import {
   createForm,
   normalizeFormSchema,
@@ -16,12 +17,12 @@ import {
   getFormVersion,
   listForms,
   listFormVersions,
+  lookupFormVersions,
   deleteForm,
   deleteFormVersion,
   saveFormVersion,
   publishFormVersion,
   unpublishFormVersion,
-  restoreFormVersion,
   provisionFormVersionSchema,
   getFormVersionSchema,
 } from './controller';
@@ -33,6 +34,7 @@ import {
   NormalizeSchemaBodySchema,
   ListFormsQuerySchema,
   ListFormVersionsQuerySchema,
+  FormVersionLookupQuerySchema,
   ProvisionSchemaBodySchema,
   SaveFormVersionBodySchema,
   SaveFormVersionParamsSchema,
@@ -57,15 +59,17 @@ const formFromBodyResource = workspaceFromResource({ kind: 'form', idFrom: 'body
 router.get(
   FORMS_PATH,
   validateRequest({ query: ListFormsQuerySchema }),
+  sortLocale,
   workspaceListScope({ anchorOrder: ['formId', 'workspaceId'], allowEmpty: true }),
   requireFormPermissions([Permissions.form_read]),
   listForms,
 );
-// Membership-only (workspace resolved from the body); the disclaimer gate lives in the service.
+// Workspace from the body; disclaimer is checked in the service. form_create is form_admin-only (`*`).
 router.post(
   FORMS_PATH,
   validateRequest({ body: CreateFormBodySchema }),
   workspaceFromBody,
+  requireFormPermissions(FormCreatePermissions),
   createForm,
 );
 // Schema-shaping utility; actor-only (no workspace context).
@@ -95,6 +99,14 @@ router.get(
   requireFormPermissions([Permissions.form_read]),
   listFormVersions,
 );
+// Registered before the `:id` route, which would otherwise take `lookup` as an id.
+router.get(
+  `${FORM_VERSIONS_PATH}/lookup`,
+  validateRequest({ query: FormVersionLookupQuerySchema }),
+  workspaceListScope({ anchorOrder: ['formId'] }),
+  requireFormPermissions([Permissions.form_read]),
+  lookupFormVersions,
+);
 router.get(
   FORM_VERSIONS_ID_PATH,
   validateRequest({ params: FormVersionIdParamsSchema }),
@@ -106,7 +118,8 @@ router.post(
   FORM_VERSIONS_PATH,
   validateRequest({ body: CreateFormVersionBodySchema }),
   formFromBodyResource,
-  requireFormPermissions([Permissions.design_create]),
+  // Creating a draft writes its schema, so it needs design_update too.
+  requireFormPermissions([Permissions.design_create, Permissions.design_update]),
   createFormVersion,
 );
 router.post(
@@ -129,13 +142,6 @@ router.post(
   formVersionResource,
   requireFormPermissions([Permissions.design_update]),
   unpublishFormVersion,
-);
-router.post(
-  `${FORM_VERSIONS_ID_PATH}/restore`,
-  validateRequest({ params: FormVersionIdParamsSchema }),
-  formVersionResource,
-  requireFormPermissions([Permissions.design_update]),
-  restoreFormVersion,
 );
 router.get(
   `${FORM_VERSIONS_ID_PATH}/schema`,

@@ -15,17 +15,18 @@ import {
   FaChevronRight,
   FaChevronLeft,
   FaUserShield,
+  FaRegFileLines,
+  FaInbox,
 } from 'react-icons/fa6';
 import { useIsSobaAdmin } from '@/src/features/admin/useIsSobaAdmin';
 import styles from './SideNav.module.css';
 
 interface SideNavProps {
-  showAppLinks: boolean;
-  showHome: boolean;
-  showWorkspaces: boolean;
+  designMode: boolean;
+  submitMode: boolean;
 }
 
-export function SideNav({ showAppLinks, showHome, showWorkspaces }: Readonly<SideNavProps>) {
+export function SideNav({ designMode, submitMode }: Readonly<SideNavProps>) {
   const { authenticated } = useKeycloak();
   const { isSobaAdmin } = useIsSobaAdmin();
   const dict = useDictionary();
@@ -33,30 +34,48 @@ export function SideNav({ showAppLinks, showHome, showWorkspaces }: Readonly<Sid
   const locale = dict.locale === 'en' || dict.locale === 'fr' ? dict.locale : 'en';
   const [isCollapsed, setIsCollapsed] = useState(false);
 
+  const homeIcon = <FaHouse className={styles.iconOutlineBootstrap} size={20} />;
   const navItems = [];
-  if (showHome) {
-    navItems.push({
-      href: authenticated ? navLink(`/${locale}/forms`) : `/`,
-      title: authenticated ? dict.general.forms : dict.general.home,
-      testId: 'home-nav',
-      icon: <FaHouse className={styles.iconOutlineBootstrap} size={20} />,
-      isActive: authenticated
-        ? pathname === `/${locale}/forms`
-        : pathname === `/${locale}` || pathname === `/`,
-    });
+  if (authenticated && designMode) {
+    navItems.push(
+      {
+        href: navLink(`/${locale}/forms`),
+        title: dict.general.forms,
+        testId: 'forms-nav',
+        icon: homeIcon,
+        isActive: pathname === `/${locale}/forms`,
+      },
+      {
+        href: navLink(`/${locale}/workspaces`),
+        title: dict.header.workspaces,
+        testId: 'workspaces-nav',
+        icon: <FaList size={20} />,
+        isActive:
+          pathname.startsWith(`/${locale}/workspaces`) ||
+          pathname === `/${locale}/workspace` ||
+          pathname.startsWith(`/${locale}/workspace/`),
+      },
+    );
   }
 
-  if (showWorkspaces && authenticated) {
-    navItems.push({
-      href: navLink(`/${locale}/workspaces`),
-      title: dict.header.workspaces,
-      testId: 'workspaces-nav',
-      icon: <FaList size={20} />,
-      isActive:
-        pathname.startsWith(`/${locale}/workspaces`) ||
-        pathname === `/${locale}/workspace` ||
-        pathname.startsWith(`/${locale}/workspace/`),
-    });
+  if (authenticated && submitMode) {
+    navItems.push(
+      {
+        href: navLink(`/${locale}/my-forms`),
+        title: dict.general.myForms,
+        testId: 'my-forms-nav',
+        // The house marks the landing list: the design forms list when both modes are on.
+        icon: designMode ? <FaRegFileLines size={20} /> : homeIcon,
+        isActive: pathname.startsWith(`/${locale}/my-forms`),
+      },
+      {
+        href: navLink(`/${locale}/my-submissions`),
+        title: dict.general.mySubmissions,
+        testId: 'my-submissions-nav',
+        icon: <FaInbox size={20} />,
+        isActive: pathname.startsWith(`/${locale}/my-submissions`),
+      },
+    );
   }
 
   if (authenticated && isSobaAdmin) {
@@ -69,24 +88,22 @@ export function SideNav({ showAppLinks, showHome, showWorkspaces }: Readonly<Sid
     });
   }
 
-  if (showAppLinks) {
-    navItems.push(
-      {
-        href: `/${locale}/feedback`,
-        title: dict.general.feedback,
-        testId: 'feedback-nav',
-        icon: <FaRegMessage size={20} />,
-        isActive: pathname.startsWith(`/${locale}/feedback`),
-      },
-      {
-        href: `/${locale}/help`,
-        title: dict.general.help,
-        testId: 'help-nav',
-        icon: <FaRegCircleQuestion size={20} />,
-        isActive: pathname.startsWith(`/${locale}/help`),
-      },
-    );
-  }
+  navItems.push(
+    {
+      href: `/${locale}/feedback`,
+      title: dict.general.feedback,
+      testId: 'feedback-nav',
+      icon: <FaRegMessage size={20} />,
+      isActive: pathname.startsWith(`/${locale}/feedback`),
+    },
+    {
+      href: `/${locale}/help`,
+      title: dict.general.help,
+      testId: 'help-nav',
+      icon: <FaRegCircleQuestion size={20} />,
+      isActive: pathname.startsWith(`/${locale}/help`),
+    },
+  );
 
   return (
     <nav className={`d-flex flex-column py-3 px-2 ${styles.sideNav}`}>

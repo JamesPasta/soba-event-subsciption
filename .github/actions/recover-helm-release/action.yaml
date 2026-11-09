@@ -1,0 +1,41 @@
+name: Recover Helm Release
+description: Delete the pending release records an interrupted deploy leaves behind, which otherwise block every later Helm upgrade.
+
+inputs:
+  release:
+    description: Helm release to check.
+    required: true
+  namespace:
+    description: OpenShift namespace of the release.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Delete pending Helm release records
+      shell: bash
+      env:
+        RELEASE: ${{ inputs.release }}
+        NAMESPACE: ${{ inputs.namespace }}
+      run: |
+        set -euo pipefail
+        # The upgrade then continues from the last good revision, or reinstalls and adopts the
+        # existing objects; workloads are never rolled back to older code.
+        SELECTOR="owner=helm,name=${RELEASE},status in (pending-install,pending-upgrade,pending-rollback)"
+        ERR=$(mktemp)
+        for attempt in 1 2 3; do
+          if OUT=$(oc delete secret -n "${NAMESPACE}" -l "${SELECTOR}" -o name 2>"${ERR}"); then
+            # oc prints "No resources found" to stdout when nothing matches.
+            DELETED=$(grep '^secret/' <<< "${OUT}" || true)
+            if [ -n "${DELETED}" ]; then
+              echo "::warning::Deleted pending Helm records left by an interrupted deploy: ${DELETED//$'\n'/ }"
+            fi
+            exit 0
+          fi
+          cat "${ERR}" >&2
+          if [ "${attempt}" -lt 3 ] && grep -qE 'Unable to connect|refused|i/o timeout|TLS handshake timeout' "${ERR}"; then
+            sleep 20
+          else
+            exit 1
+          fi
+        done

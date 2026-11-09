@@ -2,6 +2,7 @@ import { PluginConfigReader } from '../../core/config/pluginConfig';
 import {
   DocumentGenerationAdapter,
   DocumentGenerationReadinessResult,
+  DocumentRenderRequest,
   DocumentRenderResult,
 } from '../../core/integrations/document-generation/DocumentGenerationAdapter';
 import { HttpClient, HttpClientError, joinUrl } from '../../core/http/httpClient';
@@ -40,9 +41,9 @@ export class CdogsV2Adapter implements DocumentGenerationAdapter {
     });
   }
 
-  async render(payload: Record<string, unknown>): Promise<DocumentRenderResult> {
+  async render(request: DocumentRenderRequest): Promise<DocumentRenderResult> {
     try {
-      return await this.attemptRender(payload);
+      return await this.attemptRender(request);
     } catch (err) {
       if (isTokenRejected(err)) {
         log.error(
@@ -54,8 +55,8 @@ export class CdogsV2Adapter implements DocumentGenerationAdapter {
     }
   }
 
-  private async attemptRender(payload: Record<string, unknown>): Promise<DocumentRenderResult> {
-    const body = toCdogsRenderBody(payload);
+  private async attemptRender(request: DocumentRenderRequest): Promise<DocumentRenderResult> {
+    const body = toCdogsRenderBody(request);
     // One budget for the attempt and its retry, so a 401 can't double the time the pod holds this.
     const deadline = this.http.deadline();
     try {

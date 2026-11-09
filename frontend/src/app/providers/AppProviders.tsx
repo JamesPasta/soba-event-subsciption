@@ -8,10 +8,8 @@ import makeStore from '@/lib/store';
 import { swrConfig } from '@/src/shared/api/swrConfig';
 import { refreshAccessToken } from '@/lib/slices/keycloakSlice';
 import { setTokenRefresher } from '@/src/shared/auth/tokenRefresh';
-import { getDictionary } from '@/app/[lang]/dictionaries';
 import { NotificationToast } from '@/app/ui/base/NotificationToast';
-
-type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
+import type { Dictionary } from '@/src/types/dictionary';
 
 const DictionaryContext = React.createContext<Dictionary | null>(null);
 
@@ -19,11 +17,11 @@ export default function AppProviders({
   dictionary,
   locale,
   children,
-}: {
+}: Readonly<{
   dictionary: Dictionary;
   locale: string;
   children: React.ReactNode;
-}) {
+}>) {
   const store = useMemo(() => makeStore(), []);
 
   // sobaFetch can't import the slice (that would close an import cycle), so it reaches Keycloak

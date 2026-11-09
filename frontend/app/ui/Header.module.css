@@ -48,36 +48,26 @@
      Bootstrap `.btn` defaults or Form.io's injected global CSS. */
   display: inline-flex;
   align-items: center;
-  /* `!important` pins the white surface on the base state too (not just
-     :hover/:focus), so Bootstrap's `.btn-primary` blue can't win the cascade
-     depending on stylesheet injection order across pages. */
-  color: var(--app-text) !important;
-  background: var(--app-surface) !important;
-  border-color: var(--app-border) !important;
 }
 
-.userDrop:hover {
-  color: var(--app-text) !important;
-  background: var(--app-surface) !important;
-  border-color: var(--app-border) !important;
+/* Bootstrap buttons take their rest, hover and active colours from these variables. Two classes
+   outrank `.btn-primary`, which sets them with one, whatever the stylesheet order. */
+:global(.btn).userDrop {
+  --bs-btn-color: var(--app-text);
+  --bs-btn-bg: var(--app-surface);
+  --bs-btn-border-color: var(--app-border);
+  --bs-btn-hover-color: var(--app-text);
+  --bs-btn-hover-bg: var(--app-surface);
+  --bs-btn-hover-border-color: var(--app-border);
+  --bs-btn-active-color: var(--app-text);
+  --bs-btn-active-bg: var(--app-surface);
+  --bs-btn-active-border-color: var(--app-border);
 }
 
-.userDrop:active {
-  color: var(--app-text) !important;
-  background: var(--app-surface) !important;
-  border-color: var(--app-border) !important;
-}
-
-.userDrop:focus {
-  color: var(--app-text) !important;
-  background: var(--app-surface) !important;
-  border-color: var(--app-border) !important;
-}
-
-.userDrop:focus-visible {
+:global(.btn).userDrop:focus-visible {
   /* Keyboard focus needs a clearly visible ring; the surface-pinning rules
      above otherwise leave focus indistinguishable from the resting state. */
-  outline: var(--layout-border-width-medium) solid var(--app-focus-ring) !important;
+  outline: var(--layout-border-width-medium) solid var(--app-focus-ring);
   outline-offset: 2px;
 }
 

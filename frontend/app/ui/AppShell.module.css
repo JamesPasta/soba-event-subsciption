@@ -33,11 +33,12 @@
   z-index: 11;
 }
 
-/* Owns page padding, so anything rendered here is inset - including the error and session-failure
-   states, which do not go through PageLayout. min-width lets a wide table shrink rather than
-   widening the row. overflow-x is clip rather than auto so this does not become a scroll container:
-   anything sticky inside it needs the viewport as its scrollport, and a scroll container that never
-   scrolls would silently disable them. Wide content scrolls in its own region (see DataTable). */
+/* Owns page padding, so anything rendered here is inset - including route error states, which do
+   not go through PageLayout, and the access guard's loading and session-failure states, which
+   render in PageColumn. min-width lets a wide table shrink rather than widening the row. overflow-x
+   is clip rather than auto so this does not become a scroll container: anything sticky inside it
+   needs the viewport as its scrollport, and a scroll container that never scrolls would silently
+   disable them. Wide content scrolls in its own region (see DataTable). */
 .main {
   flex: 1;
   min-width: 0;
@@ -51,5 +52,26 @@
 @media (min-width: 768px) {
   .main {
     padding: var(--app-page-inset-top) var(--app-page-inset) var(--layout-padding-xlarge);
+  }
+}
+
+/* Paper gets the page content only: no header or nav, and nothing sticky. The footer hides itself.
+   Last in the file so it wins over the min-width padding above. */
+@media print {
+  .header,
+  .aside {
+    display: none;
+  }
+
+  .shell,
+  .row {
+    display: block;
+    min-height: 0;
+  }
+
+  .main {
+    border-left: 0;
+    padding: 0;
+    overflow: visible;
   }
 }

@@ -1,11 +1,22 @@
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
+import { ApiErrorCodeSchema } from '@soba/lib';
 import { z } from 'zod';
 
 extendZodWithOpenApi(z);
 
-export const ApiErrorSchema = z.object({
-  error: z.string(),
-});
+/** The JSON body of an API error. */
+export const ApiErrorSchema = z
+  .object({
+    error: z.string(),
+    code: ApiErrorCodeSchema.optional().openapi({
+      description: 'Why the request failed, for a client to choose its own message.',
+    }),
+    details: z
+      .array(z.object({ path: z.string(), message: z.string(), code: z.string() }))
+      .optional()
+      .openapi({ description: 'What a request validation failure found, field by field.' }),
+  })
+  .openapi('Core_ApiError');
 
 export const IdParamSchema = z.object({
   id: z.string().min(1),

@@ -1,5 +1,6 @@
 **.next
-# Secondary dev-server build dir (forms/submit-mode via NEXT_DIST_DIR)
+# Per-variant dev-server build dirs (NEXT_DIST_DIR)
+.next-designer
 .next-forms
 .env
 !.env.example

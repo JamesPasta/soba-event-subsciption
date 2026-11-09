@@ -1,4 +1,4 @@
-import path from 'path';
+import path from 'node:path';
 import dotenv from 'dotenv';
 
 // Ensure dotenv does not log "injecting env" and tips when running tests.

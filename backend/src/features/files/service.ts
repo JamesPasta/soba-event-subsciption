@@ -1,132 +1,142 @@
+import { SubmissionWorkflowState } from '@soba/lib';
 import { env } from '../../core/config/env';
-import { getStorageAdapter } from '../../core/integrations/plugins/PluginRegistry';
+import type { FileRecord } from '../../core/db/repos/fileRepo';
 import {
-  associateFilesWithSubmission,
-  createFileRecord,
-  deleteFileRecordById,
-  getFileRecordById,
-  type FileRecord,
-} from '../../core/db/repos/fileRepo';
-import { getSubmissionRecordById } from '../../core/db/repos/submissionRepo';
-import { hasFormSubmitAccess, type CallerIdentity } from '../../core/db/repos/formSubmitAccessRepo';
-import { Permissions, SubmissionWorkflowState } from '../../core/db/codes';
+  getSubmissionFileByFileId,
+  linkFileToSubmission,
+  unlinkSubmissionFile,
+} from '../../core/db/repos/submissionFileRepo';
+import type { CallerIdentity } from '../../core/db/repos/formSubmitAccessRepo';
+import { findRevisionStartedAt } from '../../core/db/repos/submissionReviewRepo';
+import {
+  allowsSubmitterOperation,
+  findSubmissionForCaller,
+  SubmitterOperation,
+} from '../../core/services/submitterAccess';
+import { fileStore, type StoreFileOutcome } from '../../core/services/fileStore';
+import { log } from '../../core/logging';
 import type { GetFileResult } from '../../core/integrations/storage-engine/StorageEngineAdapter';
-import { extractChefsFileIds } from './fileReferences';
-import { scanUpload } from './scanUpload';
 
 export interface UploadFileParams {
   workspaceId: string;
   actorId: string;
+  submissionId: string;
   filename: string;
   contentType?: string;
   size?: number;
   buffer: Buffer;
-  submissionId?: string | null;
-  useProfile?: string;
+}
+
+/**
+ * The attachment and the caller's read of its submission; null when either is missing, the
+ * submission, its form or its form version is deleted, or the file is in another workspace.
+ */
+async function findAttachment(id: string, caller: CallerIdentity) {
+  const attachment = await getSubmissionFileByFileId(id);
+  if (!attachment) return null;
+  const loaded = await findSubmissionForCaller(attachment.submissionId, caller);
+  if (loaded?.submission.workspaceId !== attachment.file.workspaceId) return null;
+  return { record: attachment.file, loaded };
+}
+
+type OpenedFile = { record: FileRecord; file: GetFileResult };
+
+/**
+ * Whether a file stays stored when its submitters remove it: while revising, a file attached before
+ * the revision was asked for may be in the answers from before it, which ending the revision
+ * restores. Files are not versioned, so removing one then only takes it out of the answers.
+ */
+async function keptForRestore(
+  record: FileRecord,
+  submission: { id: string; workspaceId: string; workflowState: string },
+): Promise<boolean> {
+  if (submission.workflowState !== SubmissionWorkflowState.revising) return false;
+  const since = await findRevisionStartedAt(submission.workspaceId, submission.id);
+  // Null when the revision ended after the submission was read; the restored answers may hold it.
+  return !since || record.createdAt <= since;
+}
+
+/** The file's stored bytes, or 'unavailable'. */
+async function openRecord(record: FileRecord): Promise<OpenedFile | 'unavailable'> {
+  const file = await fileStore.open(record);
+  if (!file) {
+    log.warn({ fileId: record.id, profile: record.profile }, 'File content unavailable');
+    return 'unavailable';
+  }
+  return { record, file };
 }
 
 export const filesService = {
-  /**
-   * Store the bytes and record a file row. The returned record's id is the public reference.
-   * Scans first when the antivirus feature is on: an infected or unscannable file is rejected
-   * (discriminated result) before it reaches storage or the DB.
-   */
-  async upload(params: UploadFileParams): Promise<FileRecord | 'infected' | 'scan-unavailable'> {
-    const scan = await scanUpload(params.buffer, params.filename);
-    if (scan !== 'clean') return scan;
-
-    const profile = params.useProfile ?? env.getFilesStorageProfile();
-    const adapter = getStorageAdapter(profile);
-    const result = await adapter.uploadFile({
-      workspaceId: params.workspaceId,
-      submissionId: params.submissionId ?? undefined,
-      filename: params.filename,
-      contentType: params.contentType,
-      size: params.size,
-      buffer: params.buffer,
-    });
-    try {
-      return await createFileRecord({
+  /** Store a file attached to a submission. The returned record's id is the public reference. */
+  upload(params: UploadFileParams): Promise<StoreFileOutcome> {
+    return fileStore.put(
+      {
         workspaceId: params.workspaceId,
-        profile,
-        backendRef: result.engineFileRef,
+        actorId: params.actorId,
+        profile: env.getFilesStorageProfile(),
+        prefix: env.getFilesStoragePrefix(),
         filename: params.filename,
-        contentType: params.contentType ?? null,
-        size: params.size ?? null,
-        submissionId: params.submissionId ?? null,
-        createdBy: params.actorId,
-      });
-    } catch (err) {
-      // The bytes are already stored; storage and DB can't share a transaction, so compensate by
-      // dropping the blob (best-effort — deleteFile swallows its own errors) rather than orphan it.
-      await adapter.deleteFile(result.engineFileRef);
-      throw err;
-    }
+        contentType: params.contentType,
+        size: params.size,
+        buffer: params.buffer,
+      },
+      (tx, record) =>
+        linkFileToSubmission(tx, {
+          fileId: record.id,
+          submissionId: params.submissionId,
+          workspaceId: params.workspaceId,
+          createdBy: params.actorId,
+        }),
+    );
   },
 
   /**
    * Fetch a file for a caller, scoped to its owning submission: the file must belong to a still-present
-   * submission, and the caller must have submission_read on that submission's workspace (Form submitters
-   * audience or staff). 'notfound' when missing / no live owning submission; 'denied' when unauthorized.
+   * submission, and the caller must be allowed to read it. 'notfound' when missing / no live owning
+   * submission; 'denied' when unauthorized; 'unavailable' when storage does not have the bytes.
    */
   async getForCaller(
     id: string,
     caller: CallerIdentity,
-  ): Promise<{ record: FileRecord; file: GetFileResult } | 'notfound' | 'denied'> {
-    const record = await getFileRecordById(id);
-    if (!record?.submissionId) return 'notfound';
-    const submission = await getSubmissionRecordById(record.workspaceId, record.submissionId);
-    if (!submission) return 'notfound';
-    const allowed = await hasFormSubmitAccess(
-      record.workspaceId,
-      caller,
-      Permissions.submission_read,
-    );
-    if (!allowed) return 'denied';
-    const file = await getStorageAdapter(record.profile).getFile(record.backendRef);
-    if (!file) return 'notfound';
-    return { record, file };
+  ): Promise<OpenedFile | 'notfound' | 'denied' | 'unavailable'> {
+    const attachment = await findAttachment(id, caller);
+    if (!attachment) return 'notfound';
+    const { record, loaded } = attachment;
+    if (!allowsSubmitterOperation(SubmitterOperation.read, loaded, caller)) return 'denied';
+    return openRecord(record);
   },
 
   /**
-   * Back-fill the `submission_id` of the files referenced in a submission's data. Called after a
-   * submission save; scoped to the submission's workspace. Returns the number of files tagged.
+   * A file attached to the submission, for staff. The route's workspaceFromResource has checked the
+   * submission is live and in this workspace, and requireFormPermissions the caller's access.
    */
-  async associateWithSubmission(
-    submissionId: string,
+  async getForSubmission(
     workspaceId: string,
-    data: unknown,
-  ): Promise<number> {
-    const fileIds = extractChefsFileIds(data);
-    return associateFilesWithSubmission(fileIds, submissionId, workspaceId);
+    submissionId: string,
+    fileId: string,
+  ): Promise<OpenedFile | 'notfound' | 'unavailable'> {
+    const attachment = await getSubmissionFileByFileId(fileId);
+    if (attachment?.submissionId !== submissionId || attachment.file.workspaceId !== workspaceId) {
+      return 'notfound';
+    }
+    return openRecord(attachment.file);
   },
 
   /**
-   * Delete a file per its owning submission: while un-submitted, only the submission's owner
-   * (submittedBy) may delete; once submitted, only staff with submission_update. 'notfound' when
-   * missing; 'denied' when the caller isn't authorized.
+   * Delete a file per its owning submission: while un-submitted, a caller allowed to write it; once
+   * submitted, only a caller with submission_update on the form. 'notfound' when missing; 'denied' when
+   * the caller isn't authorized.
    */
   async deleteForCaller(
     id: string,
     caller: CallerIdentity,
   ): Promise<'deleted' | 'notfound' | 'denied'> {
-    const record = await getFileRecordById(id);
-    if (!record?.submissionId) return 'notfound';
-    const submission = await getSubmissionRecordById(record.workspaceId, record.submissionId);
-    if (!submission) return 'notfound';
-    const allowed =
-      submission.workflowState === SubmissionWorkflowState.submitted
-        ? await hasFormSubmitAccess(record.workspaceId, caller, Permissions.submission_update)
-        : // Un-submitted: the submission owner may delete, but only where they're actually in the
-          // submit audience — this bounds anonymous (shared public id) to forms they can submit to.
-          !!caller.actorId &&
-          submission.submittedBy === caller.actorId &&
-          (await hasFormSubmitAccess(record.workspaceId, caller, Permissions.submission_create));
-    if (!allowed) return 'denied';
-    // Row first: if the row delete throws, nothing is destroyed (retryable). A blob delete failing
-    // after the row is gone leaves a reclaimable orphan, not a dangling, un-downloadable row.
-    await deleteFileRecordById(id);
-    await getStorageAdapter(record.profile).deleteFile(record.backendRef);
+    const attachment = await findAttachment(id, caller);
+    if (!attachment) return 'notfound';
+    const { record, loaded } = attachment;
+    if (!allowsSubmitterOperation(SubmitterOperation.deleteFile, loaded, caller)) return 'denied';
+    if (await keptForRestore(record, loaded.submission)) return 'deleted';
+    await fileStore.remove(record, (tx) => unlinkSubmissionFile(tx, record.id));
     return 'deleted';
   },
 };

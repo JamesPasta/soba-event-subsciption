@@ -10,6 +10,7 @@ import { createEnvReader } from '../../../src/core/config/env';
 import { clearOAuth2TokenCache } from '../../../src/core/auth/oauth2TokenProvider';
 import { ServiceUnavailableError, UnprocessableEntityError } from '../../../src/core/errors';
 import { log } from '../../../src/core/logging';
+import type { DocumentRenderRequest } from '../../../src/core/integrations/document-generation/DocumentGenerationAdapter';
 
 function makeConfig(overrides: Partial<Record<string, string>> = {}): PluginConfigReader {
   const values: Record<string, string | undefined> = {
@@ -46,6 +47,12 @@ const binaryOk = () =>
     arrayBuffer: () => Promise.resolve(Uint8Array.from([1, 2, 3]).buffer),
   }) as unknown as Response;
 
+const renderRequest: DocumentRenderRequest = {
+  template: { content: Buffer.from('x'), fileType: 'docx' },
+  options: {},
+  data: {},
+};
+
 describe('cdogs-v2 plugin', () => {
   const origFetch = global.fetch;
   afterEach(() => {
@@ -66,7 +73,7 @@ describe('cdogs-v2 plugin', () => {
     const fetchMock = jest.fn().mockResolvedValueOnce(tokenOk()).mockResolvedValueOnce(binaryOk());
     global.fetch = fetchMock;
 
-    const res = await new CdogsV2Adapter(makeConfig()).render({ template: { content: 'x' } });
+    const res = await new CdogsV2Adapter(makeConfig()).render(renderRequest);
 
     expect(res).toEqual({ data: Buffer.from([1, 2, 3]), contentType: 'application/pdf' });
 
@@ -74,6 +81,11 @@ describe('cdogs-v2 plugin', () => {
     const [renderUrl, renderInit] = fetchMock.mock.calls[1];
     expect(renderUrl).toBe('http://cdogs.test/api/v2/template/render');
     expect((renderInit.headers as Record<string, string>).Authorization).toBe('Bearer tok');
+    expect(JSON.parse(renderInit.body as string).template).toEqual({
+      content: Buffer.from('x').toString('base64'),
+      encodingType: 'base64',
+      fileType: 'docx',
+    });
   });
 
   it('clears the token and retries once when a render is rejected with 401', async () => {
@@ -91,7 +103,7 @@ describe('cdogs-v2 plugin', () => {
       .mockResolvedValueOnce(binaryOk()); // render succeeds
     global.fetch = fetchMock;
 
-    const res = await new CdogsV2Adapter(makeConfig()).render({ template: { content: 'x' } });
+    const res = await new CdogsV2Adapter(makeConfig()).render(renderRequest);
 
     expect(res.data).toEqual(Buffer.from([1, 2, 3]));
     expect(fetchMock).toHaveBeenCalledTimes(4);
@@ -113,7 +125,7 @@ describe('cdogs-v2 plugin', () => {
       .mockResolvedValueOnce(tokenOk())
       .mockResolvedValueOnce(unauthorized());
 
-    await expect(new CdogsV2Adapter(makeConfig()).render({})).rejects.toBeInstanceOf(
+    await expect(new CdogsV2Adapter(makeConfig()).render(renderRequest)).rejects.toBeInstanceOf(
       ServiceUnavailableError,
     );
     expect(errorSpy).toHaveBeenCalledWith(
@@ -135,7 +147,7 @@ describe('cdogs-v2 plugin', () => {
       } as unknown as Response);
     global.fetch = fetchMock;
 
-    await expect(new CdogsV2Adapter(makeConfig()).render({})).rejects.toBeInstanceOf(
+    await expect(new CdogsV2Adapter(makeConfig()).render(renderRequest)).rejects.toBeInstanceOf(
       UnprocessableEntityError,
     );
   });
@@ -206,7 +218,7 @@ describe('cdogs-v2 plugin', () => {
       );
 
       const started = Date.now();
-      const err = await adapter.render({ template: { content: 'x' } }).catch((e) => e);
+      const err = await adapter.render(renderRequest).catch((e) => e);
       const elapsed = Date.now() - started;
 
       expect(err).toBeInstanceOf(ServiceUnavailableError);

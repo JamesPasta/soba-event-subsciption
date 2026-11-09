@@ -2,7 +2,6 @@ import type {
   MessageBusAdapter,
   MessageBusPluginDefinition,
 } from '../../core/integrations/messagebus/MessageBusAdapter';
-import type { PluginConfigReader } from '../../core/config/pluginConfig';
 import { log } from '../../core/logging';
 
 type Handler = (payload: Record<string, unknown>) => Promise<void>;
@@ -13,8 +12,7 @@ type Handler = (payload: Record<string, unknown>) => Promise<void>;
  * next tick so one slow or rejecting handler cannot block publish or the others. Fan-out is
  * in-process only — it does not reach other replicas (that is what messagebus-redis is for).
  */
-function createInMemoryMessageBusAdapter(config: PluginConfigReader): MessageBusAdapter {
-  void config; // required by the interface; this plugin takes no config
+function createInMemoryMessageBusAdapter(): MessageBusAdapter {
   const handlers = new Map<string, Handler[]>();
 
   const dispatch = (topic: string, payload: Record<string, unknown>): void => {
@@ -29,8 +27,9 @@ function createInMemoryMessageBusAdapter(config: PluginConfigReader): MessageBus
   };
 
   return {
-    async publish(topic: string, payload: Record<string, unknown>): Promise<void> {
+    publish(topic: string, payload: Record<string, unknown>): Promise<void> {
       dispatch(topic, payload);
+      return Promise.resolve();
     },
 
     subscribe(

@@ -1,3 +1,4 @@
+import type { SortLocale } from '@soba/lib';
 import { listMembersForWorkspace, type MemberListSort } from '../../db/repos/membershipRepo';
 
 export class MembersApiService {
@@ -10,6 +11,7 @@ export class MembersApiService {
       status?: string;
       q?: string;
       sort: MemberListSort;
+      locale: SortLocale;
     },
   ) {
     const { items, total } = await listMembersForWorkspace({
@@ -17,6 +19,7 @@ export class MembersApiService {
       offset: query.offset,
       limit: query.limit,
       sort: query.sort,
+      locale: query.locale,
       role: query.role,
       status: query.status,
       q: query.q,

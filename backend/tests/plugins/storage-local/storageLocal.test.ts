@@ -3,6 +3,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { Readable } from 'stream';
 import { storagePluginDefinition } from '../../../src/plugins/storage-local';
 import type { PluginConfigReader } from '../../../src/core/config/pluginConfig';
 
@@ -30,11 +31,16 @@ describe('storage-local adapter', () => {
   it('uploads, gets and deletes a file', async () => {
     const result = await (adapter as any).uploadFile({
       workspaceId: 'w1',
+      prefix: 'attachments',
       filename: 'hello.txt',
       buffer: Buffer.from('hello world'),
       contentType: 'text/plain',
     });
     expect(result).toHaveProperty('engineFileRef');
+    // Stored under an id alone: the file's name never reaches the path.
+    expect(fs.readdirSync(path.join(tmp, 'attachments', 'w1'))).toEqual([
+      expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+    ]);
     const meta = await (adapter as any).getFile(result.engineFileRef);
     expect(meta).not.toBeNull();
     expect(meta.filename).toBeDefined();
@@ -46,6 +52,24 @@ describe('storage-local adapter', () => {
     await (adapter as any).deleteFile(result.engineFileRef);
     const after = await (adapter as any).getFile(result.engineFileRef);
     expect(after).toBeNull();
+  });
+
+  it('rejects a stream that fails part way and leaves no partial file', async () => {
+    const failing = new Readable({
+      read() {
+        this.push(Buffer.from('partial'));
+        this.destroy(new Error('source failed'));
+      },
+    });
+    await expect(
+      (adapter as any).uploadFile({
+        workspaceId: 'w2',
+        prefix: 'job-results',
+        filename: 'export.csv',
+        stream: failing,
+      }),
+    ).rejects.toThrow('source failed');
+    expect(fs.readdirSync(path.join(tmp, 'job-results', 'w2'))).toEqual([]);
   });
 
   it('rejects path-traversal refs that escape basePath', async () => {

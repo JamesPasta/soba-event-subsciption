@@ -1,4 +1,8 @@
-import { httpErrorToAppError, postBinaryOrThrow } from '../../../src/core/http/httpErrorMapper';
+import {
+  httpErrorToAppError,
+  postBinaryOrThrow,
+  upstreamStatusOf,
+} from '../../../src/core/http/httpErrorMapper';
 import { HttpClient, HttpClientError } from '../../../src/core/http/httpClient';
 import {
   ServiceUnavailableError,
@@ -35,6 +39,16 @@ describe('httpErrorToAppError', () => {
 
   it('maps 5xx to ServiceUnavailableError', () => {
     expect(httpErrorToAppError(httpError(503), 'CDOGS')).toBeInstanceOf(ServiceUnavailableError);
+  });
+
+  it.each([400, 415, 422, 429, 502])('keeps upstream status %s on the mapped error', (status) => {
+    expect(upstreamStatusOf(httpErrorToAppError(httpError(status), 'CDOGS'))).toBe(status);
+  });
+
+  it('has no upstream status for a transport failure', () => {
+    expect(
+      upstreamStatusOf(httpErrorToAppError(new Error('ECONNREFUSED'), 'CDOGS')),
+    ).toBeUndefined();
   });
 
   it('treats a non-HttpClientError as a transport failure', () => {

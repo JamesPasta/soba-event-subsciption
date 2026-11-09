@@ -15,7 +15,8 @@ data:
   NODE_ENV: {{ .Values.backend.config.nodeEnv | quote }}
   {{- $frontendOrigins := include "soba.frontendOrigins" . }}
   CORS_ORIGIN: {{ .Values.backend.config.corsOrigin | default $frontendOrigins | quote }}
-  {{- $backendApiBase := printf "https://%s/api/v1" (include "soba.backendHost" .) }}
+  API_BASE_PATH: {{ include "soba.backendBasePath" . | quote }}
+  {{- $backendApiBase := printf "https://%s%s/api/v1" (include "soba.backendHost" .) (include "soba.backendBasePath" .) }}
   SOBA_API_BASE_URL: {{ .Values.backend.config.sobaApiBaseUrl | default $backendApiBase | quote }}
   {{- if .Values.backend.config.appVersion }}
   APP_VERSION: {{ .Values.backend.config.appVersion | quote }}
@@ -61,6 +62,55 @@ data:
   PLUGIN_VIRUSSCAN_CLAMAV_TIMEOUT_MS: {{ .Values.clamav.timeoutMs | quote }}
   {{- end }}
   SOBA_SYSTEM_SUBJECT: {{ .Values.backend.config.sobaSystemSubject | quote }}
+  {{- with include "soba.optionalSetting" .Values.backend.config.postSubmissionActionPlugins }}
+  POST_SUBMISSION_ACTION_PLUGINS: {{ . }}
+  {{- end }}
+  {{- with include "soba.hourlyEmailLimit" (dict "name" "postSubmissionEmailFormHourlyLimit" "value" .Values.backend.config.postSubmissionEmailFormHourlyLimit) }}
+  PLUGIN_POST_SUBMISSION_EMAIL_ADDRESSES_FORM_HOURLY_LIMIT: {{ . }}
+  {{- end }}
+  {{- with include "soba.hourlyEmailLimit" (dict "name" "postSubmissionEmailWorkspaceHourlyLimit" "value" .Values.backend.config.postSubmissionEmailWorkspaceHourlyLimit) }}
+  PLUGIN_POST_SUBMISSION_EMAIL_ADDRESSES_WORKSPACE_HOURLY_LIMIT: {{ . }}
+  {{- end }}
+  {{- with include "soba.hourlyEmailLimit" (dict "name" "postSubmissionEmailEnvironmentHourlyLimit" "value" .Values.backend.config.postSubmissionEmailEnvironmentHourlyLimit) }}
+  PLUGIN_POST_SUBMISSION_EMAIL_ADDRESSES_ENVIRONMENT_HOURLY_LIMIT: {{ . }}
+  {{- end }}
+  {{- with include "soba.optionalSetting" .Values.backend.config.shutdownDelayMs }}
+  SHUTDOWN_DELAY_MS: {{ . }}
+  {{- end }}
+  {{- with include "soba.optionalSetting" .Values.backend.config.shutdownTimeoutMs }}
+  SHUTDOWN_TIMEOUT_MS: {{ . }}
+  {{- end }}
+  {{- with include "soba.optionalSetting" .Values.backend.config.submissionExportActiveLimit }}
+  SUBMISSION_EXPORT_ACTIVE_LIMIT: {{ . }}
+  {{- end }}
+  {{- $jobEnv := dict
+      "pools" "JOB_POOLS"
+      "lightPollMs" "JOB_LIGHT_POLL_MS"
+      "heavyPollMs" "JOB_HEAVY_POLL_MS"
+      "lightLeaseMs" "JOB_LIGHT_LEASE_MS"
+      "heavyLeaseMs" "JOB_HEAVY_LEASE_MS"
+      "lightConcurrency" "JOB_LIGHT_CONCURRENCY"
+      "heavyConcurrency" "JOB_HEAVY_CONCURRENCY"
+      "lightTimeoutMs" "JOB_LIGHT_TIMEOUT_MS"
+      "heavyTimeoutMs" "JOB_HEAVY_TIMEOUT_MS"
+      "maxAttempts" "JOB_MAX_ATTEMPTS"
+      "backoffBaseMs" "JOB_BACKOFF_BASE_MS"
+      "backoffMaxMs" "JOB_BACKOFF_MAX_MS"
+      "sweepIntervalMs" "JOB_SWEEP_INTERVAL_MS"
+      "retentionBatch" "JOB_RETENTION_BATCH"
+      "succeededRetentionDays" "JOB_SUCCEEDED_RETENTION_DAYS"
+      "deadRetentionDays" "JOB_DEAD_RETENTION_DAYS"
+      "drainMs" "JOB_DRAIN_MS"
+      "abortGraceMs" "JOB_ABORT_GRACE_MS"
+      "progressIntervalMs" "JOB_PROGRESS_INTERVAL_MS"
+      "resultMaxBytes" "JOB_RESULT_MAX_BYTES"
+      "resultRetentionDays" "JOB_RESULT_RETENTION_DAYS"
+      "resultSweepBatch" "JOB_RESULT_SWEEP_BATCH" }}
+  {{- range $key, $name := $jobEnv }}
+  {{- with include "soba.optionalSetting" (index $.Values.backend.jobs $key) }}
+  {{ $name }}: {{ . }}
+  {{- end }}
+  {{- end }}
   {{- if not .Values.database.uri }}
   DB_HOST: {{ .Values.database.host | quote }}
   DB_PORT: {{ .Values.database.port | quote }}

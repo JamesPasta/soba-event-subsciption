@@ -1,6 +1,6 @@
 # syntax=docker.io/docker/dockerfile:1
 
-FROM node:22-alpine AS base
+FROM node:24-alpine AS base
 
 # enable pnpm globally
 RUN corepack enable pnpm && corepack prepare pnpm@10.28.2 --activate
@@ -14,6 +14,10 @@ WORKDIR /app
 # copy workspace root files
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY frontend/package.json frontend/
+# lib builds itself on install (prepare), so its source has to be present before pnpm install
+COPY lib ./lib
+
+RUN pnpm install --filter ./lib... --frozen-lockfile
 
 # install frontend dependencies through workspace
 RUN pnpm install --filter ./frontend... --frozen-lockfile
@@ -23,10 +27,15 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/frontend/node_modules ./frontend/node_modules
+COPY --from=deps /app/lib/node_modules ./lib/node_modules
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 
 COPY frontend ./frontend
+COPY lib ./lib
+
+# Pre-build the shared library
+RUN pnpm --filter @soba/lib run build
 
 # Next.js telemetry note
 # ENV NEXT_TELEMETRY_DISABLED=1
@@ -43,8 +52,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 # ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 
 # Standalone with outputFileTracingRoot (monorepo) nests server at frontend/server.js
 # Standalone does not include .next/static — must copy so /_next/static/* is served

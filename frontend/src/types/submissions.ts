@@ -1,43 +1,21 @@
-import type { ListPage } from './list';
+import type { MySubmissionListItem, SubmitterForm } from '@soba/lib';
 
-export interface SubmissionListItem {
-  id: string;
-  formId: string;
-  formName?: string;
-  formVersionId: string;
-  versionNo?: number;
-  workflowState: string;
-  engineSyncStatus: string;
-  submittedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  createdBy?: string | null;
-  submittedBy?: string | null;
-}
+export type {
+  SubmissionListItem,
+  SubmissionResponse,
+  SubmitSubmissionResponse,
+  SubmissionRevisionInfo,
+  SubmissionWriteResponse,
+  ListSubmissionsResponse,
+  SubmissionDataBody,
+  SubmitSubmissionBody,
+  MySubmissionListItem,
+  MySubmissionState,
+  ListMySubmissionsResponse,
+  ReviseSubmissionBody,
+} from '@soba/lib';
+export type { SubmitterReviewLabel } from '@soba/lib';
+export { MY_SUBMISSION_STATES, SubmissionWorkflowState, SubmitterReviewLabels } from '@soba/lib';
 
-export interface ListSubmissionsResponse {
-  items: SubmissionListItem[];
-  page: ListPage;
-  filters: {
-    formId?: string;
-    formVersionId?: string;
-    workflowState?: string;
-    createdBy?: string;
-    q?: string;
-  };
-  sort: string;
-}
-
-export interface SubmissionResponse {
-  id: string;
-  formId: string;
-  formVersionId: string;
-  workflowState: string;
-  engineSyncStatus: string;
-  currentRevisionNo: number;
-  submittedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  createdBy?: string | null;
-  submittedBy?: string | null;
-}
+/** A My Submissions row with its form's facts for the caller; null when the page carried none. */
+export type MySubmissionRow = MySubmissionListItem & { form: SubmitterForm | null };

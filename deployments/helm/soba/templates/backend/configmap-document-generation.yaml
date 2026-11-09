@@ -6,6 +6,9 @@ metadata:
     {{- include "soba.labels" (dict "root" . "component" "backend") | nindent 4 }}
 data:
   DOCUMENT_GENERATION_DEFAULT_CODE: {{ .Values.backend.config.documentGenerationDefaultCode | quote }}
+  {{- with .Values.backend.documentGeneration.maxConcurrent }}
+  DOCUMENT_GENERATION_MAX_CONCURRENT: {{ . | quote }}
+  {{- end }}
   {{- with .Values.backend.documentGeneration.cdogsV2.endpoint }}
   PLUGIN_CDOGS_V2_ENDPOINT: {{ . | quote }}
   {{- end }}

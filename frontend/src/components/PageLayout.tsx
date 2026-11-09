@@ -11,6 +11,10 @@ const MAX_WIDTH: Record<PageWidth, string> = {
   wide: '90rem',
 };
 
+// CSSProperties admits no custom properties.
+const columnStyle = (width: PageWidth) =>
+  ({ '--page-max-width': MAX_WIDTH[width] }) as CSSProperties;
+
 type PageLayoutProps = {
   /** Referenced by aria-labelledby, so it must match the heading the layout renders. */
   headingId: string;
@@ -19,6 +23,15 @@ type PageLayoutProps = {
   width?: PageWidth;
   children: ReactNode;
 };
+
+/** The content column PageLayout sits in, for states rendered before a page mounts. */
+export function PageColumn({ children }: Readonly<{ children: ReactNode }>) {
+  return (
+    <div className={styles.page} style={columnStyle('default')}>
+      {children}
+    </div>
+  );
+}
 
 /**
  * The page shell: owns content width and the heading block. Pages pass content, never arrangement,
@@ -30,11 +43,8 @@ export function PageLayout({
   width = 'default',
   children,
 }: Readonly<PageLayoutProps>) {
-  // CSSProperties admits no custom properties.
-  const style = { '--page-max-width': MAX_WIDTH[width] } as CSSProperties;
-
   return (
-    <section className={styles.page} style={style} aria-labelledby={headingId}>
+    <section className={styles.page} style={columnStyle(width)} aria-labelledby={headingId}>
       <PageHeaderProvider headingId={headingId} heading={heading}>
         {children}
       </PageHeaderProvider>

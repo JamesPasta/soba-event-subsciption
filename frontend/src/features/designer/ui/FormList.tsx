@@ -1,56 +1,95 @@
 'use client';
 
-import { useMemo, useCallback, useEffect } from 'react';
+import { useMemo, useCallback, useEffect, useState } from 'react';
 import { Button as DSButton } from '@bcgov/design-system-react-components';
 import { DataTable, type Column } from '@/src/components/DataTable';
 import { Tag } from '@/src/components/Tag';
-import { ListPageToolbar, ListPageAuthGate } from '@/src/components/ListPageLayout';
+import {
+  ListPageAuthGate,
+  ListPageFilters,
+  ListPageToolbar,
+} from '@/src/components/ListPageLayout';
 import { ListPageSearchField } from '@/src/components/ListPageSearchField';
 import { RowActionButton } from '@/src/components/RowActionButton';
 import { useKeycloak } from '@/lib/hooks/useKeycloak';
 import { useDictionary } from '@/app/[lang]/Providers';
 import { useRouter, usePathname } from 'next/navigation';
 import { getLocaleFromPath } from '@/src/shared/util/locale';
-import { getSobaForms } from '@/src/shared/api/sobaApi';
-import type { SobaFormSummary } from '@/src/shared/api/sobaApiDesign';
+import { isUuid } from '@/src/shared/util/uuid';
+import type { SobaFormSummary } from '@/src/types/forms';
 import { useFormatLongDate } from '@/src/shared/hooks/useFormatLongDate';
 import { usePageNotices } from '@/src/components/PageHeader';
-import { useAuthedSWR } from '@/src/shared/api/useAuthedSWR';
-import { useWorkspaces, useWritableWorkspaces } from '@/src/shared/api/useWorkspaces';
+import { useWorkspace, useWorkspaceOptions } from '@/src/shared/api/useWorkspaces';
+import { useCurrentUser } from '@/src/shared/api/useCurrentUser';
+import { classifyDataError, messageForDataError } from '@/src/shared/api/dataError';
+import { useAuthErrorDefaults } from '@/src/shared/api/useDataErrorNotice';
+import { lookupTruncatedNote, withSelectedOption } from '@/src/shared/list/lookupOptions';
 import { FORMS_LIST_QUERY, rememberListQuery } from '@/src/shared/list/listQueryMemory';
-import { PAGE_SIZE_OPTIONS, useListQuery } from '@/src/shared/list/useListQuery';
-import { listReadConfig } from '@/src/shared/api/swrConfig';
+import { useListQuery } from '@/src/shared/list/useListQuery';
+import { useDataTable } from '@/src/shared/list/useDataTable';
+import { useFormsList } from '@/src/features/designer/data/useFormsList';
 import { WorkspaceSelector } from '@/app/ui/WorkspaceSelector';
 import { FaDatabase, FaLink } from 'react-icons/fa6';
 import styles from './FormList.module.css';
-import { loadErrorMessage } from '@/src/shared/api/loadErrorMessage';
+import type { WorkspaceLookupItem } from '@/src/types/workspaces';
+import { Modal } from '@/src/components/Modal';
+import { FormCreateContent } from './FormCreateContent';
+
+/**
+ * Resolves the URL's workspace filter, which can name a workspace that does not exist or that this
+ * user cannot see. A workspace in the options is taken from there; any other is read, because the
+ * options stop at the lookup limit.
+ */
+function useWorkspaceFilter(
+  workspaceParam: string | null,
+  options: Pick<ReturnType<typeof useWorkspaceOptions>, 'workspaces' | 'loaded' | 'error'>,
+) {
+  // Not a workspace id at all. Reading one fails as a server error rather than a refusal.
+  const paramIsId = !!workspaceParam && isUuid(workspaceParam);
+  const listed = paramIsId ? options.workspaces.find((w) => w.id === workspaceParam) : undefined;
+  const optionsSettled = options.loaded || !!options.error;
+  const { workspace: read, error } = useWorkspace(
+    paramIsId && optionsSettled && !listed ? (workspaceParam as string) : undefined,
+  );
+  const workspace: WorkspaceLookupItem | null = listed ?? read;
+  // Only a refusal says the workspace is not this user's. Any other failure is a failed load.
+  const refused = error?.kind === 'forbidden' || error?.kind === 'notFound';
+  return {
+    workspace,
+    rejected: !!workspaceParam && !workspace && (!paramIsId || refused),
+    loadError: refused ? undefined : error,
+    // No answer yet, so the table is loading, not empty.
+    pending: paramIsId && !workspace && !error,
+    // A filter that could still name one of the user's workspaces never reads unscoped.
+    holdRequest: paramIsId && !workspace && !refused,
+  };
+}
 
 const CustomActionButtons = ({
   form,
   onAction,
-  designModeEnabled,
+  submitLabel,
+  submissionsLabel,
 }: {
   form: SobaFormSummary;
   onAction: (name: string, id: string) => void;
-  designModeEnabled?: boolean;
+  submitLabel: string;
+  submissionsLabel: string;
 }) => {
-  // All actions (manage/submit/submissions) are keyed on the SOBA formId.
+  // Actions are keyed on the SOBA formId.
   const sobaFormId = form.id;
 
-  const actions = [];
-  // Both quick links open designer tabs, and the designer page 404s without design mode.
-  if (designModeEnabled) {
-    actions.push(
-      { name: 'submit', icon: <FaLink /> },
-      { name: 'submissions', icon: <FaDatabase /> },
-    );
-  }
+  const actions = [
+    { name: 'submit', icon: <FaLink />, ariaLabel: submitLabel },
+    { name: 'submissions', icon: <FaDatabase />, ariaLabel: submissionsLabel },
+  ];
 
   return (
     <div className="d-flex gap-2 justify-content-start">
       {actions.map((action) => (
         <RowActionButton
           key={action.name}
+          aria-label={action.ariaLabel}
           data-testid={action.name + '-' + sobaFormId + '-button'}
           onPress={() => {
             if (!sobaFormId) return;
@@ -64,7 +103,7 @@ const CustomActionButtons = ({
   );
 };
 
-function FormList({ designModeEnabled = true }: { designModeEnabled?: boolean }) {
+function FormList() {
   const dict = useDictionary();
   const dictFormList = dict.submission?.formList;
   const dictForm = dict.form;
@@ -75,69 +114,47 @@ function FormList({ designModeEnabled = true }: { designModeEnabled?: boolean })
 
   const locale = getLocaleFromPath(pathname);
 
-  const { workspaces, loaded: workspacesLoaded, error: workspacesError } = useWorkspaces();
-  const { workspaces: writableWorkspaces } = useWritableWorkspaces();
+  const { data: currentUser } = useCurrentUser();
+  const workspaceOptions = useWorkspaceOptions();
 
   const listQuery = useListQuery(FORMS_LIST_QUERY);
   const workspaceParam = listQuery.filters.workspace ?? null;
-  // The filter comes from the URL, so it can name a workspace that does not exist or that this user
-  // cannot see. Resolve it against their own list before it reaches the request.
-  const selectedWorkspaceId =
-    workspaceParam && workspaces.some((w) => w.id === workspaceParam) ? workspaceParam : undefined;
-  const workspaceRejected = workspacesLoaded && !!workspaceParam && !selectedWorkspaceId;
-  // The request is held back until the filter can be resolved, so the table is loading, not empty.
-  const waitingForWorkspaces = !!workspaceParam && !workspacesLoaded && !workspacesError;
+  const workspaceFilter = useWorkspaceFilter(workspaceParam, workspaceOptions);
+  const filterWorkspace = workspaceFilter.workspace;
+  const selectedWorkspaceId = filterWorkspace?.id;
+  const workspaceRejected = workspaceFilter.rejected;
+  const holdFormsRequest = workspaceFilter.holdRequest;
 
-  const {
-    data,
-    isLoading,
-    error: loadError,
-  } = useAuthedSWR(
-    // Wait for the workspace list before reading, or the id resolves against nothing and every
-    // arrival scopes to no workspace. An id that never resolves reads unscoped on purpose: the
-    // picker reads "all workspaces" and the notice says the filter was not applied.
-    workspaceParam && !workspacesLoaded
-      ? null
-      : [
-          'forms',
-          selectedWorkspaceId ?? null,
-          listQuery.offset,
-          listQuery.pageSize,
-          listQuery.sort,
-          listQuery.q,
-        ],
-    (token) =>
-      getSobaForms(token, {
-        offset: listQuery.offset,
-        limit: listQuery.pageSize,
-        sort: listQuery.sort,
-        q: listQuery.q,
-        workspaceId: selectedWorkspaceId,
-      }),
-    listReadConfig,
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Wait for the filter to resolve before reading, or the first arrival scopes to no workspace. A
+  // refused or malformed id reads unscoped on purpose: the picker reads "all workspaces" and the
+  // notice says the filter was not applied.
+  const formsList = useFormsList(
+    {
+      offset: listQuery.offset,
+      limit: listQuery.pageSize,
+      sort: listQuery.sort,
+      q: listQuery.q,
+    },
+    selectedWorkspaceId,
+    holdFormsRequest,
   );
+  const { table } = useDataTable(listQuery, formsList, dict.form.loadFormsError);
 
-  const forms: SobaFormSummary[] = useMemo(
-    () => (Array.isArray(data?.items) ? data.items : []),
-    [data],
-  );
-
+  const authDefaults = useAuthErrorDefaults();
+  const optionsError = workspaceOptions.error;
+  const filterLoadError = workspaceFilter.loadError;
   const error = useMemo(() => {
-    const failure = loadError ?? workspacesError;
+    const failure =
+      formsList.error ??
+      (optionsError ? classifyDataError(optionsError) : null) ??
+      filterLoadError ??
+      null;
     return failure
-      ? loadErrorMessage(failure, {
-          sessionExpired: dict.general.sessionExpired,
-          noAccess: dict.general.noAccess,
-          failed: dict.form.loadFormsError,
-        })
+      ? messageForDataError(failure, { ...authDefaults, failed: dict.form.loadFormsError })
       : null;
-  }, [
-    loadError,
-    workspacesError,
-    dict.general.sessionExpired,
-    dict.general.noAccess,
-    dict.form.loadFormsError,
-  ]);
+  }, [formsList.error, optionsError, filterLoadError, authDefaults, dict.form.loadFormsError]);
 
   // A filter this user cannot resolve is not a view worth restoring. Without this it stays in the
   // memory and every later arrival from the nav replays it and raises the same notice again.
@@ -147,12 +164,15 @@ function FormList({ designModeEnabled = true }: { designModeEnabled?: boolean })
 
   // The picker filters this list only; a new form is targeted in the designer. So creation
   // depends on having any workspace the user can create in with its disclaimer accepted.
-  const canCreate = useMemo(
-    () => writableWorkspaces.some((w) => w.disclaimerAccepted),
-    [writableWorkspaces],
+  const formCreate = currentUser?.capabilities?.formCreate;
+  const canCreate = formCreate === 'allowed';
+  // Create permission somewhere but no disclaimer accepted yet: the case worth prompting on.
+  const needsDisclaimer = formCreate === 'disclaimer_required';
+
+  const pickerWorkspaces = useMemo(
+    () => withSelectedOption(workspaceOptions.workspaces, filterWorkspace),
+    [workspaceOptions.workspaces, filterWorkspace],
   );
-  // Create permission somewhere but no disclaimer accepted yet — the case worth prompting on.
-  const needsDisclaimer = writableWorkspaces.length > 0 && !canCreate;
 
   const { setFilters } = listQuery;
   const handleWorkspaceChange = useCallback(
@@ -163,18 +183,14 @@ function FormList({ designModeEnabled = true }: { designModeEnabled?: boolean })
   const handleAction = useCallback(
     (name: string, id: string) => {
       if (name === 'manage') {
-        if (designModeEnabled) {
-          router.push(`/${locale}/designer/${id}`);
-        } else {
-          router.push(`/${locale}/form/${id}`);
-        }
+        router.push(`/${locale}/build/${id}`);
       } else if (name === 'submit') {
-        router.push(`/${locale}/designer/${id}?tab=share`);
+        router.push(`/${locale}/build/${id}?tab=share`);
       } else if (name === 'submissions') {
-        router.push(`/${locale}/designer/${id}?tab=submissions`);
+        router.push(`/${locale}/build/${id}?tab=submissions`);
       }
     },
-    [router, locale, designModeEnabled],
+    [router, locale],
   );
 
   usePageNotices([
@@ -220,16 +236,9 @@ function FormList({ designModeEnabled = true }: { designModeEnabled?: boolean })
       {
         key: 'workspace',
         label: dict.workspaces?.workspace || 'Workspace',
-        render: (form: SobaFormSummary) => {
-          const ws = workspaces.find((w) => w.id === form.workspaceId);
-          return (
-            <Tag
-              text={ws?.name || form.workspaceId}
-              color="yellow"
-              data-testid={`workspace-tag-${form.id}`}
-            />
-          );
-        },
+        render: (form: SobaFormSummary) => (
+          <Tag text={form.workspaceName} color="yellow" data-testid={`workspace-tag-${form.id}`} />
+        ),
       },
       {
         key: 'actions',
@@ -239,7 +248,8 @@ function FormList({ designModeEnabled = true }: { designModeEnabled?: boolean })
           <CustomActionButtons
             form={form}
             onAction={handleAction}
-            designModeEnabled={designModeEnabled}
+            submitLabel={dictForm?.submit || 'Submit'}
+            submissionsLabel={dict.submission?.submissions || 'Submissions'}
           />
         ),
       },
@@ -262,15 +272,22 @@ function FormList({ designModeEnabled = true }: { designModeEnabled?: boolean })
       },
     ],
     [
-      handleAction,
-      dictFormList,
-      dictForm,
-      dict.workspaces,
-      workspaces,
-      designModeEnabled,
+      dictForm?.submit,
+      dict.submission?.submissions,
+      dict.workspaces?.workspace,
+      dictForm?.nameLabel,
+      dictFormList?.columns?.createdAt,
+      dictFormList?.columns?.createdBy,
+      dictFormList?.columns?.name,
+      dictFormList?.columns?.quickLinks,
       formatLongDate,
+      handleAction,
     ],
   );
+
+  const hideModal = () => {
+    setShowCreateModal(false);
+  };
 
   // Auth gate only — loading (including Keycloak init) is shown inside the table
   // body so the page heading stays visible throughout.
@@ -280,6 +297,9 @@ function FormList({ designModeEnabled = true }: { designModeEnabled?: boolean })
 
   return (
     <>
+      <Modal show={showCreateModal} onClose={hideModal} title={dict.form.createForm}>
+        <FormCreateContent onCancelPress={hideModal} />
+      </Modal>
       <ListPageToolbar>
         <ListPageSearchField
           value={listQuery.searchInput}
@@ -287,53 +307,40 @@ function FormList({ designModeEnabled = true }: { designModeEnabled?: boolean })
           onSubmit={listQuery.commitSearch}
           testIdPrefix="forms"
         />
-        {designModeEnabled ? (
-          <DSButton
-            variant="primary"
-            data-testid="create-form-button"
-            isDisabled={!canCreate}
-            onPress={() => router.push(`/${locale}/designer`)}
-          >
-            {dict.general.create}
-          </DSButton>
-        ) : null}
+        <DSButton
+          variant="primary"
+          data-testid="create-form-button"
+          isDisabled={!canCreate}
+          onPress={() => setShowCreateModal(true)}
+        >
+          {dict.general.create}
+        </DSButton>
       </ListPageToolbar>
-      <div className={`d-flex align-items-end gap-2`}>
+      <ListPageFilters>
         <WorkspaceSelector
           className={`${styles.workspaceField}`}
-          workspaces={workspaces}
+          workspaces={pickerWorkspaces}
           selectedWorkspaceId={selectedWorkspaceId ?? null}
           label={dict.workspaces.workspace}
           onChange={handleWorkspaceChange}
           allLabel={dict.workspaces.allWorkspaces}
+          description={lookupTruncatedNote(dict.general.lookupTruncated, workspaceOptions)}
           size="medium"
         />
-        <DSButton
-          variant="secondary"
-          data-testid="clear-filters-button"
-          onPress={listQuery.clear}
-        >
+        <DSButton variant="secondary" data-testid="clear-filters-button" onPress={listQuery.clear}>
           {dict.general.clearFilters || 'Clear'}
         </DSButton>
-      </div>
+      </ListPageFilters>
 
       <DataTable<SobaFormSummary>
-        data={forms}
-        columns={columns}
-        loading={isLoading || initializing || waitingForWorkspaces}
+        {...table}
+        loading={table.loading || initializing || workspaceFilter.pending}
         error={error}
+        columns={columns}
         emptyMessage="No forms found matching your criteria."
         loadingMessage={dict.general.loading}
         itemName="items"
         caption={dict.general.forms}
-        pageSize={listQuery.pageSize}
-        currentPage={listQuery.page}
-        totalItems={data?.page?.total}
-        onPageChange={listQuery.setPage}
-        onPageSizeChange={listQuery.setPageSize}
-        pageSizeOptions={PAGE_SIZE_OPTIONS}
-        sort={listQuery.sort}
-        onSortChange={listQuery.setSort}
         keyExtractor={(form) => form.id}
       />
     </>

@@ -78,12 +78,14 @@ export async function applyFeatureFlags(
     statusRows.map((r) => r.code),
   );
 
-  for (const change of changes) {
-    await db
-      .update(features)
-      .set({ status: change.to, updatedAt: new Date(), updatedBy: stampedBy })
-      .where(eq(features.code, change.code));
-  }
+  await Promise.all(
+    changes.map((change) =>
+      db
+        .update(features)
+        .set({ status: change.to, updatedAt: new Date(), updatedBy: stampedBy })
+        .where(eq(features.code, change.code)),
+    ),
+  );
 
   return {
     changes,

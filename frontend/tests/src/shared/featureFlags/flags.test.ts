@@ -9,6 +9,7 @@ const sampleMeta: FeaturesMetaPayload = {
       description: null,
       version: null,
       status: 'enabled',
+      availability: 'fixed',
       platformAllowed: true,
     },
     {
@@ -17,6 +18,7 @@ const sampleMeta: FeaturesMetaPayload = {
       description: null,
       version: null,
       status: 'enabled',
+      availability: 'fixed',
       platformAllowed: true,
     },
     {
@@ -25,6 +27,7 @@ const sampleMeta: FeaturesMetaPayload = {
       description: null,
       version: null,
       status: 'disabled',
+      availability: 'fixed',
       platformAllowed: false,
     },
   ],

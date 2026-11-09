@@ -1,8 +1,8 @@
 import { loadFeaturesMeta } from '@/src/shared/config/featuresMeta';
 import { createIsFeatureAllowed, FEATURE_CODES } from '@/src/shared/featureFlags/flags';
 import { getKeycloakInstance } from '@/lib/slices/keycloakSlice';
-import { ensureFreshToken } from '@/src/shared/auth/tokenRefresh';
-import { getActiveSubmissionId } from './activeSubmission';
+import { openedActiveSubmissionId } from './activeSubmission';
+import { uploadToken } from './data/uploadToken';
 import { getSobaApiBaseUrl, loadFrontendRuntimeConfig } from '@/src/shared/config/runtimeConfig';
 
 interface ChefsProviderConfig {
@@ -59,16 +59,11 @@ export function ensureBcgovFormioRegistered(): Promise<{ filesEnabled: boolean }
             const apiUrl = getSobaApiBaseUrl();
             return `${apiUrl}/submit/files`;
           },
-          // Shares sobaFetch's refresh and its rule: an affirmative no-session sends nothing rather
-          // than a stale token, but without a verdict we fall back to what the instance holds.
-          getToken: async () => {
-            const outcome = await ensureFreshToken();
-            if (outcome.status === 'token') return outcome.token;
-            return outcome.status === 'unavailable' ? (getKeycloakInstance()?.token ?? '') : '';
-          },
-          // The submission currently being filled (set by the fill page); uploads are tagged with it,
-          // and the backend derives the workspace from it — so no workspace id is passed.
-          getSubmissionId: () => getActiveSubmissionId() ?? '',
+          getToken: () => uploadToken(() => getKeycloakInstance()?.token),
+          // The submission currently being filled (set by the fill form), opened first if it is new;
+          // uploads are tagged with it, and the backend derives the workspace from it, so no
+          // workspace id is passed.
+          getSubmissionId: openedActiveSubmissionId,
         }),
       );
     }

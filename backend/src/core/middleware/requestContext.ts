@@ -1,3 +1,5 @@
+import type { FormAccessGrant } from '../db/repos/formAccessRepo';
+
 /**
  * Core per-request workspace context, populated by the per-route workspace middleware in
  * `workspaceContext.ts` (`workspaceFromQuery` / `workspaceFromResource`). Actor-only routes
@@ -8,22 +10,31 @@ export interface CoreRequestContext {
   actorId: string;
   actorDisplayLabel: string | null;
   workspaceSource: string;
+  /** The form the resolved resource or list anchor is, or belongs to. */
+  formId?: string;
   /**
-   * The actor's workspace membership role (owner/admin/member/viewer); gates workspace management.
-   * Cached with the membership (see buildCoreContext); any role change must call
-   * invalidateMembershipCache(workspaceId, userId) or a demoted admin keeps authority until the TTL.
+   * The actor's workspace membership role (owner/admin/member/viewer), read on every request. Null
+   * for a caller with no membership on the submit surface, and in every context setSubmitContext
+   * builds; no workspace role check accepts null.
    */
-  role: string;
+  role: string | null;
+  /**
+   * The actor's permission codes on `formId`, or on the workspace without one. Set by
+   * requireFormPermissions.
+   */
+  permissions?: ReadonlySet<string>;
 }
 
 /**
- * Scope for workspace-scoped *list/search* routes, populated by `workspaceListScope`. Workspace
- * is always resolved to a single id (from a scope anchor); membership is verified before listing.
+ * Scope for *list/search* routes, populated by `workspaceListScope` and `requireFormPermissions`.
+ * Membership in an anchored workspace is verified before listing.
  */
 export interface CoreListScope {
   actorId: string;
-  /** Workspaces the list is restricted to (always a single resolved workspace). */
+  /** The anchored workspace, or every workspace the actor is an active member of. */
   workspaceIds: string[];
   /** The workspace resolved from the scope anchor. */
   selectedWorkspaceId?: string;
+  /** The forms the list may show, resolved by requireFormPermissions. */
+  formAccess?: FormAccessGrant;
 }

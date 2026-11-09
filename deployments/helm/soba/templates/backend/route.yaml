@@ -15,6 +15,9 @@ metadata:
   {{- end }}
 spec:
   host: {{ include "soba.backendHost" $root }}
+  {{- with include "soba.backendBasePath" $root }}
+  path: {{ . }}
+  {{- end }}
   to:
     kind: Service
     name: {{ include "soba.fullname" $root }}-backend
@@ -63,7 +66,7 @@ metadata:
   {{- end }}
 spec:
   host: {{ include "soba.backendHost" $root }}
-  path: {{ $path }}
+  path: {{ printf "%s%s" (include "soba.backendBasePath" $root) $path }}
   to:
     kind: Service
     name: {{ include "soba.fullname" $root }}-backend

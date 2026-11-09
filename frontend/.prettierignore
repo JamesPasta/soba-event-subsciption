@@ -18,6 +18,10 @@ build
 # Public assets that shouldn't be formatted
 public/*.svg
 public/*.html
+public/formio-v5/
+
+# Written by eslint
+eslint-suppressions.json
 
 # Ignore lockfile
 package-lock.json

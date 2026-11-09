@@ -15,8 +15,8 @@ const runGuard = (
   middleware: ReturnType<typeof requireFeatureAvailable>,
   req: Partial<Request>,
 ): Promise<unknown> =>
-  new Promise((resolve) => {
-    middleware(req as Request, {} as Response, (err?: unknown) => resolve(err));
+  new Promise((resolve, reject) => {
+    middleware(req as Request, {} as Response, (err?: unknown) => resolve(err)).catch(reject);
   });
 
 describe('requireFeatureAvailable', () => {
@@ -43,6 +43,7 @@ describe('requireFeatureAvailable', () => {
     } as Partial<Request>);
 
     expect(err).toBeInstanceOf(NotFoundError);
+    expect(err).toMatchObject({ message: 'Not found', code: 'route_not_found' });
   });
 
   it('fails loud (not a silent 404) when mounted before workspace resolution', async () => {

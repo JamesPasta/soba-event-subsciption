@@ -13,7 +13,7 @@ RUN mkdir -p /home/node/.local/share/pnpm/store \
     && chown -R node:node /home/node/.local
 
 # ── Add third-party APT repositories ────────────────────────────────────────
-# PostgreSQL 17 client (matches production-style Postgres)
+# PostgreSQL 18 client (matches the Postgres sidecar and the OpenShift clusters)
 RUN curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
         | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg \
     && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
@@ -28,7 +28,7 @@ RUN curl -fsSL https://pgp.mongodb.com/server-7.0.asc \
 # ── Install packages from APT ──────────────────────────────────────────────────
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get install -y --no-install-recommends \
-        postgresql-client-17 \
+        postgresql-client-18 \
         mongodb-mongosh \
         jq \
         curl \

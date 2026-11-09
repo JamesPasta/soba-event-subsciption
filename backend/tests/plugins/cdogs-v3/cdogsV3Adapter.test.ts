@@ -6,6 +6,7 @@ import {
 } from '../../../src/core/config/pluginConfig';
 import { createEnvReader } from '../../../src/core/config/env';
 import { ServiceUnavailableError } from '../../../src/core/errors';
+import type { DocumentRenderRequest } from '../../../src/core/integrations/document-generation/DocumentGenerationAdapter';
 
 // Goes through the real reader rather than a stub, so the adapter sees the actual parsing.
 function makeConfig(overrides: Partial<Record<string, string>> = {}): PluginConfigReader {
@@ -31,6 +32,12 @@ const binaryOk = () =>
     arrayBuffer: () => Promise.resolve(Uint8Array.from([7, 8]).buffer),
   }) as unknown as Response;
 
+const renderRequest: DocumentRenderRequest = {
+  template: { content: Buffer.from('x'), fileType: 'docx' },
+  options: {},
+  data: {},
+};
+
 describe('cdogs-v3 plugin', () => {
   const origFetch = global.fetch;
   afterEach(() => {
@@ -50,7 +57,7 @@ describe('cdogs-v3 plugin', () => {
     const fetchMock = jest.fn().mockResolvedValue(binaryOk());
     global.fetch = fetchMock;
 
-    const res = await new CdogsV3Adapter(makeConfig()).render({ template: { content: 'x' } });
+    const res = await new CdogsV3Adapter(makeConfig()).render(renderRequest);
 
     expect(res.data).toEqual(Buffer.from([7, 8]));
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -62,7 +69,7 @@ describe('cdogs-v3 plugin', () => {
   it('maps a transport failure to ServiceUnavailableError', async () => {
     global.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
 
-    await expect(new CdogsV3Adapter(makeConfig()).render({})).rejects.toBeInstanceOf(
+    await expect(new CdogsV3Adapter(makeConfig()).render(renderRequest)).rejects.toBeInstanceOf(
       ServiceUnavailableError,
     );
   });
@@ -71,7 +78,7 @@ describe('cdogs-v3 plugin', () => {
     const timeoutSpy = jest.spyOn(AbortSignal, 'timeout');
     global.fetch = jest.fn().mockResolvedValue(binaryOk());
 
-    await new CdogsV3Adapter(makeConfig({ TIMEOUT_MS: '4321' })).render({});
+    await new CdogsV3Adapter(makeConfig({ TIMEOUT_MS: '4321' })).render(renderRequest);
 
     expect(timeoutSpy.mock.calls.at(-1)?.[0]).toBeLessThanOrEqual(4321);
     expect(timeoutSpy.mock.calls.at(-1)?.[0]).toBeGreaterThan(4200);

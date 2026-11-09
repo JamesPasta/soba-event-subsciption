@@ -1,8 +1,10 @@
 import { Request, Response } from 'express';
+import type { CodesKeyedMetaResponse, RolesMetaResponse } from '@soba/lib';
 import { metaApiService } from './service';
 import { asyncHandler } from '../shared/asyncHandler';
 import { codeService } from '../../services/codeService';
 import { getFilesConfig } from '../../../features/files/config';
+import { listLoginIdentityProviders } from '../../db/repos/identityProviderRepo';
 
 export const getPluginsMeta = asyncHandler(async (_req: Request, res: Response) => {
   res.json(await metaApiService.getPlugins());
@@ -23,6 +25,10 @@ export const getFeatureAvailabilityMeta = asyncHandler(async (req: Request, res:
 
 export const getFormEnginesMeta = asyncHandler(async (_req: Request, res: Response) => {
   res.json(await metaApiService.getFormEngines());
+});
+
+export const getLoginProvidersMeta = asyncHandler(async (req: Request, res: Response) => {
+  res.json({ items: await listLoginIdentityProviders(req.sortLocale!) });
 });
 
 export const getBuildMeta = (_req: Request, res: Response) => {
@@ -47,11 +53,13 @@ export const getCodesMeta = asyncHandler(async (req: Request, res: Response) => 
   const codeSets = await codeService.getRegisteredCodeSets({ onlyEnabledFeatures });
   let codeSetNames = [...new Set(codeSets.map((r) => r.codeSet))];
   if (codeSetFilter) {
-    const wanted = codeSetFilter
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    codeSetNames = codeSetNames.filter((name) => wanted.includes(name));
+    const wanted = new Set(
+      codeSetFilter
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+    codeSetNames = codeSetNames.filter((name) => wanted.has(name));
   }
   if (sourceFilter) {
     codeSetNames = codeSetNames.filter((name) =>
@@ -63,15 +71,14 @@ export const getCodesMeta = asyncHandler(async (req: Request, res: Response) => 
     );
   }
 
-  const result: Record<
-    string,
-    Array<{ code: string; display: string; sort_order: number; is_active: boolean; source: string }>
-  > = {};
-  for (const codeSet of codeSetNames) {
-    const items = await codeService.getCodes(codeSet, {
-      activeOnly: isActiveFilter === 'true',
-      onlyEnabledFeatures,
-    });
+  const codesBySet = await Promise.all(
+    codeSetNames.map((codeSet) =>
+      codeService.getCodes(codeSet, { activeOnly: isActiveFilter === 'true', onlyEnabledFeatures }),
+    ),
+  );
+  const result: CodesKeyedMetaResponse = {};
+  for (const [index, codeSet] of codeSetNames.entries()) {
+    const items = codesBySet[index];
     let list = items;
     if (isActiveFilter === 'false') list = items.filter((r) => !r.isActive);
     if (sourceFilter) list = list.filter((r) => r.source === sourceFilter);
@@ -105,7 +112,7 @@ export const getRolesMeta = asyncHandler(async (req: Request, res: Response) => 
     status: query.status,
     onlyEnabledFeatures: query.only_enabled_features === 'true',
   });
-  res.json({
+  const body: RolesMetaResponse = {
     roles: result.roles.map((r) => ({
       roleCode: r.code,
       name: r.name,
@@ -115,5 +122,6 @@ export const getRolesMeta = asyncHandler(async (req: Request, res: Response) => 
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     })),
-  });
+  };
+  res.json(body);
 });

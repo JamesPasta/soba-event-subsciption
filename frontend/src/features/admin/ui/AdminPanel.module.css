@@ -15,6 +15,11 @@
   padding-top: 1rem;
 }
 
+.filterSelect {
+  width: 240px;
+  max-width: 100%;
+}
+
 .panelIntro {
   max-width: 48rem;
   margin-bottom: 1.25rem;

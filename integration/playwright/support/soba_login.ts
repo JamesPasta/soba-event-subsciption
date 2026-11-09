@@ -1,8 +1,10 @@
-import { expect, type Page } from "@playwright/test";
-import { authenticator } from "@otplib/preset-default";
+import { expect, type Page } from '@playwright/test';
+import { authenticator } from '@otplib/preset-default';
 export function formsettings() {
-  if (!process.env.KEYCLOAK_USERNAME || !process.env.KEYCLOAK_PASSWORD) {
-    throw new Error("Missing env variables");
+  if (!process.env.KEYCLOAK_USERNAME || !process.env.KEYCLOAK_PASSWORD || !process.env.MFA_CODE) {
+    throw new Error(
+      'Missing env variables: KEYCLOAK_USERNAME, KEYCLOAK_PASSWORD, and MFA_CODE are required',
+    );
   }
 
   return {
@@ -15,25 +17,37 @@ export function formsettings() {
 
 export async function login(page: Page) {
   const { username, password, mfaCode } = formsettings();
-  await page.click('[data-testid="login-button"]');
-  //Verify login option
-  await expect(page.locator("#social-azureidir")).toBeVisible();
-  await expect(page.locator("#social-bceidbusiness")).toBeVisible();
-  await page.locator("#social-azureidir").click();
+
+  await page.getByTestId('login-button').click();
+
+  const idirButton = page.locator('#social-azureidir, a:has-text("IDIR - MFA")').first();
+  const bceidButton = page.locator('#social-bceidbusiness, a:has-text("Business BCeID")').first();
+
+  await expect(idirButton).toBeVisible({ timeout: 20000 });
+  await expect(bceidButton).toBeVisible({ timeout: 20000 });
+
+  await idirButton.click();
   await page.fill('input[type="email"]', username);
   await page.click('input[type="submit"]');
-  await page.fill('input[name="passwd"]', password);
+
+  // Microsoft may ask which account type to use before showing the password field.
+  const passwordInput = page.locator('input[name="passwd"]');
+  const workAccount = page.getByRole('button', { name: /^Work or school account/ });
+  await expect(passwordInput.or(workAccount)).toBeVisible({ timeout: 20000 });
+  if (await workAccount.isVisible()) {
+    await workAccount.click();
+  }
+  await passwordInput.fill(password);
   await page.click('input[type="submit"]');
+
   authenticator.options = {
-    //encoding: "base32" as any,
     step: 30,
-    window: 2, // allows ±30s tolerance
+    window: 2,
   };
-  const token = authenticator.generate(process.env.MFA_CODE!);
-  console.log("Generated OTP:", token);
+
+  const token = authenticator.generate(mfaCode);
   await page.fill('input[name="otc"]', token);
   await page.click('input[type="submit"]');
-  await page.locator("#idSIButton9").click();
-  //Visibility of the user dropdown confirms successful login (logout now lives inside it)
+  await page.locator('#idSIButton9').click();
   await expect(page.locator('[data-testid="user-dropdown"]')).toBeVisible();
 }

@@ -10,9 +10,13 @@ export interface ConfirmModalProps {
   message: string;
   /** Label for the action being confirmed, e.g. "Delete". */
   confirmLabel: string;
+  /** Label for backing out; "Cancel" unless that would read as the action itself. */
+  cancelLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
   pending?: boolean;
+  /** Holds the confirm button off, such as while the message waits on a read. */
+  confirmDisabled?: boolean;
 }
 
 /** Prompt before an action that cannot be undone. */
@@ -21,9 +25,11 @@ export function ConfirmModal({
   title,
   message,
   confirmLabel,
+  cancelLabel,
   onConfirm,
   onCancel,
   pending = false,
+  confirmDisabled = false,
 }: Readonly<ConfirmModalProps>) {
   const dict = useDictionary();
 
@@ -37,7 +43,7 @@ export function ConfirmModal({
         <>
           <Button
             variant="primary"
-            isDisabled={pending}
+            isDisabled={pending || confirmDisabled}
             onPress={onConfirm}
             data-testid="confirm-modal-confirm"
           >
@@ -49,7 +55,7 @@ export function ConfirmModal({
             onPress={onCancel}
             data-testid="confirm-modal-cancel"
           >
-            {dict.general.cancel}
+            {cancelLabel ?? dict.general.cancel}
           </Button>
         </>
       }

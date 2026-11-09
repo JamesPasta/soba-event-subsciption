@@ -1,11 +1,35 @@
-# PR environment — minimal resources, single replica, internal Form.io + MongoDB
+# PR environment - minimal resources, single replica, the dev release's Form.io and MongoDB
 backend:
-  # Development data generator: on for PR review environments.
+  # Development data generator: on for PR review environments. Notifications send through notify-v1.
+  # API keys issue through the APS issuer below.
   features:
+    api-keys: "enabled"
     dev-data: "enabled"
+    notifications: "enabled"
+    post-submission: "enabled"
+    post-submission-email: "enabled"
+    submission-export: "enabled"
+    user-search: "enabled"
   replicas: 1
+  # The PR file store PVC is 1 Gi, shared with attachments and templates.
+  jobs:
+    resultMaxBytes: "52428800"
+    resultRetentionDays: "1"
+  # Files and templates on a per-PR PVC, which pr_close deletes with the release. PRs write nothing to S3.
+  storage:
+    defaultBackend: storage-local
+    defaultBasePath: /app/files
+    localVolume:
+      storageClassName: netapp-file-standard
   config:
     documentGenerationDefaultCode: cdogs-v2
+    tenantEngineDefaultCode: cstar-v1
+    credentialIssuerDefaultCode: aps-credential-issuer-v3
+    workflowEngineDefaultCode: cs-workflow-v1
+    notificationDefaultCode: notify-v1
+    userSearchPlugins: css-v1,user-search-soba
+    # Emails go through Notify test, which only delivers to its safelist.
+    postSubmissionActionPlugins: post-submission-email-addresses
     # Ephemeral PR namespaces stage temp bytes under os.tmpdir() — no RWX PVC.
     tempStorageDefaultCode: tempstorage-os
     # Virus scan inherits virusscan-clamav from values.yaml: PRs deploy into the dev
@@ -17,12 +41,33 @@ backend:
     cacheDefaultCode: cache-redis
     messagebusDefaultCode: messagebus-redis
     eventStreamDefaultCode: eventstream-redis
+  credentialIssuer:
+    apsCredentialIssuerV3:
+      apiBaseUrl: https://api.gov.bc.ca/ds/api/v3
+      # PRs read dev's Vault secret, so they use its issuer account, gateway and product environment.
+      gatewayId: "gw-93f93"
+      tokenUrl: https://authz.apps.gov.bc.ca/auth/realms/aps/protocol/openid-connect/token
   documentGeneration:
     cdogsV2:
       endpoint: https://cdogs-dev.api.gov.bc.ca/api
       tokenUrl: https://dev.loginproxy.gov.bc.ca/auth/realms/comsvcauth/protocol/openid-connect/token
-    cdogsV3:
-      endpoint: http://common-document-generation-service-master.a12c97-prod:3000
+  tenantEngine:
+    cstarV1:
+      apiBaseUrl: https://test.connect.digital.gov.bc.ca/api/v1
+  workflowEngine:
+    csWorkflowV1:
+      apiBaseUrl: https://test-workflow.apps.gold.devops.gov.bc.ca/api/v1
+  notification:
+    notifyV1:
+      endpoint: https://gw-fe8c5-notify.test.api.gov.bc.ca/api/v1
+      # Keeps one slow send well inside an email job's lease and timeout.
+      timeoutMs: "10000"
+  userSearch:
+    cssV1:
+      apiBaseUrl: https://api.loginproxy.gov.bc.ca/api/v1
+      # Matches the SSO dev realm sign-in uses; BCeID accounts differ between CSS environments.
+      environment: dev
+      tokenUrl: https://loginproxy.gov.bc.ca/auth/realms/standard/protocol/openid-connect/token
   sso:
     jwksUri: https://dev.loginproxy.gov.bc.ca/auth/realms/standard/protocol/openid-connect/certs
     jwtIssuer: https://dev.loginproxy.gov.bc.ca/auth/realms/standard
@@ -42,6 +87,10 @@ backend:
   autoscaling:
     enabled: false
 
+gatewayNetworkPolicy:
+  namespaceName: "b8840c"
+  environment: prod
+
 frontend:
   replicas: 1
   readinessProbe:
@@ -52,42 +101,21 @@ frontend:
       cpu: 25m
       memory: 128Mi
     limits:
-      cpu: 100m
+      cpu: 250m
       memory: 256Mi
   autoscaling:
     enabled: false
 
 formio:
   internal:
-    enabled: true
-  replicas: 1
-  resources:
-    requests:
-      cpu: 25m
-      memory: 128Mi
-    limits:
-      cpu: 100m
-      memory: 256Mi
-  # Formio depends on MongoDB; allow time for MongoDB to be ready after PR deploy
-  readinessProbe:
-    initialDelaySeconds: 45
-    timeoutSeconds: 10
-  livenessProbe:
-    initialDelaySeconds: 60
+    enabled: false
+  external:
+    url: http://soba-dev-formio.b82f30-dev:3001
 
 mongodb:
+  # Must stay false: the in-chart MongoDB is gated on this alone, not on formio.internal.enabled.
   internal:
-    enabled: true
-  replicas: 1
-  resources:
-    requests:
-      cpu: 50m
-      memory: 256Mi
-    limits:
-      cpu: 250m
-      memory: 512Mi
-  persistence:
-    size: 1Gi
+    enabled: false
 
 temporal:
   allowed: "true"
@@ -109,21 +137,5 @@ temporalWorkers:
         cpu: 100m
         memory: 512Mi
 
-  - name: temporal-worker-document-generation
-    enabled: true
-    taskQueue: "document-generation"
-    replicas: 1
-    healthPort: 9091
-    resources:
-      requests:
-        cpu: 25m
-        memory: 128Mi
-      limits:
-        cpu: 100m
-        memory: 512Mi
-
 vault:
   enabled: true
-  role: acf456-nonprod
-  secretPath: acf456-nonprod/soba-dev
-  serviceAccountName: acf456-vault

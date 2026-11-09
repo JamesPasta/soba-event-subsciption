@@ -212,7 +212,7 @@ describe('SobaAdminsPanel', () => {
     });
   });
 
-  it('notifies when the list cannot be loaded', async () => {
+  it('shows the load error in the table when the list cannot be loaded', async () => {
     mockFetchSobaAdmins.mockRejectedValue(new Error('boom'));
 
     await act(async () => {
@@ -220,8 +220,8 @@ describe('SobaAdminsPanel', () => {
     });
 
     await waitFor(() => {
-      expect(mockAddNotification).toHaveBeenCalledWith(
-        expect.objectContaining({ text: 'Failed to load platform administrators.', type: 'error' }),
+      expect(screen.getByTestId('datatable-error')).toHaveTextContent(
+        'Failed to load platform administrators.',
       );
     });
   });

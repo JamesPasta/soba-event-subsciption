@@ -1,6 +1,6 @@
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
-import { sortTokensFor } from '../../db/listSort';
+import { OffsetPageSchema as LibOffsetPageSchema } from '@soba/lib';
 
 extendZodWithOpenApi(z);
 
@@ -40,16 +40,13 @@ export const rejectedCursorField = z
     description: 'Rejected. These endpoints page by offset and limit.',
   });
 
-export const OffsetPageSchema = z
-  .object({
-    offset: z.number().int().min(0),
-    limit: z.number().int().min(1),
-    total: z.number().int().min(0),
-  })
-  .openapi('Core_OffsetPage');
+export const OffsetPageSchema = LibOffsetPageSchema.clone().openapi('Core_OffsetPage');
 
 export const searchQueryField = z.string().trim().min(1).optional();
 
-/** The sort options a list declares, as `field:asc` / `field:desc`. */
-export const makeSortEnum = <TField extends string>(fields: readonly TField[]) =>
-  z.enum(sortTokensFor(fields));
+export const sortLocaleQueryField = z.string().trim().optional().openapi({
+  description:
+    'Language to sort text in: fr for any French tag, otherwise en. Accept-Language wins when both are sent.',
+});
+
+export const SortLocaleQuerySchema = z.object({ locale: sortLocaleQueryField });

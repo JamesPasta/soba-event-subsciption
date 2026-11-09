@@ -4,8 +4,8 @@ env.loadEnv();
 
 import { parseArgs } from 'node:util';
 
-import { pool } from '../../core/db/client';
 import { AppError } from '../../core/errors';
+import { parseOrUsage, runCli, UsageError } from './cliSupport';
 import { generate, type DevDataManifest } from './generate';
 import { collectTargets, purge, type PurgeResult } from './purge';
 import { acquireDevDataLock, assertDevDataEnabled, describeTarget } from './guard';
@@ -69,8 +69,6 @@ interface CliOptions {
   dryRun: boolean;
 }
 
-class UsageError extends Error {}
-
 function resolveAction(flags: Partial<Record<Action, boolean>>): Action {
   const chosen = ACTIONS.filter((name) => flags[name]);
   if (chosen.length !== 1) {
@@ -88,10 +86,9 @@ function readSize(value?: string): SizeName {
   return value as SizeName;
 }
 
-/** parseArgs throws its own error type for a bad flag. Surface it like the rest. */
-function parseArgv(argv: string[]) {
-  try {
-    return parseArgs({
+function parse(argv: string[]): CliOptions {
+  const { values } = parseOrUsage(() =>
+    parseArgs({
       args: argv,
       options: {
         seed: { type: 'boolean', default: false },
@@ -105,14 +102,8 @@ function parseArgv(argv: string[]) {
         'dry-run': { type: 'boolean', default: false },
         help: { type: 'boolean', default: false },
       },
-    });
-  } catch (err) {
-    throw new UsageError(err instanceof Error ? err.message : 'Invalid arguments');
-  }
-}
-
-function parse(argv: string[]): CliOptions {
-  const { values } = parseArgv(argv);
+    }),
+  );
 
   if (values.help) throw new UsageError('');
 
@@ -153,6 +144,12 @@ function reportPurge(result: PurgeResult): void {
   if (result.engineSkipped > 0) {
     console.log(`  ${result.engineSkipped} engine document(s) skipped, no plugin to delete them`);
   }
+  console.log(`  stored files${''.padEnd(20)} ${result.storedFilesDeleted}`);
+  if (result.storedFilesSkipped > 0) {
+    console.log(
+      `  ${result.storedFilesSkipped} stored file(s) skipped, no storage profile for them`,
+    );
+  }
 }
 
 async function reportDryRun(): Promise<void> {
@@ -163,6 +160,7 @@ async function reportDryRun(): Promise<void> {
   console.log(`  users${''.padEnd(27)} ${targets.userIds.length}`);
   console.log(`  engine form documents${''.padEnd(11)} ${targets.schemaRefs.length}`);
   console.log(`  engine submission documents${''.padEnd(5)} ${targets.submissionRefs.length}`);
+  console.log(`  stored files${''.padEnd(20)} ${targets.storedFiles.length}`);
 }
 
 function reportManifest(manifest: DevDataManifest): void {
@@ -180,6 +178,12 @@ function reportManifest(manifest: DevDataManifest): void {
     ? `${submissions.workspaceId} form ${submissions.formId}`
     : '-';
   console.log(`  paging submissions ${submissionsAnchor}`);
+  const { coverage } = manifest;
+  console.log(
+    `Access coverage set: ${Object.keys(coverage.personas).length} personas, ` +
+      `${Object.keys(coverage.forms).length} forms, ` +
+      `${Object.keys(coverage.submissions).length} submissions. Check it with pnpm db:dev-data:verify`,
+  );
 }
 
 /**
@@ -251,6 +255,12 @@ async function run(options: CliOptions): Promise<void> {
         1,
       );
     }
+    if (result.storedFilesSkipped > 0) {
+      throw new AppError(
+        `Postgres is clean but ${result.storedFilesSkipped} stored file(s) were left behind`,
+        1,
+      );
+    }
   }
   if (options.action === 'purge' || !owner) return;
 
@@ -270,31 +280,4 @@ const main = async (): Promise<void> => {
   console.log(`Done in ${Math.round((Date.now() - started) / 1000)}s`);
 };
 
-/** Usage problems print the usage text; an AppError prints its message; anything else its stack. */
-function report(error: unknown): number {
-  if (error instanceof UsageError) {
-    if (error.message) console.error(`${error.message}\n`);
-    console.log(USAGE);
-    return error.message ? 2 : 0;
-  }
-  if (error instanceof AppError) {
-    console.error(error.message);
-    return 1;
-  }
-  console.error(error);
-  return 1;
-}
-
-main()
-  .then(() => 0)
-  .catch(report)
-  .then(async (code) => {
-    // exitCode rather than exit(): lets stdout flush when the output is piped. A failure closing
-    // the pool must not overwrite the code the command earned.
-    process.exitCode = code;
-    try {
-      await pool.end();
-    } catch (error) {
-      console.error(error);
-    }
-  });
+runCli(main, USAGE);

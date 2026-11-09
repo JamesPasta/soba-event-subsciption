@@ -1,7 +1,19 @@
+import type {
+  BuildMetaResponse,
+  FeatureAvailabilityResponse,
+  FeaturesMetaResponse,
+  FormEnginesMetaResponse,
+  FrontendConfigMetaResponse,
+  PluginsMetaResponse,
+} from '@soba/lib';
 import packageJson from '../../../../package.json';
 import { env } from '../../config/env';
 import { authEnv } from '../../config/authEnv';
 import { getFormEnginePlugins } from '../../integrations/form-engine/FormEngineRegistry';
+import { getEnabledUserSearchPluginCodes } from '../../integrations/user-search/UserSearchRegistry';
+import { getPostSubmissionActions } from '../../integrations/post-submission-action/PostSubmissionActionRegistry';
+import { resolveDefaultTenantEngineCode } from '../../integrations/tenant/TenantEngineRegistry';
+import { resolveDefaultWorkflowEngineCode } from '../../integrations/workflow/WorkflowEngineRegistry';
 import {
   getActivePluginCodes,
   getActiveStorageBackendCodes,
@@ -36,13 +48,17 @@ function resolveGitSha(): string {
 }
 
 export class MetaApiService {
-  async getPlugins() {
+  async getPlugins(): Promise<PluginsMetaResponse> {
     const plugins = getPluginCatalog();
-    // Selectable adapter codes come from the registry; form engine has its own registry.
+    // Selectable adapter codes come from the registry; other kinds resolve their own defaults.
     const activeFormEngineCode =
       env.getFormEngineDefaultCode() ?? getFormEnginePlugins()[0]?.code ?? 'formio-v5';
     const activeCodes = new Set([
       activeFormEngineCode,
+      resolveDefaultTenantEngineCode(),
+      resolveDefaultWorkflowEngineCode(),
+      ...getEnabledUserSearchPluginCodes(),
+      ...getPostSubmissionActions().map((plugin) => plugin.code),
       ...getActivePluginCodes(),
       ...getActiveStorageBackendCodes(),
     ]);
@@ -63,7 +79,7 @@ export class MetaApiService {
     };
   }
 
-  async getFeatures() {
+  async getFeatures(): Promise<FeaturesMetaResponse> {
     const features = await listFeatures();
     return {
       features: features.map((f) => ({
@@ -82,7 +98,11 @@ export class MetaApiService {
    * Resolve whether a feature is available for a workspace/form scope (3-gate resolution). Lets the
    * frontend check a `scoped` feature it cannot resolve locally, since grants live server-side.
    */
-  async getFeatureAvailability(params: { code: string; workspaceId?: string; formId?: string }) {
+  async getFeatureAvailability(params: {
+    code: string;
+    workspaceId?: string;
+    formId?: string;
+  }): Promise<FeatureAvailabilityResponse> {
     const available = await isFeatureAvailable(params.code, {
       workspaceId: params.workspaceId,
       formId: params.formId,
@@ -90,7 +110,7 @@ export class MetaApiService {
     return { code: params.code, available };
   }
 
-  getBuild() {
+  getBuild(): BuildMetaResponse {
     return {
       name: packageJson.name,
       version: resolveAppVersion(),
@@ -101,7 +121,7 @@ export class MetaApiService {
     };
   }
 
-  getFrontendConfig() {
+  getFrontendConfig(): FrontendConfigMetaResponse {
     const issuer = authEnv.getIdpPluginDefaultSsoJwtIssuer();
     const { url, realm } = parseKeycloakIssuer(issuer);
     const clientId = authEnv.getIdpPluginDefaultSsoJwtAudience() ?? '';
@@ -117,7 +137,9 @@ export class MetaApiService {
         },
       },
       api: {
-        baseUrl: env.getOptionalEnv('SOBA_API_BASE_URL') ?? 'http://localhost:4000/api/v1',
+        baseUrl:
+          env.getOptionalEnv('SOBA_API_BASE_URL') ??
+          `http://localhost:4000${env.getApiBasePath()}/api/v1`,
       },
       // Reported only when configured. A guessed URL would be served to every client and silently
       // produce links to the wrong host.
@@ -133,17 +155,17 @@ export class MetaApiService {
     };
   }
 
-  async getFormEngines() {
+  getFormEngines(): Promise<FormEnginesMetaResponse> {
     const plugins = getFormEnginePlugins();
     const defaultCode = env.getFormEngineDefaultCode();
-    return {
+    return Promise.resolve({
       items: plugins.map((plugin) => ({
         code: plugin.code,
         name: plugin.name,
         engineVersion: plugin.version ?? null,
         isDefault: plugin.code === (defaultCode ?? plugins[0]?.code ?? null),
       })),
-    };
+    });
   }
 
   async getRoles(filters?: {

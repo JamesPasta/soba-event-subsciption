@@ -9,10 +9,14 @@ const { mockGetVersionPage, dict } = vi.hoisted(() => ({
   mockGetVersionPage: vi.fn(),
   dict: {
     locale: 'en',
-    general: { loading: 'Loading...', version: 'Version', forms: 'Forms' },
+    general: { loading: 'Loading...', version: 'Version', forms: 'Forms', sortBy: 'Sort by' },
     dataTable: { itemName: 'items', pageOf: 'of {totalPages} page(s)' },
     header: { design: 'Design' },
-    form: { status: 'Status', newVersionFrom: 'New version from', emptyHistory: 'No versions yet.' },
+    form: {
+      status: 'Status',
+      newVersionFrom: 'New version from',
+      emptyHistory: 'No versions yet.',
+    },
     submission: {
       formList: { columns: { createdBy: 'Created By', createdAt: 'Created Date' } },
     },
@@ -32,7 +36,7 @@ vi.mock('next/navigation', async () => {
   return {
     ...(actual as Record<string, unknown>),
     useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
-    usePathname: () => '/en/designer/f1',
+    usePathname: () => '/en/build/f1',
     useSearchParams: () => new URLSearchParams(''),
   };
 });
@@ -40,7 +44,7 @@ vi.mock('next/navigation', async () => {
 import makeStore from '@/lib/store';
 import { setAuthenticated, setToken } from '@/lib/slices/keycloakSlice';
 import FormHistoryTab from '@/src/features/designer/ui/FormHistoryTab';
-import type { Dictionary } from '@/src/types/plugins';
+import type { Dictionary } from '@/src/types/dictionary';
 
 const version = (id: string, versionNo: number, state = 'draft') => ({
   id,
@@ -53,7 +57,11 @@ const version = (id: string, versionNo: number, state = 'draft') => ({
 
 let store: ReturnType<typeof makeStore>;
 
-function renderTab(onSelectVersion = vi.fn()) {
+function renderTab(
+  onSelectVersion = vi.fn(),
+  onRestoreVersion = vi.fn(() => Promise.resolve(true)),
+) {
+  const onNavigateToDesigner = vi.fn();
   render(
     <Provider store={store}>
       <SWRConfig
@@ -63,12 +71,13 @@ function renderTab(onSelectVersion = vi.fn()) {
           dict={dict as unknown as Dictionary}
           formId="f1"
           onSelectVersion={onSelectVersion}
-          onRestoreVersion={vi.fn(() => Promise.resolve())}
+          onRestoreVersion={onRestoreVersion}
+          onNavigateToDesigner={onNavigateToDesigner}
         />
       </SWRConfig>
     </Provider>,
   );
-  return onSelectVersion;
+  return { onSelectVersion, onRestoreVersion, onNavigateToDesigner };
 }
 
 describe('FormHistoryTab', () => {
@@ -114,20 +123,41 @@ describe('FormHistoryTab', () => {
     });
     await screen.findByTestId('v9-status-tag');
 
-    expect(screen.getByRole('button', { name: 'Version' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Status' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Created Date' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Created By' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sort by Version' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sort by Status' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sort by Created Date' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sort by Created By' })).not.toBeInTheDocument();
   });
 
   // The picker carries only the newest versions, so a row further down the history is the case
   // that has to keep working.
   it('opens a version that only the table holds', async () => {
-    const onSelectVersion = renderTab();
+    const { onSelectVersion } = renderTab();
     await screen.findByTestId('v9-design-link');
 
     await userEvent.click(screen.getByTestId('v9-design-link'));
 
     expect(onSelectVersion).toHaveBeenCalledWith('v9');
+  });
+
+  it('leaves the user on the history when a restore creates nothing', async () => {
+    const { onNavigateToDesigner } = renderTab(
+      vi.fn(),
+      vi.fn(() => Promise.resolve(false)),
+    );
+    await screen.findByTestId('v9-newVersionFrom-link');
+
+    await userEvent.click(screen.getByTestId('v9-newVersionFrom-link'));
+
+    expect(onNavigateToDesigner).not.toHaveBeenCalled();
+  });
+
+  it('opens the designer when a restore creates a version', async () => {
+    const { onNavigateToDesigner } = renderTab();
+    await screen.findByTestId('v9-newVersionFrom-link');
+
+    await userEvent.click(screen.getByTestId('v9-newVersionFrom-link'));
+
+    await waitFor(() => expect(onNavigateToDesigner).toHaveBeenCalled());
   });
 });
