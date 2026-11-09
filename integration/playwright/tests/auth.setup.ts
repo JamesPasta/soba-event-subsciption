@@ -1,4 +1,4 @@
-import { test as setup } from '@playwright/test';
+import { test as setup } from '../fixtures/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { login } from '../support/soba_login';

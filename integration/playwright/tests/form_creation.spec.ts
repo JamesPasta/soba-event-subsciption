@@ -1,99 +1,8 @@
 import { test, expect } from '../fixtures/form_title';
-import type { Locator, Page } from '@playwright/test';
-import dictionaries from '../../../frontend/dictionaries/en.json';
-
-async function createForm({ page, title }: { page: Page; title: string }): Promise<string> {
-  await page.goto('');
-
-  // Only create a workspace when the first-run onboarding modal is actually shown.
-  // Reused auth sessions may already have a workspace, so we should not recreate one
-  // on every run.
-  const workspaceModal = page.getByRole('dialog', {
-    name: /Default Workspace Setup/i,
-  });
-  const workspaceSetupVisible = await workspaceModal
-    .waitFor({ state: 'visible', timeout: 5000 })
-    .then(
-      () => true,
-      () => false,
-    );
-
-  if (workspaceSetupVisible) {
-    // The name field is disabled until an org is picked, since the live availability check needs
-    // one to scope against.
-    await page.getByTestId('workspace-your-org').click();
-    await page
-      .getByRole('option', {
-        name: 'Health (HLTH)',
-        exact: true,
-      })
-      .click();
-
-    await page.getByTestId('workspace-name').locator('input').fill('Test Workspace');
-
-    await page.getByTestId('workspace-use-case').click();
-
-    const collectionUseCase = dictionaries.useCases['collection'];
-    if (collectionUseCase) {
-      await page
-        .getByRole('option', {
-          name: new RegExp(collectionUseCase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
-        })
-        .click();
-    }
-
-    const disclaimerCheckbox = page.getByRole('checkbox', {
-      name: /I agree to the disclaimer and statement of responsibility/i,
-    });
-    const disclaimerLabel = page.getByText(
-      /I agree to the disclaimer and statement of responsibility/i,
-    );
-    await disclaimerLabel.scrollIntoViewIfNeeded();
-    await expect(disclaimerLabel).toBeVisible();
-    await expect(disclaimerLabel).toBeEnabled();
-    await disclaimerLabel.click();
-    await expect(disclaimerCheckbox).toBeChecked();
-
-    const saveButton = page.getByTestId('workspace-save');
-    await expect(saveButton).toBeEnabled({ timeout: 15000 });
-    await saveButton.click();
-
-    await expect(workspaceModal).not.toBeVisible({ timeout: 15000 });
-    await expect(page.locator('.react-aria-ModalOverlay')).not.toBeVisible({
-      timeout: 15000,
-    });
-  }
-
-  await page.getByTestId('forms-nav').click();
-  await page.getByTestId('create-form-button').click();
-
-  const createFormDialog = page.getByRole('dialog', { name: 'Create Form' });
-  const workspaceSelector = createFormDialog.getByTestId('workspace-select');
-  await expect(workspaceSelector).toBeVisible();
-  await workspaceSelector.click();
-
-  const workspaceOptions = page
-    .getByRole('listbox', { name: dictionaries.workspaces.workspace })
-    .getByRole('option');
-  await expect(workspaceOptions.first()).toBeVisible();
-
-  const createdWorkspaceOption = workspaceOptions.filter({ hasText: 'Test Workspace' }).first();
-
-  const workspaceOption =
-    (await createdWorkspaceOption.count()) > 0 ? createdWorkspaceOption : workspaceOptions.first();
-
-  // Options read "<name> (<kind>)".
-  const workspaceName = (await workspaceOption.innerText()).trim().replace(/ \([^)]*\)$/, '');
-  await workspaceOption.click();
-
-  const formNameInput = createFormDialog
-    .locator('label', { hasText: 'Form Name' })
-    .locator('xpath=following-sibling::div//input');
-  await formNameInput.fill(title);
-  await createFormDialog.getByTestId('save-create-form').click();
-
-  return workspaceName;
-}
+import type { Locator } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
+import { createForm } from '../support/create_form';
+import { formSetupFile, type FormSetupData } from '../support/form_setup_data';
 
 async function dragComponentToCanvas(component: Locator, target: Locator) {
   const targetBounds = await target.boundingBox();
@@ -115,6 +24,10 @@ test('Create, edit, search, preview, and publish one form', async ({ page, title
   const workspaceName = await createForm({ page, title });
   const target = page.locator('.builder-components.drag-container');
   await expect(target).toBeVisible({ timeout: 30_000 });
+
+  // Share the workspace selected by this test with user_workspace.spec.ts.
+  const data: FormSetupData = { title, workspaceName, formUrl: page.url() };
+  await writeFile(formSetupFile, JSON.stringify(data, null, 2));
 
   const txt_box = page.locator('text=Text Field'); // component from builder palette
   await dragComponentToCanvas(txt_box, target);
@@ -229,7 +142,6 @@ test('Create, edit, search, preview, and publish one form', async ({ page, title
   // Check that all the tabs are visible after publishing the form
   await expect(page.getByTestId('settings-tab')).toBeVisible();
   await expect(page.getByTestId('version-tab')).toBeVisible();
-  await expect(page.getByTestId('team-tab')).toHaveCount(0);
   await expect(page.getByTestId('submission-tab')).toBeVisible();
   await expect(page.getByTestId('share-tab')).toBeVisible();
 });

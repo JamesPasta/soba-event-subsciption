@@ -29,7 +29,15 @@ export async function login(page: Page) {
   await idirButton.click();
   await page.fill('input[type="email"]', username);
   await page.click('input[type="submit"]');
-  await page.fill('input[name="passwd"]', password);
+
+  // Microsoft may ask which account type to use before showing the password field.
+  const passwordInput = page.locator('input[name="passwd"]');
+  const workAccount = page.getByRole('button', { name: /^Work or school account/ });
+  await expect(passwordInput.or(workAccount)).toBeVisible({ timeout: 20000 });
+  if (await workAccount.isVisible()) {
+    await workAccount.click();
+  }
+  await passwordInput.fill(password);
   await page.click('input[type="submit"]');
 
   authenticator.options = {

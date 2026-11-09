@@ -12,15 +12,15 @@ function getExpectedURL(depEnv: string): string {
   // PR environments: DEP_ENV is a PR number
   if (/^\d+$/.test(depEnv)) {
     const prNumber = Number(depEnv);
-    return `https://soba-dev.apps.silver.devops.gov.bc.ca/designer-${prNumber}/en`;
+    return `https://soba-dev.apps.gold.devops.gov.bc.ca/designer-${prNumber}/en`;
   }
 
   switch (depEnv.toLowerCase()) {
     case 'dev':
-      return 'https://soba-dev.apps.silver.devops.gov.bc.ca/designer/en';
+      return 'https://soba-dev.apps.gold.devops.gov.bc.ca/designer/en';
 
     case 'test':
-      return 'https://soba-test.apps.silver.devops.gov.bc.ca/designer/en';
+      return 'https://soba-test.apps.gold.devops.gov.bc.ca/designer/en';
 
     default:
       throw new Error(`Invalid DEP_ENV: ${depEnv}`);
@@ -58,7 +58,7 @@ export default defineConfig({
   projects: [
     {
       name: 'setup',
-      testMatch: /\.setup\.ts$/,
+      testMatch: /auth\.setup\.ts$/,
       use: {
         ...devices['Desktop Chrome'],
         baseURL: BASE_URL,
@@ -66,9 +66,35 @@ export default defineConfig({
       },
     },
 
-    // All E2E tests use the authenticated session
+    {
+      name: 'form-creation',
+      testMatch: /form_creation\.spec\.ts$/,
+      dependencies: ['setup'],
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: authFile,
+      },
+    },
+
+    {
+      name: 'form-management',
+      testMatch: /user_form_mangement\.spec\.ts$/,
+      dependencies: ['form-creation'],
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: authFile,
+      },
+    },
+
+    // Other E2E tests use the authenticated session and the shared form.
     {
       name: 'chromium',
+      testIgnore: [
+        /\.setup\.ts$/,
+        /form_creation\.spec\.ts$/,
+        /user_form_mangement\.spec\.ts$/,
+        /user_form_submission\.spec\.ts$/,
+      ],
       use: {
         ...devices['Desktop Chrome'],
         baseURL: BASE_URL,
@@ -79,7 +105,16 @@ export default defineConfig({
         trace: 'on-first-retry',
         ignoreHTTPSErrors: true,
       },
-      dependencies: ['setup'],
+      dependencies: ['form-creation'],
+    },
+    {
+      name: 'form-submission',
+      testMatch: /user_form_submission\.spec\.ts$/,
+      dependencies: ['form-management'],
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: authFile,
+      },
     },
   ],
 });
