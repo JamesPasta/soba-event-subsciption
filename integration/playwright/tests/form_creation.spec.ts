@@ -229,7 +229,7 @@ test('Create, edit, search, preview, and publish one form', async ({ page, title
   // Check that all the tabs are visible after publishing the form
   await expect(page.getByTestId('settings-tab')).toBeVisible();
   await expect(page.getByTestId('version-tab')).toBeVisible();
-  await expect(page.getByTestId('team-tab')).toBeVisible();
+  await expect(page.getByTestId('team-tab')).toHaveCount(0);
   await expect(page.getByTestId('submission-tab')).toBeVisible();
   await expect(page.getByTestId('share-tab')).toBeVisible();
 });
