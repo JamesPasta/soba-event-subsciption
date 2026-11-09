@@ -9,6 +9,16 @@ import type { JobStatus, JobTypeItem, JobViewModel } from '@/src/types/jobs';
 
 const SUBMISSION_SUBMITTED = 'submission.submitted';
 const SUBMISSION_EXPORT = 'submission-export';
+const SUBMISSION_STATUS_CHANGED = 'submission.status-changed';
+const SUBMISSION_STATUS_EMAIL = 'submission.status-email';
+
+/** The job types this build names itself, with their text. */
+const OWN_TYPE_LABELS: Readonly<Record<string, (dict: Dictionary) => string>> = {
+  [SUBMISSION_SUBMITTED]: (dict) => dict.jobs.types.submissionSubmitted,
+  [SUBMISSION_EXPORT]: (dict) => dict.jobs.types.submissionExport,
+  [SUBMISSION_STATUS_CHANGED]: (dict) => dict.jobs.types.submissionStatusChanged,
+  [SUBMISSION_STATUS_EMAIL]: (dict) => dict.jobs.types.submissionStatusEmail,
+};
 
 /** Text to show, and `lang` when only the server names it, which it does in English. */
 export type JobTypeLabel = { text: string; lang?: 'en' };
@@ -22,17 +32,22 @@ export const jobTypeLabel = (
   dict: Dictionary,
   types: readonly JobTypeItem[] = [],
 ): JobTypeLabel => {
-  if (type === SUBMISSION_SUBMITTED) return { text: dict.jobs.types.submissionSubmitted };
-  if (type === SUBMISSION_EXPORT) return { text: dict.jobs.types.submissionExport };
+  const own = OWN_TYPE_LABELS[type];
+  if (own) return { text: own(dict) };
   const action = postSubmissionActionUi(type);
   if (action) return { text: action.label(dict) };
   return { text: types.find((item) => item.type === type)?.name ?? type, lang: 'en' };
 };
 
-/** The types a submission's jobs can have that this build names: submission received and its actions. */
+/**
+ * The types a submission's jobs can have that this build names: submission received and its
+ * actions, status changed and its status emails.
+ */
 export const submissionJobTypes = (): string[] => [
   SUBMISSION_SUBMITTED,
   ...postSubmissionActionCodes(),
+  SUBMISSION_STATUS_CHANGED,
+  SUBMISSION_STATUS_EMAIL,
 ];
 
 const STATUS_VARIANTS: Record<JobStatus, StatusTagVariant> = {
@@ -57,11 +72,17 @@ export const canRerunJob = (status: JobStatus): boolean =>
 /** An export is its starter's own request: they start a new one rather than run it again. */
 export const isExportJob = (type: string): boolean => type === SUBMISSION_EXPORT;
 
+/** Event jobs whose run queues a job for each action or reaction recorded with the event. */
+const FAN_OUT_TYPES: ReadonlySet<string> = new Set([
+  SUBMISSION_SUBMITTED,
+  SUBMISSION_STATUS_CHANGED,
+]);
+
 /**
- * A submission-received job that queued its actions: the server refuses to run it again, since its
- * actions' jobs are the ones to run.
+ * An event job that queued its actions: the server refuses to run it again, since its actions'
+ * jobs are the ones to run.
  */
 export const queuedItsActions = (
   job: Pick<JobViewModel, 'type' | 'childrenQueuedAt' | 'children'>,
 ): boolean =>
-  job.type === SUBMISSION_SUBMITTED && (job.childrenQueuedAt !== null || job.children.length > 0);
+  FAN_OUT_TYPES.has(job.type) && (job.childrenQueuedAt !== null || job.children.length > 0);

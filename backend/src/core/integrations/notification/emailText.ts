@@ -24,13 +24,3 @@ export const withoutTrailingSlashes = (url: string): string => {
   while (end > 0 && url[end - 1] === '/') end -= 1;
   return url.slice(0, end);
 };
-
-/** The submission in the designer; opening it needs sign-in and access to the submission. */
-export const designerSubmissionLink = (
-  designerAppUrl: string | undefined,
-  formId: string,
-  submissionId: string,
-): string | null =>
-  designerAppUrl
-    ? `${withoutTrailingSlashes(designerAppUrl)}/en/build/${formId}/submissions/${submissionId}`
-    : null;

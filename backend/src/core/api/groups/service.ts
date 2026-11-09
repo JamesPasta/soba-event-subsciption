@@ -1,16 +1,13 @@
 import { ApiErrorCodes, type SortLocale } from '@soba/lib';
-import { ConflictError, NotFoundError, ValidationError } from '../../errors';
-import { GROUP_NAME_TAKEN } from '../../messages';
-import { listRoles } from '../../db/repos/roleRepo';
+import { ConflictError, NotFoundError } from '../../errors';
+import { GROUP_NAME_TAKEN, GROUP_NOT_FOUND } from '../../messages';
 import {
   addGroupMember,
   createWorkspaceGroup,
   getWorkspaceGroup,
   getWorkspaceGroupMeta,
   groupNameExistsInWorkspace,
-  isUserInGroup,
   listWorkspaceGroups,
-  membershipInWorkspace,
   removeGroupMember,
   renameGroup,
   replaceGroupRoles,
@@ -26,20 +23,6 @@ export interface GroupsContextInput {
 }
 
 export type AddMemberInput = { kind: 'user'; membershipId: string };
-
-const GROUP_NOT_FOUND = 'Group not found';
-
-/** Rejects role codes that don't exist in the catalog (enabled or feature-disabled). */
-async function assertRolesExist(roleCodes: string[]): Promise<void> {
-  const codes = [...new Set(roleCodes)];
-  if (!codes.length) return;
-  const found = await listRoles({ code: codes, onlyEnabledFeatures: false });
-  const known = new Set(found.map((r) => r.code));
-  const missing = codes.filter((c) => !known.has(c));
-  if (missing.length) {
-    throw new ValidationError(`Unknown role code(s): ${missing.join(', ')}`);
-  }
-}
 
 /** Asserts the group is active in the workspace and returns its systemCode (null for user-created). */
 async function requireGroup(workspaceId: string, groupId: string): Promise<string | null> {
@@ -99,7 +82,6 @@ export class GroupsApiService {
     input: { name: string; description?: string; roleCodes: string[] },
   ) {
     await assertNameFree(ctx.workspaceId, input.name);
-    await assertRolesExist(input.roleCodes);
     const groupId = await createWorkspaceGroup({
       workspaceId: ctx.workspaceId,
       name: input.name,
@@ -141,7 +123,6 @@ export class GroupsApiService {
     if (systemCode) {
       throw new ConflictError('System group roles cannot be changed');
     }
-    await assertRolesExist(roleCodes);
     await replaceGroupRoles({
       workspaceId: ctx.workspaceId,
       groupId,
@@ -153,7 +134,12 @@ export class GroupsApiService {
 
   async addMember(ctx: GroupsContextInput, groupId: string, input: AddMemberInput) {
     await requireGroup(ctx.workspaceId, groupId);
-    await addUserMember(ctx, groupId, input.membershipId);
+    await addGroupMember({
+      workspaceId: ctx.workspaceId,
+      groupId,
+      membershipId: input.membershipId,
+      displayLabel: ctx.actorDisplayLabel,
+    });
     return loadGroup(ctx, groupId);
   }
 
@@ -165,25 +151,6 @@ export class GroupsApiService {
     }
     return loadGroup(ctx, groupId);
   }
-}
-
-async function addUserMember(
-  ctx: GroupsContextInput,
-  groupId: string,
-  membershipId: string,
-): Promise<void> {
-  if (!(await membershipInWorkspace(ctx.workspaceId, membershipId))) {
-    throw new ValidationError('Membership is not an active member of the workspace');
-  }
-  if (await isUserInGroup(groupId, membershipId)) {
-    throw new ConflictError('Member already in group');
-  }
-  await addGroupMember({
-    workspaceId: ctx.workspaceId,
-    groupId,
-    membershipId,
-    displayLabel: ctx.actorDisplayLabel,
-  });
 }
 
 export const groupsApiService = new GroupsApiService();

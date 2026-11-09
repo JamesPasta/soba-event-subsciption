@@ -9,8 +9,9 @@ import { findInstalledPostSubmissionAction } from '../../core/integrations/post-
 import { mapInOrder } from '../../core/inOrder';
 import type { JobContext } from '../../core/jobs/registry';
 import { getJobSettings } from '../../core/jobs/settings';
+import { JobCancelledError } from '../../core/jobs/settlement';
 import { SubmittedJobParamsSchema } from './params';
-import { isSubmissionLive } from './repo';
+import { isSubmissionLive, SUBMISSION_GONE } from './repo';
 import type { SubmittedAction } from './resolve';
 
 /** One action's job: a child of the submitted job, at most one per action and revision. */
@@ -39,7 +40,8 @@ export const childAttempts = (code: string): number =>
 /**
  * The submitted job's run: queue one job per action recorded with the submission, in one
  * transaction. Dedupe keys make a retry safe. Only a pod with an action's plugin claims its job, and
- * the job's start check decides whether it runs.
+ * the job's start check decides whether it runs. Ends cancelled, queuing nothing, once the
+ * submission, its form or its workspace is gone.
  */
 export const fanOutSubmitted = async ({ job, log }: JobContext): Promise<void> => {
   log.info({ submissionId: job.submissionId, revisionId: job.revisionId }, 'Submission received');
@@ -49,10 +51,7 @@ export const fanOutSubmitted = async ({ job, log }: JobContext): Promise<void> =
   const live =
     job.submissionId !== null &&
     (await isSubmissionLive(db, { workspaceId: job.workspaceId, submissionId: job.submissionId }));
-  if (!live) {
-    log.info('Post-submission actions skipped: the submission, its form or its workspace is gone');
-    return;
-  }
+  if (!live) throw new JobCancelledError(SUBMISSION_GONE);
 
   // The mark outlives the children, so a re-run is refused once they were queued, even after
   // retention deletes them and frees their dedupe keys.

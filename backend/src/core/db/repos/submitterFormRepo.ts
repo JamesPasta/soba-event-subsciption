@@ -33,7 +33,7 @@ import {
   workspaceSubmitterSettings,
   workspaces,
 } from '../schema';
-import { FormVersionState, Roles, SubmissionParticipantStatus } from '../codes';
+import { FormVersionState, Permissions, SubmissionParticipantStatus } from '../codes';
 import { collated, likePattern, orderByForSort, type SortColumns } from '../listSort';
 import { readListPage } from '../listRead';
 import { effectiveGroups, permissionsByForm } from './formAccessRepo';
@@ -83,15 +83,15 @@ const publishedVersionIdOf = (formId: SQLWrapper) =>
     .limit(1)})`;
 
 /**
- * Ids of the forms the user holds the form_submitter role on, plus the forms of their draft and
- * submitted submissions, as listSubmissionsForParticipant lists them. Only that role lists a form,
- * not every role granting submission_create. Role forms need a published version; history forms
- * do not.
+ * Ids of the forms the user holds a submit role on, plus the forms of their draft and submitted
+ * submissions, as listSubmissionsForParticipant lists them. A submit role holds submission_create
+ * itself; `*` does not count. Audience alone lists nothing. Role forms need a published version;
+ * history forms do not.
  */
 const submitterFormIds = (userId: string, workspaceId?: string) => {
   const submitterGroups = effectiveGroups(userId, {
     workspaceId,
-    roleCode: Roles.form_submitter,
+    permissionCode: Permissions.submission_create,
     liveFormsOnly: true,
   }).as('submitter_group');
   const byRole = db
@@ -220,7 +220,7 @@ export const formFacts = (
   };
 };
 
-/** One page of the forms the user holds the submitter role on or has submitted to, with facts. */
+/** One page of the forms the user holds a submit role on or has submitted to, with facts. */
 export const listFormsForSubmitter = async (
   input: ListSubmitterFormsInput,
 ): Promise<{ items: SubmitterFormListRow[]; total: number }> => {
@@ -372,7 +372,7 @@ export const listSubmitterForms = (
     .where(inArray(forms.id, formIds));
 };
 
-/** Workspaces of the forms the user holds the submitter role on or has submitted to, by name. */
+/** Workspaces of the forms the user holds a submit role on or has submitted to, by name. */
 export const listWorkspacesForSubmitter = (input: {
   userId: string;
   limit: number;

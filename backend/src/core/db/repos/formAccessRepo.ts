@@ -4,6 +4,7 @@ import {
   exists,
   inArray,
   isNull,
+  ne,
   not,
   notExists,
   or,
@@ -18,6 +19,7 @@ import {
   formGroupOverrides,
   forms,
   rolePermissions,
+  roles,
   workspaceGroupMemberships,
   workspaceGroupRoles,
   workspaceGroups,
@@ -27,6 +29,7 @@ import {
   FormGroupOverrideStatus,
   GroupMemberKind,
   Permissions,
+  RoleStatus,
   WorkspaceGroupMembershipStatus,
   WorkspaceGroupRoleStatus,
   WorkspaceGroupStatus,
@@ -39,8 +42,8 @@ interface GroupScope {
   workspaceId?: string;
   /** Only these forms: ids, or a subquery returning them. */
   formIds?: string[] | SQLWrapper;
-  /** Only groups carrying this role, active. */
-  roleCode?: string;
+  /** Only groups with an active role holding exactly this permission; `*` does not match. */
+  permissionCode?: PermissionCode;
   /** Leave out deleted forms. */
   liveFormsOnly?: boolean;
 }
@@ -77,6 +80,13 @@ const activeUserGroupMembership = and(
 const activeGroup = (groupId: SQLWrapper) =>
   and(eq(workspaceGroups.id, groupId), eq(workspaceGroups.status, WorkspaceGroupStatus.active));
 
+/** A deleted role, or one another workspace owns, grants nothing even if a group carries it. */
+const roleThatGrants = and(
+  eq(roles.code, workspaceGroupRoles.roleCode),
+  ne(roles.status, RoleStatus.inactive),
+  or(isNull(roles.workspaceId), eq(roles.workspaceId, workspaceGroupRoles.workspaceId)),
+);
+
 /**
  * The groups the user is an effective member of, per form: a form's active override of a group
  * replaces that group's workspace members with its own. User members only. With no user, every
@@ -92,16 +102,18 @@ export const effectiveGroups = (userId: string | null, scope: GroupScope) => {
   const inScope = (formId: SQLWrapper) =>
     scope.formIds ? inArray(formId, scope.formIds) : undefined;
   // Checked on the group before its forms are joined, so other groups never reach the forms.
-  const carriesRole = scope.roleCode
+  const carriesPermission = scope.permissionCode
     ? exists(
         db
           .select({ id: workspaceGroupRoles.id })
           .from(workspaceGroupRoles)
+          .innerJoin(roles, roleThatGrants)
+          .innerJoin(rolePermissions, eq(rolePermissions.roleCode, roles.code))
           .where(
             and(
               eq(workspaceGroupRoles.groupId, workspaceGroups.id),
               eq(workspaceGroupRoles.status, WorkspaceGroupRoleStatus.active),
-              eq(workspaceGroupRoles.roleCode, scope.roleCode),
+              eq(rolePermissions.permissionCode, scope.permissionCode),
             ),
           ),
       )
@@ -116,7 +128,10 @@ export const effectiveGroups = (userId: string | null, scope: GroupScope) => {
     .select({ formId, groupId, userId: memberId })
     .from(workspaceMemberships)
     .innerJoin(workspaceGroupMemberships, activeUserGroupMembership)
-    .innerJoin(workspaceGroups, and(activeGroup(workspaceGroupMemberships.groupId), carriesRole))
+    .innerJoin(
+      workspaceGroups,
+      and(activeGroup(workspaceGroupMemberships.groupId), carriesPermission),
+    )
     .innerJoin(
       forms,
       and(eq(forms.workspaceId, workspaceMemberships.workspaceId), inScope(forms.id), live),
@@ -159,7 +174,7 @@ export const effectiveGroups = (userId: string | null, scope: GroupScope) => {
         inScope(formGroupOverrides.formId),
       ),
     )
-    .innerJoin(workspaceGroups, and(activeGroup(formGroupOverrides.groupId), carriesRole))
+    .innerJoin(workspaceGroups, and(activeGroup(formGroupOverrides.groupId), carriesPermission))
     .innerJoin(
       forms,
       and(
@@ -183,7 +198,8 @@ const withRolePermissions = <T extends PgSelect>(query: T, groupId: SQLWrapper) 
         eq(workspaceGroupRoles.status, WorkspaceGroupRoleStatus.active),
       ),
     )
-    .innerJoin(rolePermissions, eq(rolePermissions.roleCode, workspaceGroupRoles.roleCode));
+    .innerJoin(roles, roleThatGrants)
+    .innerJoin(rolePermissions, eq(rolePermissions.roleCode, roles.code));
 
 /** Per form, the user's permission codes from the active roles of their effective groups. */
 export const permissionsByForm = (userId: string, scope: GroupScope) => {

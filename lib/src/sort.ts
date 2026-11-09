@@ -33,6 +33,8 @@ export const SOBA_ADMIN_SORT_FIELDS = ['displayLabel', 'source', 'syncedAt'] as 
 
 export const WORKSPACE_GROUP_SORT_FIELDS = ['name'] as const;
 
+export const WORKSPACE_ROLE_SORT_FIELDS = ['name'] as const;
+
 export const WORKSPACE_ACCESS_SORT_FIELDS = ['displayLabel'] as const;
 
 export const FEATURE_SCOPE_SORT_FIELDS = [

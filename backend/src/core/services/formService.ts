@@ -296,7 +296,7 @@ export class FormService {
     return listFormsForWorkspace(input);
   }
 
-  /** The forms the user holds the submitter role on or has submitted to, in every workspace. */
+  /** The forms the user holds a submit role on or has submitted to, in every workspace. */
   async listForSubmitter(input: ListSubmitterFormsInput) {
     return listFormsForSubmitter(input);
   }

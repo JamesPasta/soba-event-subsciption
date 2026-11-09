@@ -12,6 +12,7 @@ import {
   SUBMISSION_SORT_FIELDS,
   WORKSPACE_ACCESS_SORT_FIELDS,
   WORKSPACE_GROUP_SORT_FIELDS,
+  WORKSPACE_ROLE_SORT_FIELDS,
   WORKSPACE_SORT_FIELDS,
   sortTokensFor,
 } from '@soba/lib/sort';
@@ -91,7 +92,7 @@ export const MY_SUBMISSIONS_LIST_QUERY: ListQuerySpec = {
   defaultSort: UPDATED_DESC,
 };
 
-/** The forms the caller holds the submitter role on or has submitted to, in submit mode. */
+/** The forms the caller holds a submit role on or has submitted to, in submit mode. */
 export const MY_FORMS_LIST_QUERY: ListQuerySpec = {
   resource: 'myForms',
   filters: ['workspace'],
@@ -184,6 +185,13 @@ export const WORKSPACE_GROUPS_LIST_QUERY: ListQuerySpec = {
   resource: 'workspaceGroups',
   filters: [],
   sortOptions: sortTokensFor(WORKSPACE_GROUP_SORT_FIELDS),
+  defaultSort: 'name:asc',
+};
+
+export const WORKSPACE_ROLES_LIST_QUERY: ListQuerySpec = {
+  resource: 'workspaceRoles',
+  filters: [],
+  sortOptions: sortTokensFor(WORKSPACE_ROLE_SORT_FIELDS),
   defaultSort: 'name:asc',
 };
 

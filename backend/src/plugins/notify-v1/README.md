@@ -22,19 +22,19 @@ The adapter authenticates to Notify using only the configured `X-API-KEY`. At
 startup the backend logs whether a keyed `GET code-tables/channels` returns
 Notify's channel list, which checks the endpoint and the key without sending.
 
-Backend code sends email through the notification service, which checks the
-`notifications` feature, calls the active plugin and writes one
-`notification_audit` row per send:
+Emails are sent from jobs. A job's handler renders the email with the email kit,
+in English and French, and sends it through `sendEachAddress`, which calls the
+notification service once per address. The service checks the `notifications`
+feature, calls the active plugin and writes one `notification_audit` row per
+send. See [Notification emails](../../../../docs/notifications.md) for the
+templates, the job rules and the rules every email follows:
 
 ```ts
-import { notificationService } from '../../features/notifications/service';
-
-const { outcome } = await notificationService.sendEmail(
-  { workspaceId, formId, submissionId, actorId },
-  {
-    recipients: { to: ['recipient@example.com'] },
-    content: { subject: 'SOBA notification', body: 'Hello from SOBA', bodyType: 'text' },
-  },
+const content = renderSubmissionEmail(TEMPLATE, facts, DEFAULT_EMAIL_LANGUAGE);
+await sendEachAddress(
+  { notifications: jobNotifications(job, () => Promise.resolve(actorId)), signal, log },
+  addresses,
+  content,
 );
 ```
 

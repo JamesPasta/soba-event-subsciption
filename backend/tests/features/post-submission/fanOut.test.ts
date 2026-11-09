@@ -1,9 +1,25 @@
+import type { Logger } from 'pino';
 import type { ClaimedJob } from '../../../src/core/db/repos/jobRepo';
+import type { JobContext } from '../../../src/core/jobs/registry';
 import { getJobSettings } from '../../../src/core/jobs/settings';
-import { childAttempts, childJob } from '../../../src/features/post-submission/fanOut';
+import { JobCancelledError } from '../../../src/core/jobs/settlement';
+import {
+  childAttempts,
+  childJob,
+  fanOutSubmitted,
+} from '../../../src/features/post-submission/fanOut';
 import type { SubmittedAction } from '../../../src/features/post-submission/resolve';
 
-jest.mock('../../../src/core/db/client', () => ({ db: {}, quietDb: {} }));
+const mockTransaction = jest.fn();
+jest.mock('../../../src/core/db/client', () => ({
+  db: { transaction: (...args: unknown[]) => mockTransaction(...args) },
+  quietDb: {},
+}));
+const mockIsLive = jest.fn();
+jest.mock('../../../src/features/post-submission/repo', () => ({
+  ...jest.requireActual('../../../src/features/post-submission/repo'),
+  isSubmissionLive: (...args: unknown[]) => mockIsLive(...args),
+}));
 
 // This pod has post-submission-a installed; it lacks every other plugin.
 jest.mock(
@@ -57,5 +73,26 @@ describe('childAttempts', () => {
 
   it('takes JOB_MAX_ATTEMPTS for an action whose plugin this pod lacks', () => {
     expect(childAttempts('post-submission-newer')).toBe(getJobSettings().maxAttempts);
+  });
+});
+
+describe('fanOutSubmitted', () => {
+  it('ends cancelled, queuing nothing, once the submission, its form or its workspace is gone', async () => {
+    mockIsLive.mockResolvedValue(false);
+    const run = fanOutSubmitted({
+      job: {
+        id: 'parent-job',
+        workspaceId: 'ws1',
+        submissionId: 's1',
+        revisionId: 'r9',
+        params: { actions: [action('post-submission-a')] },
+      } as unknown as ClaimedJob,
+      log: { info: jest.fn() } as unknown as Logger,
+    } as unknown as JobContext);
+
+    await expect(run).rejects.toThrow(
+      new JobCancelledError('The submission, its form or its workspace is gone'),
+    );
+    expect(mockTransaction).not.toHaveBeenCalled();
   });
 });

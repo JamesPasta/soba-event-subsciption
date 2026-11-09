@@ -1,1 +1,6 @@
-export { FormCreatePermissions, Permissions, type PermissionCode } from '@soba/lib';
+export {
+  FormCreatePermissions,
+  Permissions,
+  type AssignablePermissionCode,
+  type PermissionCode,
+} from '@soba/lib';

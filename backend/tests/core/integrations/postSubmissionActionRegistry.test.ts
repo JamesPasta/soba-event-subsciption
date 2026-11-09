@@ -68,6 +68,8 @@ describe('post-submission action plugins', () => {
     const registry = getJobRegistry();
     expect(registry.typesIn('light').sort((a, b) => a.localeCompare(b))).toEqual([
       'post-submission-test-echo',
+      'submission.status-changed',
+      'submission.status-email',
       'submission.submitted',
     ]);
     expect(registry.typesIn('heavy')).toEqual(['submission-export', 'post-submission-test-off']);

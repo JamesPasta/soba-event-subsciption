@@ -17,11 +17,13 @@ export const isRefusedSend = ({ outcome, httpStatus }: SendOutcome): boolean =>
   httpStatus !== null &&
   REFUSED_HTTP_STATUSES.includes(httpStatus);
 
+/** A send that went out, as far as we know: handed to the provider, or sent nowhere by design. */
+export const isSentSend = ({ outcome }: SendOutcome): boolean =>
+  outcome === NotificationOutcome.accepted || outcome === NotificationOutcome.not_sent;
+
 /** A send that needs no retry: handed to the provider, sent nowhere by design, or refused. */
 export const isHandledSend = (send: SendOutcome): boolean =>
-  send.outcome === NotificationOutcome.accepted ||
-  send.outcome === NotificationOutcome.not_sent ||
-  isRefusedSend(send);
+  isSentSend(send) || isRefusedSend(send);
 
 /**
  * A send that leaves its address handled for a job's current run. A refusal counts only since the

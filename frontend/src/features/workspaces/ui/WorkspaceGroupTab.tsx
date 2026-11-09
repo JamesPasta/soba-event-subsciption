@@ -10,7 +10,6 @@ import { Tag } from '@/src/components/Tag';
 import { ListPageSearchField } from '@/src/components/ListPageSearchField';
 import { useKeycloak } from '@/lib/hooks/useKeycloak';
 import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
-import { useRolesMeta } from '@/src/shared/api/useRolesMeta';
 import { WORKSPACE_GROUPS_LIST_QUERY } from '@/src/shared/list/listQueryMemory';
 import { useListQuery } from '@/src/shared/list/useListQuery';
 import { useDataTable } from '@/src/shared/list/useDataTable';
@@ -18,7 +17,8 @@ import type { Dictionary } from '@/src/types/dictionary';
 import type { WorkspaceGroup } from '@/src/types/workspaceGroups';
 import { useWorkspaceGroups } from '../data/useWorkspaceGroups';
 import { useWorkspaceGroupsWriter } from '../data/useWorkspaceGroupsWriter';
-import { groupRoleLabel } from '../groupRoleLabel';
+import { useWorkspaceRoles } from '../data/useWorkspaceRoles';
+import { assignableRoleLabel, groupRoleLabel } from '../groupRoleLabel';
 import WorkspaceGroupForm from './WorkspaceGroupForm';
 
 export interface WorkspaceGroupTabProps {
@@ -43,8 +43,8 @@ export function WorkspaceGroupTab({ dict, workspaceId }: Readonly<WorkspaceGroup
   });
   const { table } = useDataTable(query, groupsResult, t.loadError);
   const writer = useWorkspaceGroupsWriter(workspaceId);
-  // Only for the catalog's own role names; a failed read falls back to the dictionary or the code.
-  const { data: roles } = useRolesMeta();
+  // The roles' names, and which are custom; until they read, a custom role shows a generic name.
+  const { rows: roles } = useWorkspaceRoles(workspaceId);
 
   const [formView, setFormView] = useState<FormView>(null);
   const [pendingDelete, setPendingDelete] = useState<WorkspaceGroup | null>(null);
@@ -69,7 +69,13 @@ export function WorkspaceGroupTab({ dict, workspaceId }: Readonly<WorkspaceGroup
   };
 
   const columns: Column<WorkspaceGroup>[] = useMemo(() => {
-    const catalogNames = new Map(roles?.map((role) => [role.roleCode, role.name]));
+    const catalog = new Map(roles.map((role) => [role.roleCode, role]));
+    const roleLabel = (code: string) => {
+      const role = catalog.get(code);
+      return role
+        ? assignableRoleLabel(dict, role)
+        : groupRoleLabel(dict, code, t.customRoleFallback);
+    };
     return [
       {
         key: 'name',
@@ -89,7 +95,7 @@ export function WorkspaceGroupTab({ dict, workspaceId }: Readonly<WorkspaceGroup
             group.roles.map((code) => (
               <Tag
                 key={code}
-                text={groupRoleLabel(dict, code, catalogNames.get(code))}
+                text={roleLabel(code)}
                 color="blue"
                 data-testid={`group-role-${group.id}-${code}`}
               />

@@ -66,9 +66,18 @@ jest.mock('../../../../src/core/services/publicUser', () => ({
   getPublicUser: () => Promise.resolve({ id: 'public-user', displayLabel: 'Public' }),
 }));
 
-const mockSendStatusEmail = jest.fn();
-jest.mock('../../../../src/features/submission-review/statusEmails', () => ({
-  sendStatusEmail: (...args: unknown[]) => mockSendStatusEmail(...args),
+// What the reactions are does not matter here; the change passes them through to its event.
+const REACTIONS = ['reactions-available-here'];
+jest.mock('../../../../src/features/submission-review/statusReactions', () => ({
+  availableStatusReactions: () => Promise.resolve(REACTIONS),
+}));
+const mockEnqueueStatusChanged = jest.fn();
+jest.mock('../../../../src/core/jobs/enqueue', () => ({
+  enqueueStatusChangedJob: (...args: unknown[]) => mockEnqueueStatusChanged(...args),
+}));
+const mockNudgeJobs = jest.fn();
+jest.mock('../../../../src/core/jobs', () => ({
+  nudgeJobs: (...args: unknown[]) => mockNudgeJobs(...args),
 }));
 
 const mockFindEffectiveReviewSettings = jest.fn();
@@ -131,6 +140,7 @@ describe('submission review routes', () => {
     mockAccess.resolveFormPermissions.mockResolvedValue(new Set([Permissions.submission_review]));
     mockFindEffectiveReviewSettings.mockResolvedValue(SETTINGS_ON);
     mockGetSubmissionRecordById.mockResolvedValue({ id: 'sub1', submittedBy: 'submitter-1' });
+    mockEnqueueStatusChanged.mockResolvedValue(undefined);
   });
 
   it('gates the read on submission_read, and the writes and reviewers on submission_review', () => {
@@ -239,6 +249,7 @@ describe('submission review routes', () => {
       actorId: 'a1',
       actorDisplayLabel: 'Rev Iewer',
       allowStatusUpdates: true,
+      onChanged: expect.any(Function),
     });
     expect(response.body.statusHistory).toEqual([SUBMITTED]);
   });
@@ -316,7 +327,14 @@ describe('submission review routes', () => {
     expect(mockRepo.changeStatus).not.toHaveBeenCalled();
   });
 
-  it('emails once the change is made, attaching the comment only when asked', async () => {
+  it("records the change as an event in its transaction, with the reviewer's comment choice", async () => {
+    // The repo runs the callback inside the transaction once it makes the change.
+    mockRepo.changeStatus.mockImplementation(
+      async (input: { onChanged?: (tx: unknown) => Promise<void> }) => {
+        await input.onChanged?.('tx');
+        return 'changed';
+      },
+    );
     const comment = 'Please attach the declaration.';
     await request(app)
       .post(STATUS_PATH)
@@ -326,18 +344,28 @@ describe('submission review routes', () => {
       .send({ ...REVISE, id: NOTE_ID, comment });
 
     expect(mockRepo.changeStatus).toHaveBeenCalledWith(expect.objectContaining({ comment }));
-    expect(mockSendStatusEmail.mock.calls).toEqual([
-      [expect.objectContaining({ status: SubmissionReviewStatuses.revising, comment })],
-      [expect.objectContaining({ comment: undefined })],
+    const change = {
+      workspaceId: 'ws1',
+      formId: 'f1',
+      submissionId: 'sub1',
+      status: SubmissionReviewStatuses.revising,
+      assigneeId: null,
+      actorId: 'a1',
+      bySubmitter: false,
+    };
+    expect(mockEnqueueStatusChanged.mock.calls).toEqual([
+      ['tx', { ...change, id: STATUS_ID, attachComment: true }, REACTIONS],
+      ['tx', { ...change, id: NOTE_ID, attachComment: false }, REACTIONS],
     ]);
+    expect(mockNudgeJobs).toHaveBeenCalledWith('submission.status-changed');
   });
 
-  // A retry after a lost response must not email anyone a second time.
-  it('sends no email for a retried change', async () => {
+  // The repo records no event for a replayed change; the route must not wake the pool for one.
+  it('nudges nothing for a retried change', async () => {
     mockRepo.changeStatus.mockResolvedValue('replayed');
     await request(app).post(STATUS_PATH).send(ASSIGN);
 
-    expect(mockSendStatusEmail).not.toHaveBeenCalled();
+    expect(mockNudgeJobs).not.toHaveBeenCalled();
   });
 
   it('sends a signed-in submission back to its submitter to revise', async () => {

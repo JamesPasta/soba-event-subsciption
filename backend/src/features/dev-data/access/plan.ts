@@ -4,7 +4,9 @@
  * no clock.
  */
 import {
+  Permissions,
   SubmissionReviewStatuses,
+  type AssignablePermissionCode,
   type Audience,
   type ReviewSettings,
   type SubmissionReviewStatus,
@@ -38,6 +40,10 @@ export const PERSONA_KEYS = [
   'inactiveMember',
   'inactiveGroupMember',
   'inactiveGroup',
+  'customSubmitter',
+  'customDesigner',
+  'deletedCustomRole',
+  'foreignCustomRole',
   'outsider',
   'bceidOutsider',
   'collaborator',
@@ -70,6 +76,17 @@ export interface PlannedPersona {
   idpAttributes: IdpAttributes;
 }
 
+/**
+ * A role for a seat's group to carry, created in that seat's workspace by the first seat naming it.
+ * A seat in another workspace then carries a role it does not own, which the API would refuse.
+ */
+export interface PlannedCustomRole {
+  name: string;
+  permissionCodes: AssignablePermissionCode[];
+  /** Soft-deleted once created. The group still carries it, which the API would refuse. */
+  deleted?: boolean;
+}
+
 /** A persona's membership in a workspace and the group it gives them. */
 export interface PlannedSeat {
   persona: Exclude<PersonaKey, typeof ADMIN>;
@@ -78,6 +95,7 @@ export interface PlannedSeat {
   group:
     | { system: SystemGroupCode }
     | { name: string; roleCodes: RoleCode[]; status?: 'inactive' }
+    | { name: string; customRole: PlannedCustomRole }
     | null;
   membershipStatus?: 'inactive';
   groupMembershipStatus?: 'inactive';
@@ -197,6 +215,10 @@ const PERSONA_PROVIDERS: Record<GeneratedPersonaKey, string> = {
   inactiveMember: 'azureidir',
   inactiveGroupMember: 'azureidir',
   inactiveGroup: 'azureidir',
+  customSubmitter: 'azureidir',
+  customDesigner: 'azureidir',
+  deletedCustomRole: 'azureidir',
+  foreignCustomRole: 'azureidir',
   outsider: 'azureidir',
   bceidOutsider: 'bceidbusiness',
   collaborator: 'azureidir',
@@ -262,6 +284,17 @@ const form = (
 /** Forms need the disclaimer accepted. */
 const WORKSPACE_DEFAULTS = { org: 'CITZ', useCase: 'application', disclaimerAccepted: true };
 
+const BUILDER_ROLE_NAME = `${COVERAGE_PREFIX}Builder`;
+
+/** Everything customDesigner holds. The foreign and deleted cases hold the same and get nothing. */
+const BUILDER_PERMISSIONS: AssignablePermissionCode[] = [
+  Permissions.form_create,
+  Permissions.form_read,
+  Permissions.design_create,
+  Permissions.design_update,
+  Permissions.submission_read,
+];
+
 const ROLES_WORKSPACE: PlannedCoverageWorkspace = {
   key: 'roles',
   name: `${COVERAGE_PREFIX}Coverage Roles`,
@@ -299,6 +332,37 @@ const ROLES_WORKSPACE: PlannedCoverageWorkspace = {
         name: `${COVERAGE_PREFIX}Retired admins`,
         roleCodes: [Roles.form_admin],
         status: 'inactive',
+      },
+    },
+    {
+      persona: 'customSubmitter',
+      role: WorkspaceMembershipRole.member,
+      group: {
+        name: `${COVERAGE_PREFIX}Clerks`,
+        customRole: {
+          name: `${COVERAGE_PREFIX}Clerk`,
+          permissionCodes: [Permissions.submission_create, Permissions.document_template_read],
+        },
+      },
+    },
+    {
+      persona: 'customDesigner',
+      role: WorkspaceMembershipRole.member,
+      group: {
+        name: `${COVERAGE_PREFIX}Builders`,
+        customRole: { name: BUILDER_ROLE_NAME, permissionCodes: BUILDER_PERMISSIONS },
+      },
+    },
+    {
+      persona: 'deletedCustomRole',
+      role: WorkspaceMembershipRole.member,
+      group: {
+        name: `${COVERAGE_PREFIX}Retired builders`,
+        customRole: {
+          name: `${COVERAGE_PREFIX}Retired builder`,
+          permissionCodes: BUILDER_PERMISSIONS,
+          deleted: true,
+        },
       },
     },
     // The public user's roles never count, even with a seat.
@@ -370,6 +434,15 @@ const AUDIENCE_WORKSPACE: PlannedCoverageWorkspace = {
       persona: OWNER,
       role: WorkspaceMembershipRole.admin,
       group: { system: SystemGroup.form_admins },
+    },
+    // The Roles workspace owns this role, so it grants nothing here.
+    {
+      persona: 'foreignCustomRole',
+      role: WorkspaceMembershipRole.member,
+      group: {
+        name: `${COVERAGE_PREFIX}Borrowed builders`,
+        customRole: { name: BUILDER_ROLE_NAME, permissionCodes: BUILDER_PERMISSIONS },
+      },
     },
   ],
   forms: [

@@ -84,7 +84,7 @@ import { MyFormsList } from '@/src/features/submit-mode/ui/MyFormsList';
 const WS_A = { id: '0199a0f8-0625-701d-a41e-648bc7ae9c71', name: 'Licensing' };
 const WS_B = { id: '0199a0f8-0625-701d-a41e-648bc7ae9c72', name: 'Grants' };
 
-// The caller holds the submitter role on it.
+// The caller holds a submit role on it.
 const OPEN = {
   id: 'f1',
   name: 'Permit application',

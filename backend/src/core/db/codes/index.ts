@@ -37,8 +37,16 @@ export type AppUserStatusCode = (typeof AppUserStatus)[keyof typeof AppUserStatu
 export const RoleStatus = {
   active: 'active',
   deprecated: 'deprecated',
+  inactive: 'inactive',
 } as const;
 export type RoleStatusCode = (typeof RoleStatus)[keyof typeof RoleStatus];
+
+export const RoleAuditAction = {
+  create: 'create',
+  update: 'update',
+  delete: 'delete',
+} as const;
+export type RoleAuditActionCode = (typeof RoleAuditAction)[keyof typeof RoleAuditAction];
 
 export const WorkspaceMembershipRole = {
   owner: 'owner',
@@ -257,6 +265,8 @@ export type JobStatusCode = (typeof JobStatus)[keyof typeof JobStatus];
 export const JobType = {
   submission_submitted: 'submission.submitted',
   submission_export: 'submission-export',
+  submission_status_changed: 'submission.status-changed',
+  submission_status_email: 'submission.status-email',
 } as const;
 export type JobTypeCode = (typeof JobType)[keyof typeof JobType];
 

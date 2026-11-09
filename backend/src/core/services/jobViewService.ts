@@ -62,10 +62,18 @@ export interface RerunFacts {
   leaseMs: number;
 }
 
+/** Jobs whose run queues child jobs: an event's fan-out. */
+const FAN_OUT_TYPES: ReadonlySet<string> = new Set([
+  JobType.submission_submitted,
+  JobType.submission_status_changed,
+]);
+
+const isFanOut = (type: string): boolean => FAN_OUT_TYPES.has(type);
+
 /**
- * Why a job may not run again, or null when it may. A submission-received job that queued its
- * actions would queue new action jobs once retention freed their dedupe keys, and those would have
- * handled nobody yet, so their emails would go to every address again.
+ * Why a job may not run again, or null when it may. A fan-out that queued its actions would queue
+ * new action jobs once retention freed their dedupe keys, and those would have handled nobody yet,
+ * so their emails would go to every address again.
  */
 export const rerunRefusal = (facts: RerunFacts): string | null => {
   // An export is the person's own request, under their limit; they start a new one.
@@ -76,10 +84,7 @@ export const rerunRefusal = (facts: RerunFacts): string | null => {
     return 'Only a dead or cancelled job can be run again';
   }
   if (!facts.registered) return 'This environment does not run jobs of this type';
-  if (
-    facts.type === JobType.submission_submitted &&
-    (facts.childCount > 0 || facts.childrenQueuedAt !== null)
-  ) {
+  if (isFanOut(facts.type) && (facts.childCount > 0 || facts.childrenQueuedAt !== null)) {
     return 'Its actions were queued already; run their jobs again instead';
   }
   const finishedMs = facts.finishedAt ? facts.now.getTime() - facts.finishedAt.getTime() : 0;
@@ -131,6 +136,23 @@ const addressesOf = (params: Record<string, unknown>): string[] | null => {
   const to = optionsOf(params)?.to;
   if (!Array.isArray(to) || !to.every((address) => typeof address === 'string')) return null;
   return [...new Set(to as string[])];
+};
+
+/**
+ * Where a job's emails stand. A job whose options list its addresses is counted against that list.
+ * One that reads its recipients when it runs, such as a status email, has no list until it runs, so
+ * only the addresses it has sent to or had refused are counted, and its total and those not sent
+ * yet are left unknown. Null when there is nothing to count.
+ */
+export const emailCountsOf = (
+  params: Record<string, unknown>,
+  sends: readonly JobNotificationSend[],
+): JobEmailCounts | null => {
+  const listed = addressesOf(params);
+  if (listed) return countEmails(listed, sends);
+  if (sends.length === 0) return null;
+  const tried = countEmails([...new Set(sends.flatMap((send) => send.recipients.to))], sends);
+  return { ...tried, addresses: null, pending: null };
 };
 
 const recordedActionsOf = (params: Record<string, unknown>): string[] =>
@@ -212,18 +234,17 @@ export interface LoadedJob {
 const loadJob = async (scope: JobScope, id: string): Promise<LoadedJob> => {
   const row = await getJob(scope, id);
   if (!row) throw new NotFoundError(NOT_FOUND);
-  const addresses = addressesOf(row.params);
   const [parent, children, sends, outputs] = await Promise.all([
     row.parentJobId ? getJobSummary(scope, row.parentJobId) : Promise.resolve(null),
     listChildJobs(scope, row.id),
-    addresses ? listJobNotificationSends(row.id) : Promise.resolve(null),
+    listJobNotificationSends(row.id),
     listJobOutputs([row.id]),
   ]);
   return {
     row,
     parent,
     children,
-    emailCounts: addresses && sends ? countEmails(addresses, sends) : null,
+    emailCounts: emailCountsOf(row.params, sends),
     output: outputs.get(row.id) ?? null,
   };
 };
@@ -284,6 +305,8 @@ export const getStaffJobDetail = async (scope: JobScope, id: string): Promise<St
 const TYPE_NAMES: Record<string, string> = {
   [JobType.submission_submitted]: 'Submission received',
   [JobType.submission_export]: 'Submission export',
+  [JobType.submission_status_changed]: 'Status changed',
+  [JobType.submission_status_email]: 'Status email',
 };
 
 /** The job types this environment runs, named for the admin filter. */
@@ -306,8 +329,7 @@ export const rerunJob = async (scope: JobScope, id: string, actorId: string): Pr
   if (!row) throw new NotFoundError(NOT_FOUND);
   const definition = getJobRegistry().get(row.type);
   const settings = getJobSettings();
-  const children =
-    row.type === JobType.submission_submitted ? await listChildJobs(scope, row.id) : [];
+  const children = isFanOut(row.type) ? await listChildJobs(scope, row.id) : [];
   const refusal = rerunRefusal({
     status: row.status,
     type: row.type,

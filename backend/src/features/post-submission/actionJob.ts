@@ -13,11 +13,9 @@ import { log } from '../../core/logging';
 import { isFeatureAvailable } from '../../core/services/featureAvailabilityService';
 import { actionNotifications } from './notifications';
 import { ActionJobParamsSchema } from './params';
-import { findActionSettingRows, findLiveSubmission } from './repo';
+import { findActionSettingRows, findLiveSubmission, SUBMISSION_GONE } from './repo';
 import { actionFeatureAvailable, isWorkspaceConfigurable } from './resolve';
 import { effectiveAction, formActionScopes, rowsFor } from './rules';
-
-const GONE = 'The submission, its form or its workspace is gone';
 
 /** What an action job checks before it runs. */
 export interface ActionRunFacts {
@@ -33,7 +31,7 @@ export const cancelReason = (facts: ActionRunFacts): string | null => {
   if (!facts.postSubmissionAvailable) return 'Post-submission is not available for the form';
   if (!facts.enabledHere) return 'The action is not enabled in this environment';
   if (!facts.featureAvailable) return "The action's feature is not available for the form";
-  if (!facts.live) return GONE;
+  if (!facts.live) return SUBMISSION_GONE;
   if (!facts.stillEnabled) return 'The action was turned off';
   return null;
 };
@@ -84,7 +82,7 @@ export const actionJobDefinition = (
   run: async ({ job, signal, log }) => {
     const { facts, submission } = await runFacts(plugin, job);
     const reason = cancelReason(facts);
-    if (reason || submission === null) throw new JobCancelledError(reason ?? GONE);
+    if (reason || submission === null) throw new JobCancelledError(reason ?? SUBMISSION_GONE);
     const params = ActionJobParamsSchema.parse(job.params);
     const options = plugin.optionsSchema.parse(params.options);
     await plugin.job.run({

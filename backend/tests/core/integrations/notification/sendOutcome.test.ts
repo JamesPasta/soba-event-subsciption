@@ -3,6 +3,7 @@ import {
   isHandledForRun,
   isHandledSend,
   isRefusedSend,
+  isSentSend,
 } from '../../../../src/core/integrations/notification/sendOutcome';
 
 describe('send outcomes', () => {
@@ -26,6 +27,13 @@ describe('send outcomes', () => {
 
   it('does not count a send skipped because notifications were off', () => {
     expect(isHandledSend({ outcome: 'disabled', httpStatus: null })).toBe(false);
+  });
+
+  it('counts as sent only what the provider took or the noop plugin skipped, never a refusal', () => {
+    expect(isSentSend({ outcome: 'accepted', httpStatus: null })).toBe(true);
+    expect(isSentSend({ outcome: 'not_sent', httpStatus: null })).toBe(true);
+    expect(isSentSend({ outcome: 'error', httpStatus: 400 })).toBe(false);
+    expect(isSentSend({ outcome: 'disabled', httpStatus: null })).toBe(false);
   });
 });
 

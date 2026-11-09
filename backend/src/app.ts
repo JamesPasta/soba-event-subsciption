@@ -36,6 +36,7 @@ import { initializePassport } from './core/auth/passport';
 import { Features } from './core/db/codes';
 import { pool } from './core/db/client';
 import { assertJobShutdownFits, getJobSettings, startJobs, stopJobs } from './core/jobs';
+import { assertEmailLinkBases } from './core/integrations/notification/email/url';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const app = express();
@@ -44,6 +45,10 @@ const port = Number(process.env.PORT) || 4000;
 // Read before listening, so an invalid value stops startup before the port opens.
 const shutdownSettings = env.getShutdownSettings();
 assertJobShutdownFits(getJobSettings(), shutdownSettings.timeoutMs);
+assertEmailLinkBases({
+  DESIGNER_APP_URL: env.getDesignerAppUrl(),
+  FORMS_APP_URL: env.getFormsAppUrl(),
+});
 
 // The app serves the base path itself, so Routes and probes address the same URLs the browser uses.
 const apiBasePath = env.getApiBasePath();

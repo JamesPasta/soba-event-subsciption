@@ -7,6 +7,10 @@ submit rather than as the user types.
 Offset paging can repeat or skip a row if the data changes between two page requests. That is
 fine for these tables. Within one response, `items` and `total` come from a single snapshot.
 
+The exception is the workspace Roles tab. Fixed roles show dictionary names the server does not have,
+so the screen reads the whole list and searches, sorts and pages it in the browser. The URL still
+carries the query.
+
 ## Adding a list
 
 Backend, in the repo:

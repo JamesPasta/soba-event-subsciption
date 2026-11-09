@@ -24,8 +24,14 @@ import {
   WorkspaceGroupStatus,
   WorkspaceMembershipStatus,
 } from '../codes';
-import { ConflictError } from '../../errors';
-import { LAST_FORM_ADMIN } from '../../messages';
+import { ConflictError, NotFoundError, ValidationError } from '../../errors';
+import {
+  GROUP_NOT_FOUND,
+  LAST_FORM_ADMIN,
+  MEMBER_IN_GROUP,
+  MEMBERSHIP_NOT_ACTIVE,
+} from '../../messages';
+import { lockRolesForWorkspace } from './roleRepo';
 
 /** Insert rows for a group's role set; duplicate codes collapse to one row. */
 const groupRoleRows = (args: {
@@ -374,12 +380,13 @@ export const groupNameExistsInWorkspace = async (
   return Boolean(rows[0]);
 };
 
-/** True if the membership id is an active member of the workspace. */
-export const membershipInWorkspace = async (
+/** Locks the active membership so it is not removed before the transaction commits. */
+const lockMembershipToAdd = async (
+  tx: Tx,
   workspaceId: string,
   membershipId: string,
-): Promise<boolean> => {
-  const rows = await db
+): Promise<void> => {
+  const rows = await tx
     .select({ id: workspaceMemberships.id })
     .from(workspaceMemberships)
     .where(
@@ -389,13 +396,17 @@ export const membershipInWorkspace = async (
         eq(workspaceMemberships.status, WorkspaceMembershipStatus.active),
       ),
     )
-    .limit(1);
-  return Boolean(rows[0]);
+    .for('share');
+  if (!rows.length) throw new ValidationError(MEMBERSHIP_NOT_ACTIVE);
 };
 
 /** True if the membership is already a `user` member of the group. */
-export const isUserInGroup = async (groupId: string, membershipId: string): Promise<boolean> => {
-  const rows = await db
+const isUserInGroup = async (
+  executor: DbOrTx,
+  groupId: string,
+  membershipId: string,
+): Promise<boolean> => {
+  const rows = await executor
     .select({ id: workspaceGroupMemberships.id })
     .from(workspaceGroupMemberships)
     .where(
@@ -409,6 +420,20 @@ export const isUserInGroup = async (groupId: string, membershipId: string): Prom
   return Boolean(rows[0]);
 };
 
+/**
+ * Refuses a role that is neither a platform role nor one of this workspace's own. Holds the roles
+ * for the rest of the transaction: a delete waits for the link to commit, then sees it and refuses.
+ */
+const lockGroupRoles = async (tx: Tx, workspaceId: string, roleCodes: string[]): Promise<void> => {
+  const codes = [...new Set(roleCodes)];
+  if (!codes.length) return;
+  const known = new Set(await lockRolesForWorkspace(tx, workspaceId, codes));
+  const missing = codes.filter((code) => !known.has(code));
+  if (missing.length) {
+    throw new ValidationError(`Unknown role code(s): ${missing.join(', ')}`);
+  }
+};
+
 /** Creates a group carrying the given roles; returns the new group id. */
 export const createWorkspaceGroup = (args: {
   workspaceId: string;
@@ -416,7 +441,30 @@ export const createWorkspaceGroup = (args: {
   description?: string | null;
   roleCodes: string[];
   displayLabel: string | null;
-}): Promise<string> => db.transaction((tx) => createGroupWithRole(tx, args));
+}): Promise<string> =>
+  db.transaction(async (tx) => {
+    await lockGroupRoles(tx, args.workspaceId, args.roleCodes);
+    return createGroupWithRole(tx, args);
+  });
+
+/**
+ * Locked before its role or member rows: saves to one group run in turn, and wait for a delete to
+ * finish.
+ */
+const lockActiveGroup = async (tx: Tx, workspaceId: string, groupId: string): Promise<void> => {
+  const rows = await tx
+    .select({ id: workspaceGroups.id })
+    .from(workspaceGroups)
+    .where(
+      and(
+        eq(workspaceGroups.id, groupId),
+        eq(workspaceGroups.workspaceId, workspaceId),
+        eq(workspaceGroups.status, WorkspaceGroupStatus.active),
+      ),
+    )
+    .for('no key update');
+  if (!rows.length) throw new NotFoundError(GROUP_NOT_FOUND);
+};
 
 /** Replaces a group's role set with `roleCodes`. */
 export const replaceGroupRoles = async (args: {
@@ -426,6 +474,8 @@ export const replaceGroupRoles = async (args: {
   displayLabel: string | null;
 }): Promise<void> => {
   await db.transaction(async (tx) => {
+    await lockActiveGroup(tx, args.workspaceId, args.groupId);
+    await lockGroupRoles(tx, args.workspaceId, args.roleCodes);
     await tx.delete(workspaceGroupRoles).where(eq(workspaceGroupRoles.groupId, args.groupId));
     if (args.roleCodes.length) {
       await tx.insert(workspaceGroupRoles).values(groupRoleRows(args));
@@ -433,15 +483,25 @@ export const replaceGroupRoles = async (args: {
   });
 };
 
-/** Adds a workspace member to a group. */
-export const addGroupMember = async (args: {
+/**
+ * Adds a workspace member to a group. The membership is locked before the group, the order a save
+ * of the member's groups takes, so the two cannot deadlock. An add racing the member's removal or
+ * the group's delete waits for it, then refuses.
+ */
+export const addGroupMember = (args: {
   workspaceId: string;
   groupId: string;
   membershipId: string;
   displayLabel: string | null;
-}): Promise<void> => {
-  await addUserToGroup(db, args);
-};
+}): Promise<void> =>
+  db.transaction(async (tx) => {
+    await lockMembershipToAdd(tx, args.workspaceId, args.membershipId);
+    await lockActiveGroup(tx, args.workspaceId, args.groupId);
+    if (await isUserInGroup(tx, args.groupId, args.membershipId)) {
+      throw new ConflictError(MEMBER_IN_GROUP);
+    }
+    await addUserToGroup(tx, args);
+  });
 
 /**
  * Removes a member from a group by its row id; false when it wasn't present. Refuses to take the
