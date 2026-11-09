@@ -140,8 +140,9 @@ const addressesOf = (params: Record<string, unknown>): string[] | null => {
 
 /**
  * Where a job's emails stand. A job whose options list its addresses is counted against that list.
- * One that reads its recipients when it runs, such as a status email, is counted against the
- * addresses it has tried so far. Null when there is nothing to count.
+ * One that reads its recipients when it runs, such as a status email, has no list until it runs, so
+ * only the addresses it has sent to or had refused are counted, and its total and those not sent
+ * yet are left unknown. Null when there is nothing to count.
  */
 export const emailCountsOf = (
   params: Record<string, unknown>,
@@ -150,7 +151,8 @@ export const emailCountsOf = (
   const listed = addressesOf(params);
   if (listed) return countEmails(listed, sends);
   if (sends.length === 0) return null;
-  return countEmails([...new Set(sends.flatMap((send) => send.recipients.to))], sends);
+  const tried = countEmails([...new Set(sends.flatMap((send) => send.recipients.to))], sends);
+  return { ...tried, addresses: null, pending: null };
 };
 
 const recordedActionsOf = (params: Record<string, unknown>): string[] =>

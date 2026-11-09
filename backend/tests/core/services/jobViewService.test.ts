@@ -159,13 +159,14 @@ describe('emailCountsOf', () => {
     });
   });
 
-  it('counts a job that reads its recipients when it runs against the addresses it tried', () => {
+  // Its list is read when it runs, so a retrying job cannot say how many are left.
+  it('counts only the sent and refused for a job that reads its recipients when it runs', () => {
     const params = { statusChangeId: 'change-1', options: { attachComment: false } };
     expect(emailCountsOf(params, sends)).toEqual({
-      addresses: 3,
+      addresses: null,
       sent: 1,
       refused: 1,
-      pending: 1,
+      pending: null,
     });
     expect(emailCountsOf(params, [])).toBeNull();
   });

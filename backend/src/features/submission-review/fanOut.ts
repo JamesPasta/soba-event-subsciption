@@ -6,7 +6,8 @@ import {
   type NewJob,
 } from '../../core/db/repos/jobRepo';
 import type { JobContext } from '../../core/jobs/registry';
-import { isSubmissionLive } from '../post-submission/repo';
+import { JobCancelledError } from '../../core/jobs/settlement';
+import { isSubmissionLive, SUBMISSION_GONE } from '../post-submission/repo';
 import { StatusChangedJobParamsSchema } from './params';
 import { reactionAttempts, type StatusReaction } from './statusReactions';
 
@@ -34,6 +35,7 @@ export const reactionJob = (
 /**
  * The status-changed job's run: queue one job per reaction recorded with the change, in one
  * transaction. Dedupe keys make a retry safe. Each reaction's job decides whether it still runs.
+ * Ends cancelled, queuing nothing, once the submission, its form or its workspace is gone.
  */
 export const fanOutStatusChanged = async ({ job, log }: JobContext): Promise<void> => {
   const { statusChangeId, actions } = StatusChangedJobParamsSchema.parse(job.params);
@@ -43,10 +45,7 @@ export const fanOutStatusChanged = async ({ job, log }: JobContext): Promise<voi
   const live =
     job.submissionId !== null &&
     (await isSubmissionLive(db, { workspaceId: job.workspaceId, submissionId: job.submissionId }));
-  if (!live) {
-    log.info('Status change reactions skipped: the submission, its form or its workspace is gone');
-    return;
-  }
+  if (!live) throw new JobCancelledError(SUBMISSION_GONE);
 
   // The mark outlives the children, so a re-run is refused once they were queued, even after
   // retention deletes them and frees their dedupe keys.

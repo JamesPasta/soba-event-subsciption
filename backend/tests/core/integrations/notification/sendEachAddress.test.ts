@@ -237,6 +237,20 @@ describe('sendEachAddress', () => {
     },
   );
 
+  it('says where in the list it stopped, counting refused addresses too', async () => {
+    const refused = { outcome: 'error' as const, httpStatus: 400, audited: true };
+    const fake = fakeNotifications({
+      answers: {
+        'a@example.com': refused,
+        'b@example.com': refused,
+        'c@example.com': { outcome: 'error', httpStatus: 503, audited: true },
+      },
+    });
+    await expect(
+      run(['a@example.com', 'b@example.com', 'c@example.com'], fake.notifications),
+    ).rejects.toThrow('Email send failed (status 503) after 2 of 3');
+  });
+
   it('stops and throws when a send was not recorded, so it is not sent again unrecorded', async () => {
     const fake = fakeNotifications({
       answers: { 'a@example.com': { ...ACCEPTED, audited: false } },

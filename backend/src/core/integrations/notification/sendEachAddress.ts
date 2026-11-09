@@ -45,7 +45,8 @@ const sendInTurn = async (
       recipients: { to: [addresses[index]] },
       content,
     });
-    const stoppedAt = `after ${tally.sent} of ${addresses.length}`;
+    // Where in the list it stopped: the retry skips the addresses before this one.
+    const stoppedAt = `after ${index} of ${addresses.length}`;
     if (!result.audited) throw new Error(`A send was not recorded; stopping ${stoppedAt}`);
     if (result.outcome === NotificationOutcome.disabled) {
       throw new JobCancelledError(NOTIFICATIONS_OFF);

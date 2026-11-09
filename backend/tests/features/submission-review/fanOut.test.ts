@@ -12,12 +12,14 @@ jest.mock('../../../src/core/db/repos/jobRepo', () => ({
 }));
 const mockIsLive = jest.fn();
 jest.mock('../../../src/features/post-submission/repo', () => ({
+  SUBMISSION_GONE: 'The submission, its form or its workspace is gone',
   isSubmissionLive: (...args: unknown[]) => mockIsLive(...args),
 }));
 
 import type { Logger } from 'pino';
 import type { ClaimedJob } from '../../../src/core/db/repos/jobRepo';
 import type { JobContext } from '../../../src/core/jobs/registry';
+import { JobCancelledError } from '../../../src/core/jobs/settlement';
 import { fanOutStatusChanged, reactionJob } from '../../../src/features/submission-review/fanOut';
 
 const CHANGE_ID = '0190f3a2-7c1e-7a4b-9d2e-5f6a7b8c9d0e';
@@ -83,9 +85,11 @@ describe('fanOutStatusChanged', () => {
     expect(mockInsertJob).not.toHaveBeenCalled();
   });
 
-  it('queues nothing once the submission, its form or its workspace is gone', async () => {
+  it('ends cancelled, queuing nothing, once the submission, its form or its workspace is gone', async () => {
     mockIsLive.mockResolvedValue(false);
-    await fanOut([STATUS_EMAIL]);
+    await expect(fanOut([STATUS_EMAIL])).rejects.toThrow(
+      new JobCancelledError('The submission, its form or its workspace is gone'),
+    );
     expect(mockMarkChildrenQueued).not.toHaveBeenCalled();
     expect(mockInsertJob).not.toHaveBeenCalled();
   });

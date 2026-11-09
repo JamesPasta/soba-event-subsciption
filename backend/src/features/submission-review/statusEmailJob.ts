@@ -11,7 +11,7 @@ import type { JobContext } from '../../core/jobs/registry';
 import { JobCancelledError } from '../../core/jobs/settlement';
 import { StatusEmailJobParamsSchema } from '../../core/jobs/submissionStatusEmail';
 import { jobNotifications } from '../notifications/jobNotifications';
-import { findLiveSubmission } from '../post-submission/repo';
+import { findLiveSubmission, SUBMISSION_GONE } from '../post-submission/repo';
 import { canReviewForm } from './assignee';
 import {
   renderStatusEmail,
@@ -19,8 +19,6 @@ import {
   statusEmailFor,
   type StatusEmail,
 } from './statusEmails';
-
-const GONE = 'The submission, its form or its workspace is gone';
 
 /** Who the email goes to, read when the job runs; ends the job cancelled, with why, when no one. */
 const recipientsFor = async (
@@ -73,7 +71,7 @@ export const runStatusEmailJob = async ({ job, signal, log }: JobContext): Promi
     workspaceId: change.workspaceId,
     submissionId: change.submissionId,
   });
-  if (!submission) throw new JobCancelledError(GONE);
+  if (!submission) throw new JobCancelledError(SUBMISSION_GONE);
   if (!change.current) throw new JobCancelledError('The status has changed since; no email sent');
   const email = statusEmailFor(change.status);
   if (!email) throw new JobCancelledError('This status sends no email');

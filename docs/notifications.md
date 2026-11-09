@@ -168,13 +168,15 @@ its event; a submit records one only where post-submission actions are available
 - **The fan-out queues the reactions.** In one transaction it marks the event's children queued and
   inserts one job per recorded reaction, with dedupe key `<reaction type>:<event id>`, the event as
   parent and the event's creator as its own. Once the children are queued, the event can't be run
-  again; their jobs can.
+  again; their jobs can. When the submission, its form or its workspace is already gone, the event
+  ends cancelled with that reason and queues nothing.
 - **Params hold ids and choices, never content.** A status-changed event's params are
   `{ statusChangeId, actions }`, and its status email's are
   `{ statusChangeId, options: { attachComment } }`: a reaction's job keeps its recorded options
   under `options`, as an action's job does, so the admin Jobs tab lists them. The reaction reads the
   recipients and the comment when it runs, so addresses and comments stay out of job rows and their
-  backups. The Jobs tabs count such a job's sent and refused addresses from its audit rows.
+  backups. The Jobs tabs count such a job's sent and refused addresses from its audit rows; how
+  many it has in all, and how many are left, aren't known until it has run.
 - **The reaction checks the event still applies.** A status email ends cancelled once the
   submission, its form or its workspace is gone, or when the submission's status has moved on since
   the change, so a late retry or a re-run never sends an out-of-date email.

@@ -225,18 +225,22 @@ function JobEmails({ counts }: Readonly<{ counts: JobEmailCounts }>) {
         {dictEmails.heading}
       </h2>
       <dl className="row">
-        <Fact name={dictEmails.addresses} testId="emails-addresses">
-          {counts.addresses}
-        </Fact>
+        {counts.addresses !== null && (
+          <Fact name={dictEmails.addresses} testId="emails-addresses">
+            {counts.addresses}
+          </Fact>
+        )}
         <Fact name={dictEmails.sent} testId="emails-sent">
           {counts.sent}
         </Fact>
         <Fact name={dictEmails.refused} testId="emails-refused">
           {counts.refused}
         </Fact>
-        <Fact name={dictEmails.pending} testId="emails-pending">
-          {counts.pending}
-        </Fact>
+        {counts.pending !== null && (
+          <Fact name={dictEmails.pending} testId="emails-pending">
+            {counts.pending}
+          </Fact>
+        )}
       </dl>
     </section>
   );
@@ -356,11 +360,13 @@ export function JobView({ job, refreshFailed, refresh, back, facts, rerun, stop 
   }, [token, action, job.id, rerun, stop, refresh, addNotification, notifyError, dictDetail]);
 
   const counts = job.emailCounts;
-  const rerunMessage = counts
-    ? `${dictDetail.rerunMessage} ${fillTemplate(dictDetail.rerunEmails, {
-        count: String(counts.pending + counts.refused),
-      })}`
-    : dictDetail.rerunMessage;
+  // A job that reads its recipients when it runs cannot say how many a re-run will try.
+  const rerunMessage =
+    counts && counts.pending !== null
+      ? `${dictDetail.rerunMessage} ${fillTemplate(dictDetail.rerunEmails, {
+          count: String(counts.pending + counts.refused),
+        })}`
+      : dictDetail.rerunMessage;
   const endedExport = canRerunJob(job.status) && isExportJob(job.type);
   const rerunnable = canRerunJob(job.status) && !endedExport;
   const actionsQueued = rerunnable && queuedItsActions(job);

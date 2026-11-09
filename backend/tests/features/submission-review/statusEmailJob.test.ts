@@ -9,6 +9,7 @@ jest.mock('../../../src/core/db/repos/submissionReviewRepo', () => ({
 jest.mock('../../../src/core/db/client', () => ({ db: {} }));
 const mockLive = jest.fn();
 jest.mock('../../../src/features/post-submission/repo', () => ({
+  SUBMISSION_GONE: 'The submission, its form or its workspace is gone',
   findLiveSubmission: (...args: unknown[]) => mockLive(...args),
 }));
 const mockCanReview = jest.fn();

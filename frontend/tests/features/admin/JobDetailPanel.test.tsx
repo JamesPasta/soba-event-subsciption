@@ -110,6 +110,7 @@ describe('JobDetailPanel', () => {
     expect(screen.getByTestId('job-fact-last-error')).toHaveTextContent('Notifications are off');
     expect(screen.getByTestId('job-fact-emails-sent')).toHaveTextContent('1');
     expect(screen.getByTestId('job-fact-emails-refused')).toHaveTextContent('1');
+    expect(screen.getByTestId('job-fact-emails-addresses')).toHaveTextContent('3');
     expect(screen.getByTestId('job-fact-emails-pending')).toHaveTextContent('1');
     expect(screen.getByTestId(`job-related-${PARENT_ID}`)).toHaveAttribute(
       'href',
@@ -121,6 +122,26 @@ describe('JobDetailPanel', () => {
     expect(screen.getByTestId('job-form-jobs').getAttribute('href')).toContain('jobs.formId=');
     expect(screen.getByTestId('job-rerun')).toBeInTheDocument();
     expect(screen.queryByTestId('job-stop')).not.toBeInTheDocument();
+  });
+
+  it('shows only the sent and refused for a job that reads its recipients when it runs', async () => {
+    current = jobDetail({
+      type: 'submission.status-email',
+      emailCounts: { addresses: null, sent: 1, refused: 0, pending: null },
+    });
+    stubJobsServer(readJob);
+    await renderPanel();
+
+    expect(await screen.findByTestId('job-fact-emails-sent')).toHaveTextContent('1');
+    expect(screen.getByTestId('job-fact-emails-refused')).toHaveTextContent('0');
+    expect(screen.queryByTestId('job-fact-emails-addresses')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('job-fact-emails-pending')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('job-rerun'));
+    expect(screen.getByTestId('confirm-modal-message')).toHaveTextContent(dictDetail.rerunMessage);
+    expect(screen.getByTestId('confirm-modal-message')).not.toHaveTextContent(
+      'Addresses it will try',
+    );
   });
 
   it("shows an export's progress and the file it produced, with no way to download it", async () => {
