@@ -50,8 +50,8 @@ block or fake a Confirmation ID.
 ## Templates
 
 A template holds words only, in English and French; the type requires both. It never writes markup.
-An email about a submission supplies, for each language, a subject, one sentence and link text, as
-plain strings or as functions of the form name:
+An email about a submission supplies, for each language, a subject and one sentence, as functions of
+the form name, and link text:
 
 ```ts
 export const ASSIGNED_EMAIL = defineSubmissionEmail({
@@ -92,9 +92,10 @@ const content = renderSubmissionEmail(
 ```
 
 For each language, the submission block renders the Confirmation ID in bold, the sentence and the
-link. After every language's section it adds the reviewer's comment, once, under "Comments:". The
-subject ends with the Confirmation ID, as ` (code)`, so mail clients do not thread every email about
-one form into a single conversation.
+link. After every language's section it adds the reviewer's comment, once, under "Comments:",
+"Commentaires :", or "Comments: / Commentaires :" in an email in both. The subject ends with the
+Confirmation ID, as ` (code)`, so mail clients do not thread every email about one form into a
+single conversation.
 
 - **Form names** go through `cleanName` before a template sees them: no control or format
   characters, no links, one line, at most 200 characters.
@@ -102,8 +103,9 @@ one form into a single conversation.
 - **Comments** are shown as typed: escaped, with their line breaks kept. Nothing is removed from
   them, so a mail client may still turn a URL in one into a link.
 - **Links** are `SafeUrl`s, made only by the link helpers. They require `https`, allowing `http`
-  only on localhost; they refuse credentials, a query or a fragment; and they encode each path
-  segment. A link is built when the email renders, once for each language, so each language links
+  only on localhost; they refuse credentials, a query or a fragment; they are built from the parsed
+  base, so stray whitespace in a setting never reaches a link; and they encode each path segment.
+  A link is built when the email renders, once for each language, so each language links
   under its own path. With no base URL set, the email has no link.
 
 Templates live beside the feature that sends them, such as
@@ -129,8 +131,10 @@ French copy is reviewed by a fluent French speaker before it merges.
   attached, and a link. Never submitted answers or other personal data.
 - **One email per address,** so no recipient sees another's address.
 - **No email to the person who made the change.** Assigning a submission to yourself sends nothing,
-  and the reviewer is left out of the submitters an email goes to.
-- **Words:** CHEFS, "sign in" (never "login") and "Confirmation ID". Links say what they open, such
+  and whoever made the change is left out of the submitters an email goes to, even a reviewer who
+  is also a submitter. A submitter sending their own submission back to revise emails no one.
+- **Words:** CHEFS, "sign in" (never "login") and "Confirmation ID" ("ID de confirmation", as the
+  app's French screens say). Links say what they open, such
   as "View this submission"; the URL itself is not printed.
 - **Where links go:** staff links open the designer; submitter links open the forms app.
 - **Markup:** inline styles only, with text that meets WCAG AA contrast. Links have an explicit
@@ -144,9 +148,9 @@ French copy is reviewed by a fluent French speaker before it merges.
 Code that causes an email never calls Notify, and never queues the email itself. It records an
 event: a job queued in the transaction that saves what happened. When the event job runs, its
 fan-out queues one job for each reaction recorded with the event, and the email is one of those
-reactions. A change that rolls back records no event, and a change that commits always leaves one
-behind, which retries while Notify is slow or down. A failed email never undoes the change that
-caused it.
+reactions. The event commits or rolls back with the change, and its jobs retry while Notify is slow
+or down. A failed email never undoes the change that caused it. Every review status change records
+its event; a submit records one only where post-submission actions are available.
 
 | event                       | recorded by                                          | its reactions                                                                                                                          |
 | --------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -166,12 +170,14 @@ caused it.
   parent and the event's creator as its own. Once the children are queued, the event can't be run
   again; their jobs can.
 - **Params hold ids and choices, never content.** A status-changed event's params are
-  `{ statusChangeId, actions }`, and its status email's are `{ statusChangeId, attachComment }`.
-  The reaction reads the recipients and the comment when it runs, so addresses and comments stay out
-  of job rows and their backups.
-- **The reaction checks the event still applies.** A status email ends cancelled when the
-  submission's status has moved on since the change, so a late retry or a re-run never sends an
-  out-of-date email.
+  `{ statusChangeId, actions }`, and its status email's are
+  `{ statusChangeId, options: { attachComment } }`: a reaction's job keeps its recorded options
+  under `options`, as an action's job does, so the admin Jobs tab lists them. The reaction reads the
+  recipients and the comment when it runs, so addresses and comments stay out of job rows and their
+  backups. The Jobs tabs count such a job's sent and refused addresses from its audit rows.
+- **The reaction checks the event still applies.** A status email ends cancelled once the
+  submission, its form or its workspace is gone, or when the submission's status has moved on since
+  the change, so a late retry or a re-run never sends an out-of-date email.
 - **Retry or stop:**
 
   | the job                       | when                                                                                                                                                                 |
@@ -184,15 +190,19 @@ caused it.
 - **One send step,** `sendEachAddress` (`backend/src/core/integrations/notification/sendEachAddress.ts`):
   1. Puts each address in lower case and drops duplicates.
   2. Counts an address no provider would take as refused, without sending to it.
-  3. Skips the addresses this job already handled, and stops when none are left.
+  3. Skips the addresses this job already handled. With none left it stops, unless none was ever
+     sent (step 7).
   4. Checks that notifications are on.
   5. Runs the policy's `checkBudgets`, if any, until the run has handled an address.
   6. Sends to one address at a time. A refused address (400 or 422) is recorded and skipped; any
      other failure throws.
-  7. Ends cancelled when a fresh list was refused at every address.
-- **Attribution.** `jobNotifications(job, actorId)` binds the service to the job. A send is
-  attributed to the person whose action caused it, and a re-run to whoever ran the job again. An
-  action a form is configured with, such as the notice, sends as the system user.
+  7. Ends cancelled when no email on the list has been sent, on this attempt or an earlier one:
+     every address was refused.
+- **Attribution.** `jobNotifications(job, actorId)` binds the service to the job; `actorId` is a
+  function that gives the user each send is attributed to. A send is attributed to the person whose
+  action caused it. Running an email's job again attributes its sends to whoever ran it; running an
+  event again does not, since the jobs it queues keep the event's creator. An action a form is
+  configured with, such as the notice, sends as the system user.
 - **Hourly limits** apply where staff choose the recipients: the notice checks its form, workspace
   and environment limits before its run sends anything. Status emails go out one per person's
   action and have none.
@@ -217,11 +227,12 @@ caused it.
    spec apart from the handler, so queuing the job does not load the handler.
 5. Write the handler beside the feature. It loads the event and checks it still applies, resolves
    the recipients without the person who caused it, renders with `DEFAULT_EMAIL_LANGUAGE`, and
-   calls `sendEachAddress` with `jobNotifications(job, actorId)`.
+   calls `sendEachAddress` with `jobNotifications(job, () => Promise.resolve(actorId))`.
 6. Register the handler in `getJobRegistry` (`backend/src/core/jobs/catalog.ts`) and name the type:
    `TYPE_NAMES` in `backend/src/core/services/jobViewService.ts` for the admin filter, and the
-   constant and `jobTypeLabel` in `frontend/src/features/jobs/jobs.ts` with `jobs.types` in
-   `en.json` and `fr.json`. Add it to `submissionJobTypes()` if it belongs to a submission.
+   constant and its `OWN_TYPE_LABELS` entry in `frontend/src/features/jobs/jobs.ts` with
+   `jobs.types` in `en.json` and `fr.json`. Add it to `submissionJobTypes()` if it belongs to a
+   submission.
 7. Hang it off its event as a reaction. For an existing event, add an entry to the event's list,
    such as `STATUS_REACTIONS`, with its job spec, whether it can run here, and the rule that decides
    which events call for it and the options to record. For a new kind of event, add the event the
@@ -231,7 +242,10 @@ caused it.
      the event, which records the reactions
    - `nudgeJobs` after the commit
    - a fan-out registered in the catalog
-   - its names in the Jobs tabs, and the fan-out re-run rule in `jobViewService.ts`
+   - its names in the Jobs tabs
+   - its type in both `FAN_OUT_TYPES` sets, in `jobViewService.ts` and
+     `frontend/src/features/jobs/jobs.ts`, so neither the server nor the page offers to run it again
+     once it has queued its reactions
 8. Test it: the full English body, a French subject and body, the reaction's rule, the handler's
    recipients, cancel reasons and attribution, and that the event records the reaction once. Unit
    tests use no real database.

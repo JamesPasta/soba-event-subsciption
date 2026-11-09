@@ -32,7 +32,7 @@ templates, the job rules and the rules every email follows:
 ```ts
 const content = renderSubmissionEmail(TEMPLATE, facts, DEFAULT_EMAIL_LANGUAGE);
 await sendEachAddress(
-  { notifications: jobNotifications(job, actorId), signal, log },
+  { notifications: jobNotifications(job, () => Promise.resolve(actorId)), signal, log },
   addresses,
   content,
 );
