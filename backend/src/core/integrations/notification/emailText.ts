@@ -19,30 +19,8 @@ export const cleanName = (value: string): string =>
     .join('')
     .trimEnd();
 
-const HTML_ESCAPES = new Map([
-  ['&', '&amp;'],
-  ['<', '&lt;'],
-  ['>', '&gt;'],
-  ['"', '&quot;'],
-  ["'", '&#39;'],
-]);
-
-/** Text safe in HTML content and in a quoted attribute value. */
-export const escapeHtml = (value: string): string =>
-  value.replaceAll(/[&<>"']/g, (char) => HTML_ESCAPES.get(char) ?? char);
-
 export const withoutTrailingSlashes = (url: string): string => {
   let end = url.length;
   while (end > 0 && url[end - 1] === '/') end -= 1;
   return url.slice(0, end);
 };
-
-/** The submission in the designer; opening it needs sign-in and access to the submission. */
-export const designerSubmissionLink = (
-  designerAppUrl: string | undefined,
-  formId: string,
-  submissionId: string,
-): string | null =>
-  designerAppUrl
-    ? `${withoutTrailingSlashes(designerAppUrl)}/en/build/${formId}/submissions/${submissionId}`
-    : null;

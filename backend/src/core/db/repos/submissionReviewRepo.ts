@@ -20,7 +20,6 @@ import {
 } from '../codes';
 import {
   appUsers,
-  forms,
   submissionNotes,
   submissionParticipants,
   submissionRevisions,
@@ -278,44 +277,28 @@ export const addNote = async (
   return sameNote ? 'replayed' : 'taken';
 };
 
-/** What a status email names, and who a submitter-facing one goes to. */
-export interface StatusEmailFacts {
-  formId: string;
-  formName: string;
-  confirmationCode: string;
-  /** The emails of its owner and active collaborators, once each. */
-  submitterEmails: string[];
-}
-
 const emailsOf = (rows: Array<{ profile: unknown }>): string[] => [
   ...new Set(
     rows.flatMap((row) => profileHelpers.getEmail(row.profile as StoredProfile | null) ?? []),
   ),
 ];
 
-/** The facts a submission's status email needs; null when it is not live in the workspace. */
-export const findStatusEmailFacts = async (
-  workspaceId: string,
+/** A submission's active submitters other than one person: how many, and their emails. */
+export interface OtherSubmitters {
+  count: number;
+  /** Their email addresses, once each; a submitter with none known has no entry. */
+  emails: string[];
+}
+
+/**
+ * The submission's owner and active collaborators, leaving out `exceptUserId`, who made the change
+ * the email is about.
+ */
+export const findOtherSubmitters = async (
   submissionId: string,
-): Promise<StatusEmailFacts | null> => {
-  const [row] = await db
-    .select({
-      formId: submissions.formId,
-      formName: forms.name,
-      confirmationCode: submissions.confirmationCode,
-    })
-    .from(submissions)
-    .innerJoin(forms, eq(forms.id, submissions.formId))
-    .where(
-      and(
-        eq(submissions.id, submissionId),
-        eq(submissions.workspaceId, workspaceId),
-        isNull(submissions.deletedAt),
-      ),
-    )
-    .limit(1);
-  if (!row) return null;
-  const submitters = await db
+  exceptUserId: string | null,
+): Promise<OtherSubmitters> => {
+  const rows = await db
     .select({ profile: appUsers.profile })
     .from(submissionParticipants)
     .innerJoin(appUsers, eq(appUsers.id, submissionParticipants.userId))
@@ -323,9 +306,55 @@ export const findStatusEmailFacts = async (
       and(
         eq(submissionParticipants.submissionId, submissionId),
         eq(submissionParticipants.status, SubmissionParticipantStatus.active),
+        exceptUserId === null ? undefined : ne(submissionParticipants.userId, exceptUserId),
       ),
     );
-  return { ...row, formName: row.formName ?? '', submitterEmails: emailsOf(submitters) };
+  return { count: rows.length, emails: emailsOf(rows) };
+};
+
+/** A status change as its email needs it. */
+export interface StatusChangeForEmail {
+  workspaceId: string;
+  submissionId: string;
+  status: SubmissionReviewStatus;
+  assigneeId: string | null;
+  /** Who made the change; null for a user since removed. */
+  changedBy: string | null;
+  /** The change is still the submission's status. */
+  current: boolean;
+  /** The comment saved with the change, if any; whether it goes in the email is the job's choice. */
+  comment: string | null;
+}
+
+/** The status change `id` and its comment; null when there is none. */
+export const findStatusChangeForEmail = async (
+  id: string,
+): Promise<StatusChangeForEmail | null> => {
+  const [row] = await db
+    .select({
+      workspaceId: submissionStatuses.workspaceId,
+      submissionId: submissionStatuses.submissionId,
+      status: submissionStatuses.status,
+      assigneeId: submissionStatuses.assigneeId,
+      changedBy: submissionStatuses.changedBy,
+      currentStatusId: submissions.statusId,
+      comment: submissionNotes.text,
+    })
+    .from(submissionStatuses)
+    .innerJoin(submissions, eq(submissions.id, submissionStatuses.submissionId))
+    .leftJoin(submissionNotes, eq(submissionNotes.id, submissionStatuses.id))
+    .where(eq(submissionStatuses.id, id))
+    .limit(1);
+  if (!row) return null;
+  return {
+    workspaceId: row.workspaceId,
+    submissionId: row.submissionId,
+    status: row.status as SubmissionReviewStatus,
+    assigneeId: row.assigneeId,
+    changedBy: row.changedBy,
+    current: row.currentStatusId === id,
+    comment: row.comment,
+  };
 };
 
 /** A user's email from their profile; null when none is known. */
@@ -424,6 +453,11 @@ export const changeStatus = (input: {
   onlyFrom?: SubmissionReviewStatus;
   /** A comment saved with the change as a staff note, under the change's id. */
   comment?: string;
+  /**
+   * Runs in the change's transaction once the change is made, to queue what it sets off. A replay
+   * or a refused change never runs it.
+   */
+  onChanged?: (tx: Tx) => Promise<void>;
 }): Promise<ChangeStatusOutcome> =>
   db.transaction(async (tx) => {
     const [submission] = await tx
@@ -519,5 +553,6 @@ export const changeStatus = (input: {
         ...restored,
       })
       .where(eq(submissions.id, input.submissionId));
+    await input.onChanged?.(tx);
     return 'changed';
   });

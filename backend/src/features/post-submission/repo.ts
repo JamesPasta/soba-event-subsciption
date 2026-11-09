@@ -95,6 +95,9 @@ export const saveActionSetting = async (input: {
   );
 };
 
+/** Why a job about a submission that is no longer live ends cancelled. */
+export const SUBMISSION_GONE = 'The submission, its form or its workspace is gone';
+
 /**
  * The submission an action runs for, while its actions may still run: the submission is not
  * deleted, its form is not deleted (an archived form still runs them), and its workspace is active.

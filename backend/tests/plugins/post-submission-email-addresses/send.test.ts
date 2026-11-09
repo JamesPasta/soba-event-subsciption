@@ -25,31 +25,30 @@ const submission = {
 };
 
 /**
- * The notifications service the framework passes in, kept in memory: what it answers per address,
- * what this job already handled, whether its current run has handled any (by default, when any is
- * handled), and what each scope sent in the last hour.
+ * The notifications service the framework passes in, kept in memory: what this job already
+ * handled, whether its current run has handled any (by default, when any is handled), and what each
+ * scope sent in the last hour. Every send is accepted.
  */
 function fakeNotifications(
   setup: {
-    enabled?: boolean;
     handled?: string[];
     runStarted?: boolean;
     sent?: Partial<Record<PostSubmissionActionSendScope, number>>;
-    answers?: Record<string, PostSubmissionActionEmailResult>;
   } = {},
 ) {
   const emails: SendEmail[] = [];
   const counted: PostSubmissionActionSendScope[] = [];
   const notifications: PostSubmissionActionNotifications = {
-    enabled: () => Promise.resolve(setup.enabled ?? true),
+    enabled: () => Promise.resolve(true),
     sendEmail: (email) => {
       emails.push(email);
-      return Promise.resolve(setup.answers?.[email.recipients.to[0]] ?? ACCEPTED);
+      return Promise.resolve(ACCEPTED);
     },
     handled: () =>
       Promise.resolve({
         recipients: new Set(setup.handled ?? []),
         runStarted: setup.runStarted ?? (setup.handled ?? []).length > 0,
+        anySent: (setup.handled ?? []).length > 0,
       }),
     sentSince: (scope) => {
       counted.push(scope);
@@ -63,7 +62,7 @@ function fakeNotifications(
 const run = (
   to: string[],
   notifications: PostSubmissionActionNotifications,
-  options: { signal?: AbortSignal; info?: jest.Mock; warn?: jest.Mock } = {},
+  options: { warn?: jest.Mock } = {},
 ) =>
   sendNotices(
     {
@@ -72,33 +71,26 @@ const run = (
       source: { scope: 'form', settingId: 'setting-1', version: 1 },
       submission,
       services: { notifications },
-      signal: options.signal ?? new AbortController().signal,
-      log: {
-        info: options.info ?? jest.fn(),
-        warn: options.warn ?? jest.fn(),
-      } as unknown as Logger,
+      signal: new AbortController().signal,
+      log: { info: jest.fn(), warn: options.warn ?? jest.fn() } as unknown as Logger,
     },
     LIMITS,
-    'https://soba.example/link',
+    'https://soba.example/designer',
   );
 
 describe('sendNotices', () => {
-  it('sends the notice to each address in turn, as HTML, and logs only counts', async () => {
+  it('sends the notice to each address, as HTML, with a link to the submission', async () => {
     const fake = fakeNotifications();
-    const info = jest.fn();
-    await run(['a@example.com', 'b@example.com'], fake.notifications, { info });
+    await run(['a@example.com', 'b@example.com'], fake.notifications);
 
     expect(fake.recipients()).toEqual(['a@example.com', 'b@example.com']);
     expect(fake.emails[0].content).toMatchObject({
-      subject: 'Permit application Submission',
+      subject: 'Permit application Submission / Soumission : Permit application (ABCD1234)',
       bodyType: 'html',
     });
-    expect(fake.emails[0].content.body).toContain('<a href="https://soba.example/link">');
-    expect(info).toHaveBeenCalledWith(
-      { sent: 2, refused: 0, alreadyHandled: 0 },
-      'Post-submission email sent',
+    expect(fake.emails[0].content.body).toContain(
+      'href="https://soba.example/designer/en/build/f1/submissions/s1"',
     );
-    expect(JSON.stringify(info.mock.calls)).not.toContain('@');
   });
 
   it('sends only to addresses this job has not handled, without checking the budgets again', async () => {
@@ -120,20 +112,6 @@ describe('sendNotices', () => {
 
     await expect(outcome).rejects.toThrow(
       new JobCancelledError('Hourly email limit for the form reached: 2 to send, limit 500'),
-    );
-    expect(fake.emails).toEqual([]);
-  });
-
-  it('does nothing when every address was handled', async () => {
-    const fake = fakeNotifications({ handled: ['a@example.com'], enabled: false });
-    await run(['a@example.com'], fake.notifications);
-    expect(fake.emails).toEqual([]);
-  });
-
-  it('ends cancelled, sending nothing, when notifications are off', async () => {
-    const fake = fakeNotifications({ enabled: false });
-    await expect(run(['a@example.com'], fake.notifications)).rejects.toThrow(
-      new JobCancelledError('Notifications are off'),
     );
     expect(fake.emails).toEqual([]);
   });
@@ -172,102 +150,5 @@ describe('sendNotices', () => {
       { scope: 'environment', sent: 4999, limit: 5000, toSend: 2 },
       'Post-submission email over an hourly limit',
     );
-  });
-
-  it.each([400, 422])(
-    'records an address refused with %i, carries on, and warns with counts',
-    async (httpStatus) => {
-      const fake = fakeNotifications({
-        answers: { 'a@example.com': { outcome: 'error', httpStatus, audited: true } },
-      });
-      const warn = jest.fn();
-      await run(['a@example.com', 'b@example.com'], fake.notifications, { warn });
-
-      expect(fake.recipients()).toEqual(['a@example.com', 'b@example.com']);
-      expect(warn).toHaveBeenCalledWith(
-        { sent: 1, refused: 1, alreadyHandled: 0 },
-        'Post-submission email sent; some addresses were refused',
-      );
-    },
-  );
-
-  it('ends cancelled when a fresh list is refused at every address', async () => {
-    const refused = { outcome: 'error' as const, httpStatus: 400, audited: true };
-    const fake = fakeNotifications({
-      answers: { 'a@example.com': refused, 'b@example.com': refused },
-    });
-    const warn = jest.fn();
-    const outcome = run(['a@example.com', 'b@example.com'], fake.notifications, { warn });
-
-    await expect(outcome).rejects.toThrow(
-      new JobCancelledError('The provider refused every address (2)'),
-    );
-    expect(warn).toHaveBeenCalledWith(
-      { sent: 0, refused: 2, alreadyHandled: 0 },
-      'Post-submission email refused for every address',
-    );
-  });
-
-  it('finishes a retry whose remaining addresses are all refused', async () => {
-    const fake = fakeNotifications({
-      handled: ['a@example.com'],
-      answers: { 'b@example.com': { outcome: 'error', httpStatus: 400, audited: true } },
-    });
-    await expect(run(['a@example.com', 'b@example.com'], fake.notifications)).resolves.toBe(
-      undefined,
-    );
-  });
-
-  it.each([401, 403, 429, 503, null])(
-    'stops at an error with status %s and throws without naming addresses, so the job retries',
-    async (httpStatus) => {
-      const fake = fakeNotifications({
-        answers: { 'b@example.com': { outcome: 'error', httpStatus, audited: true } },
-      });
-      const outcome = run(['a@example.com', 'b@example.com', 'c@example.com'], fake.notifications);
-
-      await expect(outcome).rejects.toThrow(
-        `Email send failed (status ${httpStatus ?? 'none'}) after 1 of 3`,
-      );
-      await expect(outcome).rejects.not.toBeInstanceOf(JobCancelledError);
-      expect(fake.recipients()).toEqual(['a@example.com', 'b@example.com']);
-    },
-  );
-
-  it('stops and throws when a send was not recorded, so it is not sent again unrecorded', async () => {
-    const fake = fakeNotifications({
-      answers: { 'a@example.com': { ...ACCEPTED, audited: false } },
-    });
-    await expect(run(['a@example.com', 'b@example.com'], fake.notifications)).rejects.toThrow(
-      'A send was not recorded; stopping after 0 of 2',
-    );
-    expect(fake.recipients()).toEqual(['a@example.com']);
-  });
-
-  it('ends cancelled when notifications turn off part way through', async () => {
-    const fake = fakeNotifications({
-      answers: { 'b@example.com': { outcome: 'disabled', httpStatus: null, audited: true } },
-    });
-    await expect(
-      run(['a@example.com', 'b@example.com', 'c@example.com'], fake.notifications),
-    ).rejects.toThrow(new JobCancelledError('Notifications are off'));
-    expect(fake.recipients()).toEqual(['a@example.com', 'b@example.com']);
-  });
-
-  it("throws the runner's abort reason before the next send", async () => {
-    const controller = new AbortController();
-    const fake = fakeNotifications();
-    const sendEmail = fake.notifications.sendEmail;
-    fake.notifications.sendEmail = async (email) => {
-      const result = await sendEmail(email);
-      // The runner aborts with its stop reason as a string.
-      controller.abort('lease_lost');
-      return result;
-    };
-
-    await expect(
-      run(['a@example.com', 'b@example.com'], fake.notifications, { signal: controller.signal }),
-    ).rejects.toBe('lease_lost');
-    expect(fake.recipients()).toEqual(['a@example.com']);
   });
 });

@@ -7,7 +7,6 @@ import { createPluginConfigReader } from '../../core/config/pluginConfig';
 import { Features } from '../../core/db/codes';
 import type { PostSubmissionActionPluginDefinition } from '../../core/integrations/post-submission-action/PostSubmissionActionPluginDefinition';
 import { readHourlyLimits } from './limits';
-import { designerLink } from './notice';
 import { sendNotices } from './send';
 
 const CODE = 'post-submission-email-addresses';
@@ -32,7 +31,6 @@ export const postSubmissionActionPluginDefinition: PostSubmissionActionPluginDef
       // About an hour of retries at the default backoff, to ride out a provider outage.
       maxAttempts: 8,
       timeoutMs: 300_000,
-      run: (context) =>
-        sendNotices(context, limits, designerLink(env.getDesignerAppUrl(), context.submission)),
+      run: (context) => sendNotices(context, limits, env.getDesignerAppUrl()),
     },
   };

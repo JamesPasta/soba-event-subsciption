@@ -410,7 +410,9 @@
     },
     "types": {
       "submissionSubmitted": "Soumission reçue",
-      "submissionExport": "Exportation des soumissions"
+      "submissionExport": "Exportation des soumissions",
+      "submissionStatusChanged": "Statut modifié",
+      "submissionStatusEmail": "Courriel de statut"
     },
     "detail": {
       "heading": "Tâche",
@@ -1069,7 +1071,7 @@
       "enabled": "Envoyer ces courriels",
       "recipients": "Destinataires",
       "recipientsHelp": "Tapez une adresse et appuyez sur Entrée, ou collez-en plusieurs à la fois. Pour retirer une adresse, sélectionnez-la et appuyez sur Suppr ou Retour arrière.",
-      "noticeHelp": "Chaque adresse reçoit son propre courriel avec le nom du formulaire, le numéro de confirmation et un lien vers la soumission, qui exige une connexion. Les courriels au-delà de la limite horaire ne sont pas envoyés.",
+      "noticeHelp": "Chaque adresse reçoit son propre courriel avec le nom du formulaire, l’ID de confirmation et un lien vers la soumission, qui exige une connexion. Les courriels au-delà de la limite horaire ne sont pas envoyés.",
       "count": "Adresses : {count} / {max}",
       "invalid": "Adresse courriel non valide. Corrigez ou supprimez le texte dans le champ.",
       "tooMany": "Une liste peut contenir jusqu'à {max} adresses. Les autres sont toujours dans le champ.",
