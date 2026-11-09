@@ -311,6 +311,7 @@ export function createEnvReader(source: EnvSource) {
     /** express.json body limit for the API surfaces. */
     getJsonBodyLimit: () => getOptionalEnvFrom(source, 'HTTP_JSON_BODY_LIMIT') ?? '10mb',
     getDbAdminDatabase: () => getOptionalEnvFrom(source, 'DB_ADMIN_DATABASE'),
+    getDbRuntimeRole: () => getOptionalEnvFrom(source, 'DB_RUNTIME_ROLE'),
     // Pipeline performance fix: Revert if needed.
     getDbConnectionTimeoutMs: () => getNumberEnvFrom(source, 'DB_CONNECTION_TIMEOUT_MS') ?? 10000,
     getDbQueryTimeoutMs: () => getNumberEnvFrom(source, 'DB_QUERY_TIMEOUT_MS') ?? 60000,
@@ -408,6 +409,7 @@ export const env = {
   /** express.json body limit for the API surfaces. */
   getJsonBodyLimit: () => getOptionalEnv('HTTP_JSON_BODY_LIMIT') ?? '10mb',
   getDbAdminDatabase: () => getOptionalEnv('DB_ADMIN_DATABASE'),
+  getDbRuntimeRole: () => getOptionalEnv('DB_RUNTIME_ROLE'),
   // Pipeline performance fix: Revert if needed.
   getDbConnectionTimeoutMs: () => getNumberEnv('DB_CONNECTION_TIMEOUT_MS') ?? 10000,
   getDbQueryTimeoutMs: () => getNumberEnv('DB_QUERY_TIMEOUT_MS') ?? 60000,

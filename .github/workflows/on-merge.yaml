@@ -154,6 +154,7 @@ jobs:
         run: |
           SECRET_NAME="${CLUSTER}-pguser-app"
           echo "secret_name=$SECRET_NAME" >> "$GITHUB_OUTPUT"
+          echo "runtime_secret_name=${CLUSTER}-pguser-appproxy" >> "$GITHUB_OUTPUT"
 
       # Pipeline performance fix: Revert if needed.
       - name: Wait for dev database readiness
@@ -224,6 +225,9 @@ jobs:
           database:
             existingSecretName: "${{ steps.db.outputs.secret_name }}"
             existingSecretKey: "uri"
+            runtimeSecretName: "${{ steps.db.outputs.runtime_secret_name }}"
+            runtimeSecretKey: "pgbouncer-uri"
+            runtimeRole: "appproxy"
           mongodb:
             internal:
               enabled: false

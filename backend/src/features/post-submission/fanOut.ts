@@ -6,6 +6,7 @@ import {
   type NewJob,
 } from '../../core/db/repos/jobRepo';
 import { findInstalledPostSubmissionAction } from '../../core/integrations/post-submission-action/PostSubmissionActionRegistry';
+import { mapInOrder } from '../../core/inOrder';
 import type { JobContext } from '../../core/jobs/registry';
 import { getJobSettings } from '../../core/jobs/settings';
 import { JobCancelledError } from '../../core/jobs/settlement';
@@ -58,8 +59,8 @@ export const fanOutSubmitted = async ({ job, log }: JobContext): Promise<void> =
     if (!(await markChildrenQueued(tx, job.id, job.claimToken))) {
       throw new Error('The job is no longer held; its actions were not queued');
     }
-    return Promise.all(
-      actions.map((action) => insertJob(tx, childJob(job, action, childAttempts(action.code)))),
+    return mapInOrder(actions, (action) =>
+      insertJob(tx, childJob(job, action, childAttempts(action.code))),
     );
   });
   log.info(

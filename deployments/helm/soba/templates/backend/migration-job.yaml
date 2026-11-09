@@ -66,6 +66,10 @@ spec:
             {{- end }}
             - name: DB_ADMIN_DATABASE
               value: {{ .Values.database.adminDatabase | quote }}
+            {{- if .Values.database.runtimeRole }}
+            - name: DB_RUNTIME_ROLE
+              value: {{ .Values.database.runtimeRole | quote }}
+            {{- end }}
             # Pipeline performance fix: Revert if needed.
             - name: DB_CONNECTION_TIMEOUT_MS
               value: {{ .Values.database.connectionTimeoutMs | quote }}
