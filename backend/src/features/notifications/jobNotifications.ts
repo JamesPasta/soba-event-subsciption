@@ -11,6 +11,7 @@ import type {
 import {
   hasRunStarted,
   isHandledForRun,
+  isSentSend,
   REFUSED_HTTP_STATUSES,
 } from '../../core/integrations/notification/sendOutcome';
 import { notificationService } from './service';
@@ -55,6 +56,7 @@ export const jobNotifications = (
           .flatMap((send) => send.recipients.to),
       ),
       runStarted: hasRunStarted(sends, job.lastRequeuedAt),
+      anySent: sends.some(isSentSend),
     };
   },
 

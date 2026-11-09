@@ -48,6 +48,7 @@ function fakeNotifications(
       Promise.resolve({
         recipients: new Set(setup.handled ?? []),
         runStarted: setup.runStarted ?? (setup.handled ?? []).length > 0,
+        anySent: (setup.handled ?? []).length > 0,
       }),
     sentSince: (scope) => {
       counted.push(scope);

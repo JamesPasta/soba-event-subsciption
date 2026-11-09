@@ -14,18 +14,22 @@ const ACCEPTED: JobEmailResult = { outcome: 'accepted', httpStatus: null, audite
 const CONTENT: SendEmail['content'] = { subject: 'Subject', body: '<p>Body</p>', bodyType: 'html' };
 
 /**
- * The job's notifications, kept in memory: what the provider answers per address, what this job
- * already handled, and whether its current run has handled any (by default, when any is handled).
+ * The job's notifications, kept in memory: what the provider answers per address, the addresses
+ * this job sent to or had refused on earlier attempts, and whether its current run has handled any
+ * (by default, when any is handled).
  */
 function fakeNotifications(
   setup: {
     enabled?: boolean;
     handled?: string[];
+    refusedBefore?: string[];
     runStarted?: boolean;
     answers?: Record<string, JobEmailResult>;
   } = {},
 ) {
   const emails: SendEmail[] = [];
+  const sentBefore = setup.handled ?? [];
+  const handled = [...sentBefore, ...(setup.refusedBefore ?? [])];
   const notifications: JobNotifications = {
     enabled: jest.fn(() => Promise.resolve(setup.enabled ?? true)),
     sendEmail: (email) => {
@@ -34,8 +38,9 @@ function fakeNotifications(
     },
     handled: () =>
       Promise.resolve({
-        recipients: new Set(setup.handled ?? []),
-        runStarted: setup.runStarted ?? (setup.handled ?? []).length > 0,
+        recipients: new Set(handled),
+        runStarted: setup.runStarted ?? handled.length > 0,
+        anySent: sentBefore.length > 0,
       }),
     sentSince: () => Promise.resolve(0),
   };
@@ -180,7 +185,7 @@ describe('sendEachAddress', () => {
     );
   });
 
-  it('finishes a retry whose remaining addresses are all refused', async () => {
+  it('finishes a retry whose remaining addresses are all refused, once one was sent', async () => {
     const fake = fakeNotifications({
       handled: ['a@example.com'],
       answers: { 'b@example.com': { outcome: 'error', httpStatus: 400, audited: true } },
@@ -188,6 +193,32 @@ describe('sendEachAddress', () => {
     await expect(run(['a@example.com', 'b@example.com'], fake.notifications)).resolves.toBe(
       undefined,
     );
+  });
+
+  // a was refused, then b failed and the job retried; b is refused now.
+  it('ends cancelled when every address was refused, across a retry', async () => {
+    const fake = fakeNotifications({
+      refusedBefore: ['a@example.com'],
+      answers: { 'b@example.com': { outcome: 'error', httpStatus: 400, audited: true } },
+    });
+    await expect(run(['a@example.com', 'b@example.com'], fake.notifications)).rejects.toThrow(
+      new JobCancelledError('Every address was refused (2)'),
+    );
+    expect(fake.recipients()).toEqual(['b@example.com']);
+  });
+
+  it('ends cancelled on a retry with nothing left to send, when every address was refused', async () => {
+    const fake = fakeNotifications({ refusedBefore: ['a@example.com'] });
+    await expect(run(['a@example.com'], fake.notifications)).rejects.toThrow(
+      new JobCancelledError('Every address was refused (1)'),
+    );
+    expect(fake.emails).toEqual([]);
+  });
+
+  it('does nothing for an empty list', async () => {
+    const fake = fakeNotifications();
+    await expect(run([], fake.notifications)).resolves.toBe(undefined);
+    expect(fake.notifications.enabled).not.toHaveBeenCalled();
   });
 
   it.each([401, 403, 429, 503, null])(

@@ -62,9 +62,9 @@ const sendInTurn = async (
 /**
  * Sends one email per address, each address once and in lower case, skipping those already handled
  * for this job. An address no provider would take, or one the provider refuses, is counted as
- * refused and skipped; a fresh list refused at every address ends cancelled. Any other failure, a
- * missing audit row or an abort stops the run and throws, so the job retries and the retry skips
- * what was handled. Logs counts only, never addresses.
+ * refused and skipped; a list on which no email has reached anyone, on any attempt, ends cancelled.
+ * Any other failure, a missing audit row or an abort stops the run and throws, so the job retries
+ * and the retry skips what was handled. Logs counts only, never addresses.
  */
 export const sendEachAddress = async (
   context: SendEachAddressContext,
@@ -74,12 +74,13 @@ export const sendEachAddress = async (
 ): Promise<void> => {
   const { notifications, log } = context;
   const unique = [...new Set(addresses.map(normalize))];
+  if (unique.length === 0) return;
   const valid = unique.filter(isAddress);
   const invalid = unique.length - valid.length;
-  const { recipients, runStarted } = await notifications.handled();
+  const { recipients, runStarted, anySent } = await notifications.handled();
   const handled = new Set([...recipients].map(normalize));
   const remaining = valid.filter((address) => !handled.has(address));
-  if (remaining.length === 0 && invalid === 0) return;
+  if (remaining.length === 0 && invalid === 0 && anySent) return;
 
   let tally: Tally = { sent: 0, refused: 0 };
   if (remaining.length > 0) {
@@ -89,10 +90,11 @@ export const sendEachAddress = async (
   }
   const refused = tally.refused + invalid;
   const counts = { sent: tally.sent, refused, alreadyHandled: handled.size };
-  // Every address refused on a fresh list is more likely the request than the addresses.
-  if (tally.sent === 0 && handled.size === 0) {
+  // With nothing sent, on this attempt or an earlier one, the rest were refused before: every
+  // address was refused, which is more likely the request than the addresses.
+  if (tally.sent === 0 && !anySent) {
     log.warn(counts, 'Every address was refused');
-    throw new JobCancelledError(`Every address was refused (${refused})`);
+    throw new JobCancelledError(`Every address was refused (${unique.length})`);
   }
   if (refused > 0) log.warn(counts, 'Emails sent; some addresses were refused');
   else log.info(counts, 'Emails sent');

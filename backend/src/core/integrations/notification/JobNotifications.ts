@@ -7,6 +7,16 @@ export interface JobEmailResult extends SendOutcome {
   audited: boolean;
 }
 
+/** Where a job's sends stand. A run starts when the job is created, or at its last re-run. */
+export interface HandledAddresses {
+  /** Addresses already handed to the provider, or that the provider refused since the last re-run. */
+  recipients: Set<string>;
+  /** The current run has handled an address. */
+  runStarted: boolean;
+  /** Any of the job's emails reached its address, in any run. */
+  anySent: boolean;
+}
+
 /** Where a send count looks: the job's form, its workspace, or the whole environment. */
 export type NotificationSendScope = 'form' | 'workspace' | 'environment';
 
@@ -17,12 +27,8 @@ export type NotificationSendScope = 'form' | 'workspace' | 'environment';
 export interface JobNotifications {
   enabled(): Promise<boolean>;
   sendEmail(email: SendEmail): Promise<JobEmailResult>;
-  /**
-   * Addresses this job has already handed to the provider, or that the provider refused since its
-   * last re-run, and whether its current run has handled any address yet. A run starts when the job
-   * is created, or at its last re-run.
-   */
-  handled(): Promise<{ recipients: Set<string>; runStarted: boolean }>;
+  /** Where this job's sends stand, from its audit rows. */
+  handled(): Promise<HandledAddresses>;
   /**
    * Sends the provider accepted or refused in the last `seconds`, by the database clock. Failures
    * that will be retried are not counted, so an outage does not use up the hour.
