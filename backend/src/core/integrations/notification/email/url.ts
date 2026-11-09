@@ -31,11 +31,14 @@ export const assertEmailLinkBases = (bases: Readonly<Record<string, string | und
   }
 };
 
+// Built from the parsed base, so stray whitespace or an empty ? or # in the setting cannot reach a link.
 const appLink = (base: string | undefined, segments: readonly string[]): SafeUrl | null => {
   if (!base) return null;
   const problem = appUrlProblem(base);
   if (problem) throw new Error(`An email link base ${problem}`);
-  return `${withoutTrailingSlashes(base)}/${segments.map(encodeURIComponent).join('/')}` as SafeUrl;
+  const { origin, pathname } = new URL(base);
+  const path = segments.map(encodeURIComponent).join('/');
+  return `${origin}${withoutTrailingSlashes(pathname)}/${path}` as SafeUrl;
 };
 
 /** The submission in the designer; opening it needs sign-in and access to the submission. */

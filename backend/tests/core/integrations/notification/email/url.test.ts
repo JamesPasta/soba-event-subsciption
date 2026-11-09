@@ -30,6 +30,17 @@ describe('email links', () => {
     );
   });
 
+  it.each([
+    ['an empty query', 'https://soba.example/designer?'],
+    ['an empty fragment', 'https://soba.example/designer#'],
+    ['surrounding whitespace', ' https://soba.example/designer \n'],
+    ['a tab in the host', 'https://soba.exa\tmple/designer'],
+  ])('builds a clean link from a base with %s', (_case, base) => {
+    expect(designerSubmissionUrl(base, 'en', 'f1', 's1')).toBe(
+      'https://soba.example/designer/en/build/f1/submissions/s1',
+    );
+  });
+
   it('is left out when the base is not set', () => {
     expect(designerSubmissionUrl(undefined, 'en', 'f1', 's1')).toBeNull();
     expect(formsSubmissionUrl('', 'en', 'submit', 's1')).toBeNull();
