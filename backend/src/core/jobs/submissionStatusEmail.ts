@@ -6,7 +6,7 @@ import type { JobTypeSpec } from './registry';
 /** What a status email job is given: the change it is about, and whether the comment goes in. */
 export const StatusEmailJobParamsSchema = z.object({
   statusChangeId: z.uuid(),
-  attachComment: z.boolean(),
+  options: z.object({ attachComment: z.boolean() }),
 });
 export type StatusEmailJobParams = z.infer<typeof StatusEmailJobParamsSchema>;
 

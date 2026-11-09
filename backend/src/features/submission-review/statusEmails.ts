@@ -1,6 +1,5 @@
 import { SubmissionReviewStatuses, type SubmissionReviewStatus } from '@soba/lib';
 import { env } from '../../core/config/env';
-import type { StatusEmailFacts } from '../../core/db/repos/submissionReviewRepo';
 import {
   DEFAULT_EMAIL_LANGUAGE,
   type EmailLanguage,
@@ -24,6 +23,13 @@ export const StatusEmailAudience = {
   submitters: 'submitters',
 } as const;
 type StatusEmailAudienceCode = (typeof StatusEmailAudience)[keyof typeof StatusEmailAudience];
+
+/** What a status email names about its submission. */
+export interface StatusEmailFacts {
+  formId: string;
+  formName: string;
+  confirmationCode: string;
+}
 
 type StatusEmailLink = (
   facts: StatusEmailFacts,

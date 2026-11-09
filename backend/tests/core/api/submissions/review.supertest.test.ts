@@ -351,6 +351,7 @@ describe('submission review routes', () => {
       status: SubmissionReviewStatuses.revising,
       assigneeId: null,
       actorId: 'a1',
+      bySubmitter: false,
     };
     expect(mockEnqueueStatusChanged.mock.calls).toEqual([
       ['tx', { ...change, id: STATUS_ID, attachComment: true }, REACTIONS],
@@ -359,12 +360,11 @@ describe('submission review routes', () => {
     expect(mockNudgeJobs).toHaveBeenCalledWith('submission.status-changed');
   });
 
-  // A retry after a lost response must not email anyone a second time.
-  it('records and nudges nothing for a retried change', async () => {
+  // The repo records no event for a replayed change; the route must not wake the pool for one.
+  it('nudges nothing for a retried change', async () => {
     mockRepo.changeStatus.mockResolvedValue('replayed');
     await request(app).post(STATUS_PATH).send(ASSIGN);
 
-    expect(mockEnqueueStatusChanged).not.toHaveBeenCalled();
     expect(mockNudgeJobs).not.toHaveBeenCalled();
   });
 

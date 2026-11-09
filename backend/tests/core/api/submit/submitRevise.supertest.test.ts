@@ -94,7 +94,7 @@ it('sends the owner’s submission back to revise, from the status it read', asy
   );
 });
 
-it('records the revise as a status-changed event in its transaction, with no comment for an email', async () => {
+it('records the revise as the submitter’s own status change, in its transaction', async () => {
   mockChangeStatus.mockImplementation(
     async (input: { onChanged?: (tx: unknown) => Promise<void> }) => {
       await input.onChanged?.('tx');
@@ -114,6 +114,7 @@ it('records the revise as a status-changed event in its transaction, with no com
       status: SubmissionReviewStatuses.revising,
       assigneeId: null,
       actorId: 'u1',
+      bySubmitter: true,
       attachComment: false,
     }),
     REACTIONS,

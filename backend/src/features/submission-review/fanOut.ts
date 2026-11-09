@@ -10,7 +10,10 @@ import { isSubmissionLive } from '../post-submission/repo';
 import { StatusChangedJobParamsSchema } from './params';
 import { reactionAttempts, type StatusReaction } from './statusReactions';
 
-/** One reaction's job: a child of the status-changed job, at most one per reaction and change. */
+/**
+ * One reaction's job: a child of the status-changed job, at most one per reaction and change, with
+ * the options recorded for it.
+ */
 export const reactionJob = (
   parent: ClaimedJob,
   statusChangeId: string,
@@ -23,7 +26,7 @@ export const reactionJob = (
   submissionId: parent.submissionId,
   parentJobId: parent.id,
   createdBy: parent.createdBy,
-  params: { ...reaction.options, statusChangeId },
+  params: { statusChangeId, options: reaction.options },
   dedupeKey: `${reaction.code}:${statusChangeId}`,
   maxAttempts,
 });

@@ -1,20 +1,14 @@
-const mockIsActiveSubmitter = jest.fn();
-jest.mock('../../../src/core/db/repos/submissionReviewRepo', () => ({
-  isActiveSubmitter: (...args: unknown[]) => mockIsActiveSubmitter(...args),
-}));
 const mockNotificationsEnabled = jest.fn();
 jest.mock('../../../src/features/notifications/service', () => ({
   notificationService: { enabled: () => mockNotificationsEnabled() },
 }));
 
 import { SubmissionReviewStatuses } from '@soba/lib';
-import type { Tx } from '../../../src/core/db/client';
 import { getJobSettings } from '../../../src/core/jobs/settings';
 import {
   availableStatusReactions,
   chooseStatusReactions,
   reactionAttempts,
-  resolveStatusReactions,
   STATUS_REACTIONS,
   type StatusChangeFacts,
 } from '../../../src/features/submission-review/statusReactions';
@@ -23,7 +17,7 @@ const FACTS: StatusChangeFacts = {
   status: SubmissionReviewStatuses.assigned,
   assigneeId: 'u-grace',
   actorId: 'rev-1',
-  actorIsSubmitter: false,
+  bySubmitter: false,
   attachComment: false,
 };
 
@@ -32,7 +26,6 @@ const STATUS_EMAIL = { code: 'submission.status-email', options: { attachComment
 beforeEach(() => {
   jest.clearAllMocks();
   mockNotificationsEnabled.mockResolvedValue(true);
-  mockIsActiveSubmitter.mockResolvedValue(false);
 });
 
 describe('status reactions', () => {
@@ -58,7 +51,7 @@ describe('status reactions', () => {
     ['an assignment to the person who made it', { assigneeId: 'rev-1' }],
     [
       'a submitter sending their own submission back to revise',
-      { status: SubmissionReviewStatuses.revising, assigneeId: null, actorIsSubmitter: true },
+      { status: SubmissionReviewStatuses.revising, assigneeId: null, bySubmitter: true },
     ],
   ])('records no status email for %s', (_case, change) => {
     expect(chooseStatusReactions({ ...FACTS, ...change }, STATUS_REACTIONS)).toEqual([]);
@@ -70,28 +63,6 @@ describe('status reactions', () => {
 
     mockNotificationsEnabled.mockResolvedValue(true);
     await expect(availableStatusReactions()).resolves.toEqual([...STATUS_REACTIONS]);
-  });
-
-  it('reads whether the person who made the change is a submitter, on the change transaction', async () => {
-    const tx = {} as Tx;
-    mockIsActiveSubmitter.mockResolvedValue(true);
-    const change = {
-      submissionId: 's1',
-      status: SubmissionReviewStatuses.revising,
-      assigneeId: null,
-      actorId: 'owner-1',
-      attachComment: false,
-    };
-
-    await expect(resolveStatusReactions(tx, change, STATUS_REACTIONS)).resolves.toEqual([]);
-    expect(mockIsActiveSubmitter).toHaveBeenCalledWith(tx, 's1', 'owner-1');
-  });
-
-  it('reads nothing when no reaction can run', async () => {
-    await expect(
-      resolveStatusReactions({} as Tx, { ...FACTS, submissionId: 's1' }, []),
-    ).resolves.toEqual([]);
-    expect(mockIsActiveSubmitter).not.toHaveBeenCalled();
   });
 
   it("gives a reaction's job its own attempts, and JOB_MAX_ATTEMPTS to a code it does not know", () => {

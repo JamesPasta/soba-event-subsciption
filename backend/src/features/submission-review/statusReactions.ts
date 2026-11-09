@@ -1,6 +1,4 @@
 import type { SubmissionReviewStatus } from '@soba/lib';
-import type { DbOrTx } from '../../core/db/client';
-import { isActiveSubmitter } from '../../core/db/repos/submissionReviewRepo';
 import type { JobTypeSpec } from '../../core/jobs/registry';
 import { getJobSettings } from '../../core/jobs/settings';
 import { submissionStatusEmailJob } from '../../core/jobs/submissionStatusEmail';
@@ -18,8 +16,8 @@ export interface StatusChangeFacts {
   status: SubmissionReviewStatus;
   assigneeId: string | null;
   actorId: string;
-  /** The person who made the change is one of the submission's submitters. */
-  actorIsSubmitter: boolean;
+  /** A submitter sent their own submission back to revise, rather than a reviewer making it. */
+  bySubmitter: boolean;
   /** The reviewer chose to put their comment in the email. */
   attachComment: boolean;
 }
@@ -34,15 +32,15 @@ export interface StatusReactionDefinition {
 }
 
 /**
- * What a status change sets off, in order. The status email goes to the assignee or the submitters;
- * a change a submitter makes to their own submission emails no one.
+ * What a status change sets off, in order. A reviewer's change emails the assignee or the
+ * submitters; a submitter sending their own submission back to revise emails no one.
  */
 export const STATUS_REACTIONS: readonly StatusReactionDefinition[] = [
   {
     job: submissionStatusEmailJob,
     available: () => notificationService.enabled(),
     options: (facts) =>
-      !facts.actorIsSubmitter && sendsStatusEmail(facts.status, facts.assigneeId, facts.actorId)
+      !facts.bySubmitter && sendsStatusEmail(facts.status, facts.assigneeId, facts.actorId)
         ? { attachComment: facts.attachComment }
         : null,
   },
@@ -68,17 +66,6 @@ export const chooseStatusReactions = (
     const options = reaction.options(facts);
     return options ? [{ code: reaction.job.type, options }] : [];
   });
-
-/** The reactions in effect for a change, read on the change's transaction. */
-export const resolveStatusReactions = async (
-  executor: DbOrTx,
-  change: { submissionId: string } & Omit<StatusChangeFacts, 'actorIsSubmitter'>,
-  reactions: readonly StatusReactionDefinition[],
-): Promise<StatusReaction[]> => {
-  if (reactions.length === 0) return [];
-  const actorIsSubmitter = await isActiveSubmitter(executor, change.submissionId, change.actorId);
-  return chooseStatusReactions({ ...change, actorIsSubmitter }, reactions);
-};
 
 /** A reaction's attempts, or JOB_MAX_ATTEMPTS for a code this build does not know. */
 export const reactionAttempts = (code: string): number =>

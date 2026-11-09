@@ -1,12 +1,12 @@
-import type { SubmissionReviewStatus } from '@soba/lib';
 import type { Tx } from '../db/client';
 import { JobType, SubmissionEventType, type SubmissionWriteEventCode } from '../db/codes';
-import { insertJob } from '../db/repos/jobRepo';
+import { insertJob, type NewJob } from '../db/repos/jobRepo';
 import type { SubmissionRecord } from '../db/repos/submissionRepo';
 import { resolveSubmittedActions, type ScopedAction } from '../../features/post-submission/resolve';
 import type { StatusChangedJobParams } from '../../features/submission-review/params';
 import {
-  resolveStatusReactions,
+  chooseStatusReactions,
+  type StatusChangeFacts,
   type StatusReactionDefinition,
 } from '../../features/submission-review/statusReactions';
 import { getJobSettings } from './settings';
@@ -51,31 +51,27 @@ export const enqueueSubmittedJob = async (
 };
 
 /** A review status change as its job records it. */
-export interface StatusChangeEvent {
+export interface StatusChangeEvent extends StatusChangeFacts {
   /** The change's id, which the client chose. */
   id: string;
   workspaceId: string;
   formId: string;
   submissionId: string;
-  status: SubmissionReviewStatus;
-  assigneeId: string | null;
-  actorId: string;
-  /** The reviewer chose to put their comment in the email. */
-  attachComment: boolean;
 }
 
 /**
- * Queue the status-changed job in the transaction that makes the change. One job per change. Its
- * params record which of `reactions` the change calls for now, so later changes do not alter them.
+ * The status-changed job for a change: one per change. Its params record which of `reactions` the
+ * change calls for now, so later changes do not alter them.
  */
-export const enqueueStatusChangedJob = async (
-  tx: Tx,
+export const statusChangedJob = (
   change: StatusChangeEvent,
   reactions: readonly StatusReactionDefinition[],
-): Promise<void> => {
-  const actions = await resolveStatusReactions(tx, change, reactions);
-  const params: StatusChangedJobParams = { statusChangeId: change.id, actions };
-  await insertJob(tx, {
+): NewJob => {
+  const params: StatusChangedJobParams = {
+    statusChangeId: change.id,
+    actions: chooseStatusReactions(change, reactions),
+  };
+  return {
     type: JobType.submission_status_changed,
     workspaceId: change.workspaceId,
     formId: change.formId,
@@ -84,5 +80,14 @@ export const enqueueStatusChangedJob = async (
     params,
     dedupeKey: `${JobType.submission_status_changed}:${change.id}`,
     maxAttempts: submissionStatusChangedJob.maxAttempts ?? getJobSettings().maxAttempts,
-  });
+  };
+};
+
+/** Queue the status-changed job in the transaction that makes the change. */
+export const enqueueStatusChangedJob = async (
+  tx: Tx,
+  change: StatusChangeEvent,
+  reactions: readonly StatusReactionDefinition[],
+): Promise<void> => {
+  await insertJob(tx, statusChangedJob(change, reactions));
 };

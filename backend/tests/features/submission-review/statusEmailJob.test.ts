@@ -1,10 +1,15 @@
 const mockChange = jest.fn();
-const mockFacts = jest.fn();
+const mockSubmitters = jest.fn();
 const mockUserEmail = jest.fn();
 jest.mock('../../../src/core/db/repos/submissionReviewRepo', () => ({
   findStatusChangeForEmail: (...args: unknown[]) => mockChange(...args),
-  findStatusEmailFacts: (...args: unknown[]) => mockFacts(...args),
+  findOtherSubmitters: (...args: unknown[]) => mockSubmitters(...args),
   findUserEmail: (...args: unknown[]) => mockUserEmail(...args),
+}));
+jest.mock('../../../src/core/db/client', () => ({ db: {} }));
+const mockLive = jest.fn();
+jest.mock('../../../src/features/post-submission/repo', () => ({
+  findLiveSubmission: (...args: unknown[]) => mockLive(...args),
 }));
 const mockCanReview = jest.fn();
 jest.mock('../../../src/features/submission-review/assignee', () => ({
@@ -40,16 +45,19 @@ const ASSIGNED = {
   current: true,
   comment: null,
 };
-const FACTS = {
+const SUBMISSION = {
+  id: 's1',
   formId: 'f1',
   formName: 'Permit application',
+  workspaceId: 'ws1',
+  workspaceName: 'Permits',
   confirmationCode: 'K7M2Q9XA',
-  submitterEmails: ['sub@example.com', 'collab@example.com'],
 };
+const SUBMITTERS = { count: 2, emails: ['sub@example.com', 'collab@example.com'] };
 
 let emails: SendEmail[] = [];
 
-const run = (job: Partial<ClaimedJob> = {}, params = { attachComment: false }) =>
+const run = (job: Partial<ClaimedJob> = {}, options = { attachComment: false }) =>
   runStatusEmailJob({
     job: {
       id: 'job-1',
@@ -58,7 +66,7 @@ const run = (job: Partial<ClaimedJob> = {}, params = { attachComment: false }) =
       createdBy: 'rev-1',
       lastRequeuedBy: null,
       lastRequeuedAt: null,
-      params: { statusChangeId: CHANGE_ID, ...params },
+      params: { statusChangeId: CHANGE_ID, options },
       ...job,
     } as ClaimedJob,
     signal: new AbortController().signal,
@@ -75,7 +83,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   emails = [];
   mockChange.mockResolvedValue(ASSIGNED);
-  mockFacts.mockResolvedValue(FACTS);
+  mockLive.mockResolvedValue(SUBMISSION);
+  mockSubmitters.mockResolvedValue(SUBMITTERS);
   mockUserEmail.mockResolvedValue('grace@example.com');
   mockCanReview.mockResolvedValue(true);
   mockJobNotifications.mockImplementation(
@@ -85,7 +94,8 @@ beforeEach(() => {
         emails.push(email);
         return Promise.resolve({ outcome: 'accepted', httpStatus: null, audited: true });
       },
-      handled: () => Promise.resolve({ recipients: new Set<string>(), runStarted: false }),
+      handled: () =>
+        Promise.resolve({ recipients: new Set<string>(), runStarted: false, anySent: false }),
       sentSince: () => Promise.resolve(0),
     }),
   );
@@ -95,7 +105,7 @@ it('emails the assignee in both languages, as the reviewer who made the change',
   await run();
 
   expect(mockChange).toHaveBeenCalledWith(CHANGE_ID);
-  expect(mockFacts).toHaveBeenCalledWith('ws1', 's1', 'rev-1');
+  expect(mockLive).toHaveBeenCalledWith({}, { workspaceId: 'ws1', submissionId: 's1' });
   expect(mockCanReview).toHaveBeenCalledWith('ws1', 'f1', 'u-grace');
   expect(emails.map((email) => email.recipients.to)).toEqual([['grace@example.com']]);
   expect(emails[0].content.subject).toBe(
@@ -115,9 +125,19 @@ it('attributes a re-run to whoever ran the job again', async () => {
 it.each([
   ['the change is gone', null],
   ['the change belongs to another submission', { ...ASSIGNED, submissionId: 's2' }],
+  ['the change belongs to another workspace', { ...ASSIGNED, workspaceId: 'ws2' }],
 ])('ends cancelled when %s', async (_case, change) => {
   mockChange.mockResolvedValue(change);
   await expect(run()).rejects.toThrow(new JobCancelledError('The status change is gone'));
+  expect(emails).toEqual([]);
+});
+
+// A deleted submission keeps its status, so it is named as gone, not as moved on.
+it('ends cancelled, sending nothing, once the submission, its form or its workspace is gone', async () => {
+  mockLive.mockResolvedValue(null);
+  await expect(run()).rejects.toThrow(
+    new JobCancelledError('The submission, its form or its workspace is gone'),
+  );
   expect(emails).toEqual([]);
 });
 
@@ -126,7 +146,7 @@ it('ends cancelled, sending nothing, when the status has moved on', async () => 
   await expect(run()).rejects.toThrow(
     new JobCancelledError('The status has changed since; no email sent'),
   );
-  expect(mockFacts).not.toHaveBeenCalled();
+  expect(mockUserEmail).not.toHaveBeenCalled();
   expect(emails).toEqual([]);
 });
 
@@ -183,14 +203,21 @@ it('emails each submitter, with the comment only when it was attached', async ()
   expect(emails[0].content.body).not.toContain('Please attach the signed declaration.');
 });
 
-// The facts leave out whoever made the change, so a reviewer who is the only submitter lands here.
-it('ends cancelled when no submitter other than the reviewer has an email address', async () => {
+it.each([
+  [
+    'no submitter other than the reviewer',
+    { count: 0, emails: [] },
+    'No submitter other than the person who made the change',
+  ],
+  [
+    'no other submitter with an email address',
+    { count: 2, emails: [] },
+    'None of the submitters has an email address',
+  ],
+])('ends cancelled, with the reason, when there is %s', async (_case, submitters, reason) => {
   mockChange.mockResolvedValue({ ...ASSIGNED, status: 'COMPLETED', assigneeId: null });
-  mockFacts.mockResolvedValue({ ...FACTS, submitterEmails: [] });
-  await expect(run()).rejects.toThrow(
-    new JobCancelledError(
-      'No submitter other than the person who made the change has an email address',
-    ),
-  );
-  expect(mockFacts).toHaveBeenCalledWith('ws1', 's1', 'rev-1');
+  mockSubmitters.mockResolvedValue(submitters);
+  await expect(run()).rejects.toThrow(new JobCancelledError(reason));
+  expect(mockSubmitters).toHaveBeenCalledWith('s1', 'rev-1');
+  expect(emails).toEqual([]);
 });
