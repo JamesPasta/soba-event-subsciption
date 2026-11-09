@@ -1,8 +1,8 @@
-import { cleanName } from '../../../src/core/integrations/notification/emailText';
-import {
-  buildNotice,
-  designerLink,
-} from '../../../src/plugins/post-submission-email-addresses/notice';
+import { renderSubmissionEmail } from '../../../src/core/integrations/notification/email/submissionEmail';
+import { designerSubmissionUrl } from '../../../src/core/integrations/notification/email/url';
+import { buildNotice, NOTICE } from '../../../src/plugins/post-submission-email-addresses/notice';
+
+const DESIGNER = 'https://soba.example/designer';
 
 const submission = {
   id: 's1',
@@ -13,69 +13,48 @@ const submission = {
   confirmationCode: 'ABCD1234',
 };
 
-describe('cleanName', () => {
-  it('drops control and format characters and keeps one line', () => {
-    const rightToLeftOverride = String.fromCodePoint(0x202e);
-    expect(cleanName(`Permit\r\nBcc: x@example.com${rightToLeftOverride}\tform`)).toBe(
-      'Permit Bcc: x@example.com form',
+describe('the notice', () => {
+  it('names the Confirmation ID and the form, asks for sign-in, and links to the submission', () => {
+    const notice = renderSubmissionEmail(
+      NOTICE,
+      {
+        formName: submission.formName,
+        confirmationCode: submission.confirmationCode,
+        link: (language) => designerSubmissionUrl(DESIGNER, language, 'f1', 's1'),
+      },
+      'en',
     );
-  });
-
-  it('caps the length', () => {
-    expect(cleanName('x'.repeat(500))).toHaveLength(200);
-  });
-
-  it('cuts by character, never through an emoji', () => {
-    const smile = String.fromCodePoint(0x1f600);
-    const cut = cleanName(`${'x'.repeat(199)}${smile}${smile}`);
-    expect(Array.from(cut)).toHaveLength(200);
-    expect(cut.endsWith(smile)).toBe(true);
-  });
-
-  it.each([
-    ['Re-verify at https://evil.example/login now', 'Re-verify at [link removed] now'],
-    ['See www.evil.example for details', 'See [link removed] for details'],
-    ['[Click](http://evil.example)', '[Click]([link removed]'],
-    ['Licensing B.C. renewal', 'Licensing B.C. renewal'],
-  ])('removes links from %j', (name, cleaned) => {
-    expect(cleanName(name)).toBe(cleaned);
-  });
-});
-
-describe('designerLink', () => {
-  it("points at the submission in the designer, whatever the base's trailing slash", () => {
-    const expected = 'https://soba.example/designer/en/build/f1/submissions/s1';
-    expect(designerLink('https://soba.example/designer', submission)).toBe(expected);
-    expect(designerLink('https://soba.example/designer/', submission)).toBe(expected);
-  });
-
-  it('is left out when the designer URL is not set', () => {
-    expect(designerLink(undefined, submission)).toBeNull();
-  });
-});
-
-describe('buildNotice', () => {
-  it('names the form, the confirmation ID, the link and the workspace', () => {
-    expect(buildNotice(submission, 'https://soba.example/link')).toEqual({
-      subject: 'Submission received: Permit application',
+    expect(notice).toEqual({
+      subject: 'Permit application Submission (ABCD1234)',
       body: [
-        'A submission to "Permit application" was received.',
-        '',
-        'Confirmation ID: ABCD1234',
-        '',
-        'View it (sign-in required): https://soba.example/link',
-        '',
-        'You are receiving this because the team for this form in the "Licensing" workspace set up this notice.',
+        '<div style="max-width:600px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;color:#2d2d2d;">',
+        '<div lang="en">',
+        '<p style="margin:0 0 16px 0;">Confirmation ID: <strong>ABCD1234</strong></p>',
+        '<p style="margin:0 0 16px 0;">There is a new Permit application submission. Please sign in to review it.</p>',
+        '<p style="margin:0 0 16px 0;"><a href="https://soba.example/designer/en/build/f1/submissions/s1" style="color:#255a90;text-decoration:underline;">View this submission</a></p>',
+        '</div>',
+        '<p style="margin:0;font-size:14px;line-height:20px;color:#474543;"><span lang="en">This is an automated message from CHEFS. Please do not reply.</span></p>',
+        '</div>',
       ].join('\n'),
+      bodyType: 'html',
     });
   });
 
-  it('leaves the link line out when there is no link', () => {
-    expect(buildNotice(submission, null).body).not.toContain('View it');
+  it('goes out in both languages, each linking to the designer in its own language', () => {
+    const { subject, body } = buildNotice(submission, DESIGNER);
+    expect(subject).toBe(
+      'Permit application Submission / Soumission : Permit application (ABCD1234)',
+    );
+    expect(body).toContain('There is a new Permit application submission.');
+    expect(body).toContain('Il y a une nouvelle soumission pour Permit application.');
+    expect(body).toContain('href="https://soba.example/designer/en/build/f1/submissions/s1"');
+    expect(body).toContain('href="https://soba.example/designer/fr/build/f1/submissions/s1"');
+    expect(body).toContain('>Voir cette soumission</a>');
   });
 
-  it('cleans the names it uses', () => {
-    const notice = buildNotice({ ...submission, formName: 'A\nB' }, null);
-    expect(notice.subject).toBe('Submission received: A B');
+  it('leaves the link out when the designer URL is not set', () => {
+    const { body } = buildNotice(submission, undefined);
+    expect(body).toContain('Please sign in to review it.');
+    expect(body).not.toContain('<a ');
   });
 });

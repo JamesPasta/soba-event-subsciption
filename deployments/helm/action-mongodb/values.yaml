@@ -83,6 +83,25 @@ mongodb:
 
   arbiter:
     enabled: false
+    # TCP checks in place of the chart's exec probes, which start mongosh inside the container.
+    customStartupProbe:
+      tcpSocket:
+        port: mongodb
+      periodSeconds: 10
+      failureThreshold: 30
+    customLivenessProbe:
+      tcpSocket:
+        port: mongodb
+      initialDelaySeconds: 30
+      periodSeconds: 20
+      timeoutSeconds: 5
+      failureThreshold: 6
+    customReadinessProbe:
+      tcpSocket:
+        port: mongodb
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
 
   metrics:
     enabled: false
@@ -90,10 +109,14 @@ mongodb:
   resources:
     requests:
       cpu: 250m
-      memory: 512Mi
+      memory: 1Gi
     limits:
       cpu: "1"
       memory: 2Gi
+
+  # mongod's default cache for a 2Gi limit (half of the limit less 1Gi), pinned; change it with the limit.
+  extraFlags:
+    - "--wiredTigerCacheSizeGB=0.5"
 
   podSecurityContext:
     enabled: true
@@ -116,11 +139,22 @@ mongodb:
     seccompProfile:
       type: RuntimeDefault
 
-  livenessProbe:
-    enabled: true
-
-  readinessProbe:
-    enabled: true
-
-  startupProbe:
-    enabled: true
+  # TCP checks in place of the chart's exec probes, which start mongosh inside the container.
+  customStartupProbe:
+    tcpSocket:
+      port: mongodb
+    periodSeconds: 10
+    failureThreshold: 30
+  customLivenessProbe:
+    tcpSocket:
+      port: mongodb
+    initialDelaySeconds: 30
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 6
+  customReadinessProbe:
+    tcpSocket:
+      port: mongodb
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6

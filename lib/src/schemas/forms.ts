@@ -160,7 +160,7 @@ export const SubmitterFormSchema = z
   })
   .extend(SubmitterFormFactsSchema.shape);
 
-/** A form the caller holds the submitter role on, or has a draft or submitted submission on. */
+/** A form the caller holds a submit role on, or has a draft or submitted submission on. */
 export const MyFormListItemSchema = SubmitterFormSchema;
 
 export const MyFormSortSchema = makeSortEnum(MY_FORM_SORT_FIELDS);

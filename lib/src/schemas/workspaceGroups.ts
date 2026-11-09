@@ -37,8 +37,12 @@ export type ListWorkspaceGroupsResponse = z.infer<typeof ListWorkspaceGroupsResp
 
 const RoleCodesSchema = z.array(z.string().trim().min(1)).max(20);
 
+export const WORKSPACE_GROUP_NAME_MAX_LENGTH = 100;
+
+const GroupNameSchema = z.string().trim().min(1).max(WORKSPACE_GROUP_NAME_MAX_LENGTH);
+
 export const CreateWorkspaceGroupBodySchema = z.object({
-  name: z.string().trim().min(1),
+  name: GroupNameSchema,
   description: z.string().trim().min(1).optional(),
   roleCodes: RoleCodesSchema.default([]),
 });
@@ -46,7 +50,7 @@ export type CreateWorkspaceGroupBody = z.input<typeof CreateWorkspaceGroupBodySc
 
 export const UpdateWorkspaceGroupBodySchema = z
   .object({
-    name: z.string().trim().min(1).optional(),
+    name: GroupNameSchema.optional(),
     description: z.string().trim().min(1).nullable().optional(),
   })
   .refine((body) => body.name !== undefined || body.description !== undefined, {

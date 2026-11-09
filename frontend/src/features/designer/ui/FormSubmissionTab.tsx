@@ -32,6 +32,9 @@ import { getLocaleFromPath } from '@/src/shared/util/locale';
 import { capitalizeFirstLetter } from '@/src/shared/util/stringUtils';
 import { FEATURE_CODES } from '@/src/shared/featureFlags/flags';
 import { useFeatureAllowed } from '@/src/shared/api/useFeatureAllowed';
+import { useDesignFormRead } from '@/src/features/designer/data/useForm';
+import { Permissions } from '@/src/types/permissions';
+import { hasPermission } from '@/src/shared/util/permissions';
 
 const ALL_STATUSES = 'all';
 
@@ -83,6 +86,9 @@ export default function FormSubmissionTab({
     [setFilters, reviewStatus, mine],
   );
   const { table } = useDataTable(query, submissionsResult, dict.submission.error);
+  const { data: form } = useDesignFormRead(formId);
+  // No row offers Delete until the form's permissions are read.
+  const canDelete = hasPermission(form?.permissions, Permissions.submission_delete) === true;
   const submissionDeleter = useSubmissionDeleter();
   const formatLongDate = useFormatLongDate();
   const { token } = useKeycloak();
@@ -193,19 +199,21 @@ export default function FormSubmissionTab({
             >
               <FaFile />
             </Link>
-            <Link
-              className="bcds-react-aria-Link medium false danger"
-              data-testid={`${sub.id}-delete-link`}
-              aria-label={dict.submission.delete}
-              onPress={() => setPendingDelete(sub)}
-            >
-              <FaRegTrashCan />
-            </Link>
+            {canDelete && (
+              <Link
+                className="bcds-react-aria-Link medium false danger"
+                data-testid={`${sub.id}-delete-link`}
+                aria-label={dict.submission.delete}
+                onPress={() => setPendingDelete(sub)}
+              >
+                <FaRegTrashCan />
+              </Link>
+            )}
           </>
         ),
       },
     ],
-    [dict, dictReview, showReview, formatLongDate, locale, router],
+    [dict, dictReview, showReview, formatLongDate, locale, router, canDelete],
   );
 
   const statusOptions = useMemo(

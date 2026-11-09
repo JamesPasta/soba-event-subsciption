@@ -54,6 +54,7 @@ vi.mock('@/app/[lang]/Providers', () => ({
       manageHeading: 'Manage Workspace',
       settingsTab: 'Settings',
       formSettingsTab: 'Form Settings',
+      rolesTab: 'Roles',
       groupsTab: 'Groups',
       nameLabel: 'Name',
       save: 'Save',
@@ -131,6 +132,10 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush, replace: vi.fn() }),
   usePathname: () => '/en/workspace',
   useSearchParams: () => new URLSearchParams(mockSearchParams.value),
+}));
+
+vi.mock('@/src/features/workspaces/ui/WorkspaceRoleTab', () => ({
+  default: () => <div data-testid="workspace-roles-tab-content">Workspace Roles Content</div>,
 }));
 
 vi.mock('@/src/features/workspaces/ui/WorkspaceGroupTab', () => ({
@@ -267,6 +272,7 @@ describe('WorkspaceForm', () => {
       'Settings',
       'Form Settings',
       'After Submission',
+      'Roles',
       'Groups',
       'Jobs',
     ]);
@@ -640,6 +646,19 @@ describe('WorkspaceForm', () => {
 
     await userEvent.click(groupsTabButton);
     expect(await screen.findByTestId('workspace-groups-tab-content')).toBeInTheDocument();
+  });
+
+  it('opens the roles tab from a link that names it', async () => {
+    mockSearchParams.value = 'tab=roles';
+    await act(async () => {
+      renderForm('ws2');
+    });
+
+    expect(await screen.findByTestId('workspace-roles-tab-content')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Roles' })).toHaveAttribute(
+      'data-testid',
+      'workspace-roles-tab',
+    );
   });
 
   it('keeps the base path in the URL it writes for the selected tab', async () => {

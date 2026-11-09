@@ -64,7 +64,7 @@ router.get(
   requireFormPermissions([Permissions.form_read]),
   listForms,
 );
-// Workspace from the body; disclaimer is checked in the service. form_create is form_admin-only (`*`).
+// Workspace from the body; disclaimer is checked in the service.
 router.post(
   FORMS_PATH,
   validateRequest({ body: CreateFormBodySchema }),

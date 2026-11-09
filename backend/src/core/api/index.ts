@@ -14,6 +14,7 @@ import {
   submissionExportRouter,
 } from '../../features/submission-export';
 import { groupsDomain } from './groups';
+import { rolesDomain } from './roles';
 import { accessDomain } from './access';
 import { filesDesignRouter, filesDomain } from '../../features/files';
 import {
@@ -51,6 +52,7 @@ registerOpenApiPaths((registry) => {
   registerSubmissionExportOpenApi(registry);
   registerSubmitOpenApi(registry);
   groupsDomain.registerOpenApi(registry);
+  rolesDomain.registerOpenApi(registry);
   accessDomain.registerOpenApi(registry);
   meDomain.registerOpenApi(registry);
   registerUserSearchOpenApi(registry);
@@ -110,6 +112,7 @@ coreRouter.use('/workspaces/:id/jobs', workspaceJobsRouter);
 for (const domain of [
   workspacesDomain,
   groupsDomain,
+  rolesDomain,
   accessDomain,
   meDomain,
   membersDomain,

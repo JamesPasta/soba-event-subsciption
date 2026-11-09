@@ -30,6 +30,7 @@ import {
   replaceOverrideMembers,
 } from '../../../core/db/repos/formGroupOverrideRepo';
 import { findOrCreateUserByIdentity } from '../../../core/db/repos/membershipRepo';
+import { createWorkspaceRole, softDeleteWorkspaceRole } from '../../../core/db/repos/roleRepo';
 import {
   addUserToGroup,
   createGroupWithRole,
@@ -72,6 +73,7 @@ import {
   type PlannedGroupOverride,
   type PlannedCoverageSubmission,
   type PlannedCoverageWorkspace,
+  type PlannedCustomRole,
   type PlannedSeat,
 } from './plan';
 
@@ -112,6 +114,8 @@ interface CoverageContext {
   memberships: Map<CoverageWorkspaceKey, Map<PersonaKey, string>>;
   /** Named group ids by workspace, then name. */
   groups: Map<CoverageWorkspaceKey, Map<string, string>>;
+  /** Codes of the custom roles created so far, by name. */
+  customRoles: Map<string, string>;
   forms: Map<CoverageFormKey, CoverageFormRef & { versionId: string }>;
 }
 
@@ -174,7 +178,23 @@ async function systemGroupId(workspaceId: string, system: SystemGroupCode): Prom
   return groupId;
 }
 
+/** The code of a custom role, created in this workspace by the first seat that names it. */
+async function customRoleCode(
+  ctx: CoverageContext,
+  workspaceId: string,
+  planned: PlannedCustomRole,
+): Promise<string> {
+  const existing = ctx.customRoles.get(planned.name);
+  if (existing) return existing;
+  const writer = { workspaceId, ...actorOf(persona(ctx, ADMIN)) };
+  const code = await createWorkspaceRole(writer, planned);
+  if (planned.deleted) await softDeleteWorkspaceRole(writer, code);
+  ctx.customRoles.set(planned.name, code);
+  return code;
+}
+
 async function groupFor(
+  ctx: CoverageContext,
   workspaceId: string,
   seat: PlannedSeat,
   admin: ResolvedUser,
@@ -187,10 +207,13 @@ async function groupFor(
   const groupId = await createGroupWithRole(db, {
     workspaceId,
     name: seat.group.name,
-    roleCodes: [...seat.group.roleCodes],
+    roleCodes:
+      'customRole' in seat.group
+        ? [await customRoleCode(ctx, workspaceId, seat.group.customRole)]
+        : [...seat.group.roleCodes],
     displayLabel: admin.displayLabel,
   });
-  if (seat.group.status) {
+  if ('status' in seat.group && seat.group.status) {
     await db
       .update(workspaceGroups)
       .set({ status: WorkspaceGroupStatus[seat.group.status] })
@@ -214,7 +237,7 @@ async function addSeat(
     invitedBy: admin,
     status: seat.membershipStatus ? WorkspaceMembershipStatus[seat.membershipStatus] : undefined,
   });
-  const groupId = await groupFor(workspaceId, seat, admin, named);
+  const groupId = await groupFor(ctx, workspaceId, seat, admin, named);
   if (groupId) await joinGroup({ workspaceId, groupId, membershipId, seat, admin });
   return membershipId;
 }
@@ -513,6 +536,7 @@ export async function generateCoverage(args: {
     personas: await createPersonas(args.runId, args.owner, args.publicUser),
     memberships: new Map(),
     groups: new Map(),
+    customRoles: new Map(),
     forms: new Map(),
   };
 

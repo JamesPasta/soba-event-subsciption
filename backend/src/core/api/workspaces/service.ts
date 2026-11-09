@@ -98,7 +98,7 @@ export class WorkspacesApiService {
     );
   }
 
-  /** The workspaces of the forms the caller holds the submitter role on or has submitted to. */
+  /** The workspaces of the forms the caller holds a submit role on or has submitted to. */
   async listMine(actorId: string, locale: SortLocale) {
     return toLookupResponse(
       await listWorkspacesForSubmitter({ userId: actorId, limit: LOOKUP_FETCH_LIMIT, locale }),

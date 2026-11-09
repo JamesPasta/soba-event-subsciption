@@ -42,13 +42,15 @@ export type JobResult = z.infer<typeof JobResultSchema>;
 
 /**
  * Where a job's emails stand, by address: sent, refused by the provider, or not sent yet. A re-run
- * sends to those not sent yet and tries the refused ones again. Counts only, never addresses.
+ * sends to those not sent yet and tries the refused ones again. Counts only, never addresses. A job
+ * that reads its recipients when it runs has no list to count against, so its addresses and those
+ * not sent yet are null.
  */
 export const JobEmailCountsSchema = z.object({
-  addresses: z.number().int(),
+  addresses: z.number().int().nullable(),
   sent: z.number().int(),
   refused: z.number().int(),
-  pending: z.number().int(),
+  pending: z.number().int().nullable(),
 });
 export type JobEmailCounts = z.infer<typeof JobEmailCountsSchema>;
 

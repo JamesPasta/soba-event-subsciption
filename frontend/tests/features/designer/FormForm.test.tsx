@@ -673,7 +673,6 @@ describe('FormForm', () => {
       'version-tab',
       'settings-tab',
       'jobs-tab',
-      'team-tab',
       'submission-tab',
       'share-tab',
     ];
@@ -713,7 +712,8 @@ describe('FormForm', () => {
     it.each([
       ['design_update', ['designer-tab', 'version-tab', 'share-tab']],
       ['form_update', ['settings-tab', 'jobs-tab', 'share-tab']],
-      ['team_update', ['team-tab', 'share-tab']],
+      // The Access tab is hidden for now, so team_update alone shows only Share.
+      ['team_update', ['share-tab']],
       ['submission_read', ['submission-tab', 'share-tab']],
       ['*', allTabs],
     ])('shows expected tabs when user has %s permission', async (permission, expectedTabs) => {

@@ -36,6 +36,7 @@ import { WorkspaceJobsTab } from '@/src/features/jobs/ui/ScopedJobsTabs';
 import { usePostSubmissionAvailable } from '@/src/features/post-submission/data/usePostSubmissionAvailable';
 import type { UpdateWorkspaceBody, WorkspaceItem } from '@/src/types/workspaces';
 import styles from './WorkspaceForm.module.css';
+import WorkspaceRoleTab from './WorkspaceRoleTab';
 import WorkspaceGroupTab from './WorkspaceGroupTab';
 import WorkspaceAccessTab from './WorkspaceAccessTab';
 
@@ -323,6 +324,7 @@ function WorkspaceForm({ workspaceId, first = false }: Readonly<WorkspaceFormPro
       'settings',
       'form-settings',
       ...(postSubmissionAvailable ? ['post-submission'] : []),
+      'roles',
       'groups',
       'access',
       ...(canSeeJobs ? ['jobs'] : []),
@@ -446,6 +448,15 @@ function WorkspaceForm({ workspaceId, first = false }: Readonly<WorkspaceFormPro
           </div>
         </Tab>
       )}
+      <Tab
+        eventKey="roles"
+        title={dictWorkspaces.rolesTab}
+        tabAttrs={{ 'data-testid': 'workspace-roles-tab' }}
+      >
+        <div className={styles.tabContent}>
+          <WorkspaceRoleTab dict={dict} workspaceId={workspace.id} />
+        </div>
+      </Tab>
       <Tab
         eventKey="groups"
         title={dictWorkspaces.groupsTab}

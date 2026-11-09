@@ -60,6 +60,7 @@ crunchy:
         cpu: 5m
         memory: 32Mi
       maxConnections: 10
+      poolMode: transaction
   pgmonitor:
     enabled: false
   users:

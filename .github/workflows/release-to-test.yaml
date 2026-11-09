@@ -205,15 +205,15 @@ jobs:
           NAMESPACE: ${{ vars.OC_NAMESPACE }}
           CLUSTER: ${{ needs.deploy-crunchy.outputs.cluster }}
         run: |
-          SECRET_NAME="${CLUSTER}-pguser-appproxy"
+          SECRET_NAME="${CLUSTER}-pguser-app"
           echo "secret_name=$SECRET_NAME" >> "$GITHUB_OUTPUT"
+          echo "runtime_secret_name=${CLUSTER}-pguser-appproxy" >> "$GITHUB_OUTPUT"
 
       # Pipeline performance fix: Revert if needed.
       - name: Wait for test database readiness
         uses: ./.github/actions/wait-for-postgres
         with:
           secret_name: ${{ steps.db.outputs.secret_name }}
-          secret_key: pgbouncer-uri
           namespace: ${{ vars.OC_NAMESPACE }}
           label: test database
       # Pipeline performance fix: Revert if needed.
@@ -273,12 +273,16 @@ jobs:
             domain: "${DOMAIN}"
           database:
             existingSecretName: "${{ steps.db.outputs.secret_name }}"
-            existingSecretKey: "pgbouncer-uri"
+            existingSecretKey: "uri"
+            runtimeSecretName: "${{ steps.db.outputs.runtime_secret_name }}"
+            runtimeSecretKey: "pgbouncer-uri"
+            runtimeRole: "appproxy"
           mongodb:
             internal:
               enabled: false
             external:
-              host: "soba-test-mongodb-0.soba-test-mongodb-headless"
+              # All members, so Form.io can connect while any is down. The chart appends :port.
+              host: "soba-test-mongodb-0.soba-test-mongodb-headless:27017,soba-test-mongodb-1.soba-test-mongodb-headless:27017,soba-test-mongodb-2.soba-test-mongodb-headless"
               authSecretName: soba-test-mongodb-auth
           OVERRIDE
 

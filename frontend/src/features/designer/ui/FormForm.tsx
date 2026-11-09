@@ -16,7 +16,6 @@ import FormDesigner from '@/src/features/designer/ui/FormDesigner';
 import { DynamicForm } from '@/src/features/formio-v5/ui/DynamicForm';
 import { usePageHeading, usePageNotices, type PageNotice } from '@/src/components/PageHeader';
 import FormSettingsTab from './FormSettingsTab';
-import FormTeamTab from './FormTeamTab';
 import FormHistoryTab from './FormHistoryTab';
 import FormSubmissionTab from './FormSubmissionTab';
 import FormShareTab from './FormShareTab';
@@ -99,7 +98,6 @@ const DESIGNER_TAB = 'designer';
 const SETTINGS_TAB = 'settings';
 const POST_SUBMISSION_TAB = 'post-submission';
 const JOBS_TAB = 'jobs';
-const ACCESS_TAB = 'team';
 const HISTORY_TAB = 'version';
 const SUBMISSIONS_TAB = 'submissions';
 const SHARE_TAB = 'share';
@@ -109,7 +107,6 @@ function useActiveTab(permissions: {
   canSeeSettingsTab?: boolean;
   /** Undefined until the feature check answers. */
   canSeePostSubmissionTab?: boolean;
-  canSeeAccessTab?: boolean;
   canSeeHistoryTab?: boolean;
   canSeeSubmissionsTab?: boolean;
 }) {
@@ -132,7 +129,6 @@ function useActiveTab(permissions: {
   const permsLoaded =
     permissions.canSeeDesignTab !== undefined &&
     permissions.canSeeSettingsTab !== undefined &&
-    permissions.canSeeAccessTab !== undefined &&
     permissions.canSeeHistoryTab !== undefined &&
     permissions.canSeeSubmissionsTab !== undefined;
   // A link to the After Submission tab waits for the feature check rather than open another tab
@@ -146,7 +142,6 @@ function useActiveTab(permissions: {
       permissions.canSeeDesignTab && DESIGNER_TAB,
       permissions.canSeeSettingsTab && SETTINGS_TAB,
       permissions.canSeePostSubmissionTab && POST_SUBMISSION_TAB,
-      permissions.canSeeAccessTab && ACCESS_TAB,
       permissions.canSeeHistoryTab && HISTORY_TAB,
       permissions.canSeeSubmissionsTab && SUBMISSIONS_TAB,
       // The Jobs tab takes the Settings tab's permission.
@@ -244,10 +239,6 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
     return hasPermission(permissions, Permissions.form_update);
   }, [permissions]);
 
-  const canSeeAccessTab = useMemo(() => {
-    return hasPermission(permissions, Permissions.team_update);
-  }, [permissions]);
-
   const canSeeHistoryTab = useMemo(() => {
     return hasPermission(permissions, Permissions.design_update);
   }, [permissions]);
@@ -266,7 +257,6 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
     canSeeDesignTab,
     canSeeSettingsTab,
     canSeePostSubmissionTab,
-    canSeeAccessTab,
     canSeeHistoryTab,
     canSeeSubmissionsTab,
   });
@@ -555,16 +545,6 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
             title={dict.postSubmission.tab}
           >
             <FormPostSubmissionTab dict={dict} formId={formId} />
-          </Tab>
-        )}
-        {canSeeAccessTab && (
-          <Tab
-            eventKey={ACCESS_TAB}
-            tabAttrs={{ 'data-testid': 'team-tab' }}
-            disabled={isSaving || draftUnavailable}
-            title={dict.form.teamTab || 'Team'}
-          >
-            <FormTeamTab dict={dict} formId={formId} />
           </Tab>
         )}
         {canSeeHistoryTab && (

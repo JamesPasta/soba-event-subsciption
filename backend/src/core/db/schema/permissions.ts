@@ -1,4 +1,5 @@
-import { primaryKey, text } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { check, primaryKey, text } from 'drizzle-orm/pg-core';
 import { auditColumns } from './audit';
 import { sobaSchema } from './sobaSchema';
 import { features } from './feature';
@@ -19,7 +20,7 @@ export const permissions = sobaSchema.table('permission', {
   ...auditColumns(),
 });
 
-/** Maps roles to permissions. `form_admin` maps to the `*` wildcard. */
+/** Maps roles to permissions. Only `form_admin` can map to the `*` wildcard. */
 export const rolePermissions = sobaSchema.table(
   'role_permission',
   {
@@ -30,5 +31,11 @@ export const rolePermissions = sobaSchema.table(
       .notNull()
       .references(() => permissions.code),
   },
-  (table) => [primaryKey({ columns: [table.roleCode, table.permissionCode] })],
+  (table) => [
+    primaryKey({ columns: [table.roleCode, table.permissionCode] }),
+    check(
+      'role_permission_wildcard_check',
+      sql`${table.permissionCode} <> '*' or ${table.roleCode} = 'form_admin'`,
+    ),
+  ],
 );

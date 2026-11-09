@@ -9,6 +9,13 @@ export const WORKSPACE_CREATE_FORBIDDEN =
 export const WORKSPACE_MANAGE_FORBIDDEN =
   'Only workspace owners or admins can manage this workspace';
 export const GROUP_NAME_TAKEN = 'A group with this name already exists';
+export const GROUP_NOT_FOUND = 'Group not found';
+export const MEMBERSHIP_NOT_ACTIVE = 'Membership is not an active member of the workspace';
+export const MEMBER_IN_GROUP = 'Member already in group';
+export const ROLE_NAME_TAKEN = 'A role with this name already exists';
+export const ROLE_IN_USE = 'This role is still assigned to a group';
+export const ROLE_NOT_FOUND = 'Role not found';
+export const FIXED_ROLE_READ_ONLY = 'Fixed roles cannot be changed';
 export const MEMBER_EXISTS = 'This person already has access to the workspace';
 export const MEMBER_NOT_FOUND = 'Member not found';
 export const USER_NOT_ADDABLE = 'User not found, not active, or without a sign-in identity';

@@ -1,6 +1,5 @@
 import {
   ApiErrorCodes,
-  hasAllPermissions,
   Permissions,
   SubmissionReviewStatuses,
   type AddSubmissionNoteBody,
@@ -10,7 +9,7 @@ import {
   type UpdateSubmissionStatusBody,
 } from '@soba/lib';
 import { findEffectiveReviewSettings } from '../../../features/form-settings/review/repo';
-import { listFormUserIdsHolding, resolveFormPermissions } from '../../db/repos/formAccessRepo';
+import { listFormUserIdsHolding } from '../../db/repos/formAccessRepo';
 import {
   addNote,
   changeStatus,
@@ -21,7 +20,11 @@ import {
 } from '../../db/repos/submissionReviewRepo';
 import { getSubmissionRecordById } from '../../db/repos/submissionRepo';
 import { getPublicUser } from '../../services/publicUser';
-import { sendStatusEmail } from '../../../features/submission-review/statusEmails';
+import { canReviewForm } from '../../../features/submission-review/assignee';
+import { availableStatusReactions } from '../../../features/submission-review/statusReactions';
+import { JobType } from '../../db/codes';
+import { nudgeJobs } from '../../jobs';
+import { enqueueStatusChangedJob } from '../../jobs/enqueue';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../errors';
 import type { SubmissionsContextInput } from './serviceFactory';
 
@@ -60,14 +63,7 @@ const assertAssignable = async (
   formId: string,
   assigneeId: string,
 ): Promise<void> => {
-  const [permissions, activeUsers] = await Promise.all([
-    resolveFormPermissions(assigneeId, workspaceId, formId),
-    listReviewUsers([assigneeId]),
-  ]);
-  if (
-    activeUsers.length === 0 ||
-    !hasAllPermissions(permissions, [Permissions.submission_review])
-  ) {
+  if (!(await canReviewForm(workspaceId, formId, assigneeId))) {
     throw new ValidationError(
       'The assignee cannot review submissions of this form',
       ApiErrorCodes.assignee_invalid,
@@ -143,7 +139,7 @@ export const submissionReviewService = {
     if (body.status === SubmissionReviewStatuses.revising) {
       await assertRevisable(ctx.workspaceId, submissionId);
     }
-
+    const reactions = await availableStatusReactions();
     const outcome = await changeStatus({
       id: body.id,
       workspaceId: ctx.workspaceId,
@@ -155,18 +151,24 @@ export const submissionReviewService = {
       actorDisplayLabel: ctx.actorDisplayLabel,
       allowStatusUpdates: settings.allowStatusUpdates,
       comment: body.comment || undefined,
+      onChanged: (tx) =>
+        enqueueStatusChangedJob(
+          tx,
+          {
+            id: body.id,
+            workspaceId: ctx.workspaceId,
+            formId,
+            submissionId,
+            status: body.status,
+            assigneeId: body.assigneeId,
+            actorId: ctx.actorId,
+            bySubmitter: false,
+            attachComment: Boolean(body.attachCommentToEmail && body.comment),
+          },
+          reactions,
+        ),
     });
-    // After the commit, and only for a change this request made: a retry sends nothing again.
-    if (outcome === 'changed') {
-      await sendStatusEmail({
-        workspaceId: ctx.workspaceId,
-        submissionId,
-        actorId: ctx.actorId,
-        status: body.status,
-        assigneeId: body.assigneeId,
-        comment: body.attachCommentToEmail ? body.comment : undefined,
-      });
-    }
+    if (outcome === 'changed') nudgeJobs(JobType.submission_status_changed);
     switch (outcome) {
       case 'missing':
         throw notFound();
@@ -197,9 +199,14 @@ export const submissionReviewService = {
    * client chose, from the status the route read. The route has applied reviseStatusOf to the caller.
    */
   async reviseOwn(
-    input: SubmissionsContextInput & { submissionId: string; fromStatusId: string | null },
+    input: SubmissionsContextInput & {
+      formId: string;
+      submissionId: string;
+      fromStatusId: string | null;
+    },
     body: ReviseSubmissionBody,
   ): Promise<void> {
+    const reactions = input.fromStatusId ? await availableStatusReactions() : [];
     const outcome = input.fromStatusId
       ? await changeStatus({
           id: body.id,
@@ -211,8 +218,25 @@ export const submissionReviewService = {
           actorId: input.actorId,
           actorDisplayLabel: input.actorDisplayLabel,
           onlyFrom: SubmissionReviewStatuses.submitted,
+          onChanged: (tx) =>
+            enqueueStatusChangedJob(
+              tx,
+              {
+                id: body.id,
+                workspaceId: input.workspaceId,
+                formId: input.formId,
+                submissionId: input.submissionId,
+                status: SubmissionReviewStatuses.revising,
+                assigneeId: null,
+                actorId: input.actorId,
+                bySubmitter: true,
+                attachComment: false,
+              },
+              reactions,
+            ),
         })
       : 'not_allowed';
+    if (outcome === 'changed') nudgeJobs(JobType.submission_status_changed);
     if (outcome === 'missing') throw notFound();
     if (outcome === 'taken') {
       throw new ConflictError('Status change id is already used', ApiErrorCodes.status_id_taken);

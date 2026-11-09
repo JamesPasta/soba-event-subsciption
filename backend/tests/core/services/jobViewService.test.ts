@@ -4,6 +4,7 @@ import { LEASE_EXPIRED } from '../../../src/core/db/repos/jobRepo';
 import type { JobNotificationSend } from '../../../src/core/db/repos/notificationAuditRepo';
 import {
   countEmails,
+  emailCountsOf,
   redactAddresses,
   rerunRefusal,
   toJobDetail,
@@ -61,6 +62,14 @@ describe('rerunRefusal', () => {
 
   it('refuses a submission-received job whose queued actions were deleted under retention', () => {
     expect(received({ childrenQueuedAt: ago(40 * DAY) })).toBe(queuedAlready);
+  });
+
+  it('treats a status-changed job like a submission-received one: once its reactions are queued', () => {
+    const changed = (overrides: Partial<RerunFacts>) =>
+      rerunRefusal(facts({ type: JobType.submission_status_changed, ...overrides }));
+    expect(changed({})).toBeNull();
+    expect(changed({ childCount: 1 })).toBe(queuedAlready);
+    expect(changed({ childrenQueuedAt: ago(40 * DAY) })).toBe(queuedAlready);
   });
 
   // Its fan-out rolled back, so no dedupe key was taken and nothing was sent.
@@ -125,6 +134,41 @@ describe('countEmails', () => {
       refused: 0,
       pending: 1,
     });
+  });
+});
+
+describe('emailCountsOf', () => {
+  const send = (
+    to: string,
+    outcome: JobNotificationSend['outcome'],
+    httpStatus: number | null = null,
+  ): JobNotificationSend => ({ outcome, httpStatus, recipients: { to: [to] }, createdAt: now });
+  const sends = [
+    send('a@example.com', 'accepted'),
+    send('b@example.com', 'error', 400),
+    send('c@example.com', 'error', 503),
+  ];
+
+  it('counts a job whose options list its addresses against that list', () => {
+    const params = { options: { to: ['a@example.com', 'd@example.com'] } };
+    expect(emailCountsOf(params, sends)).toEqual({
+      addresses: 2,
+      sent: 1,
+      refused: 0,
+      pending: 1,
+    });
+  });
+
+  // Its list is read when it runs, so a retrying job cannot say how many are left.
+  it('counts only the sent and refused for a job that reads its recipients when it runs', () => {
+    const params = { statusChangeId: 'change-1', options: { attachComment: false } };
+    expect(emailCountsOf(params, sends)).toEqual({
+      addresses: null,
+      sent: 1,
+      refused: 1,
+      pending: null,
+    });
+    expect(emailCountsOf(params, [])).toBeNull();
   });
 });
 
