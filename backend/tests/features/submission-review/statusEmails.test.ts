@@ -63,7 +63,7 @@ it('links submitters to the forms app: the submit page to revise, the submission
   );
   expect(revising.body).toContain('href="https://forms.example/fr/submit/s1"');
   expect(revising.body).toContain(
-    '<strong>Comments / Commentaires :</strong><br>Please attach the signed declaration.',
+    '<strong>Comments: / Commentaires :</strong><br>Please attach the signed declaration.',
   );
 
   const completed = renderStatusEmail(

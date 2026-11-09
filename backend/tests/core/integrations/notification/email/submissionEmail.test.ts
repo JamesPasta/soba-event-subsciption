@@ -51,7 +51,7 @@ describe('renderSubmissionEmail', () => {
     const { subject, body } = renderSubmissionEmail(template, facts(), 'fr');
     expect(subject).toBe('Soumission Permit application (ABCD1234)');
     expect(body).toContain('<div lang="fr">');
-    expect(body).toContain('Numéro de confirmation : <strong>ABCD1234</strong>');
+    expect(body).toContain('ID de confirmation : <strong>ABCD1234</strong>');
     expect(body).toContain('href="https://soba.example/designer/fr/build/f1/submissions/s1"');
     expect(body).toContain('<span lang="fr">Ce message automatique provient de CHEFS.');
     expect(body).not.toContain('lang="en"');
@@ -83,7 +83,7 @@ describe('renderSubmissionEmail', () => {
       'both',
     );
     const comment =
-      '<strong>Comments / Commentaires :</strong><br>Line one<br>&lt;b&gt;two&lt;/b&gt;<br>three https://example.ca';
+      '<strong>Comments: / Commentaires :</strong><br>Line one<br>&lt;b&gt;two&lt;/b&gt;<br>three https://example.ca';
     expect(body.split(comment)).toHaveLength(2);
     expect(body.indexOf(comment)).toBeGreaterThan(body.indexOf('<div lang="fr">'));
     expect(body.indexOf(comment)).toBeLessThan(body.indexOf(FOOTER_EN));

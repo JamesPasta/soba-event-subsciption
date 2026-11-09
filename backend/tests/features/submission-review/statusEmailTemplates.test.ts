@@ -63,7 +63,7 @@ describe('status email templates', () => {
   it.each(TEMPLATES)('words the %s email in French', (_name, template) => {
     const { subject, body } = renderSubmissionEmail(template, facts, 'fr');
     expect(subject).toMatch(/\S.* \(K7M2Q9XA\)$/);
-    expect(body).toContain('Numéro de confirmation : <strong>K7M2Q9XA</strong>');
+    expect(body).toContain('ID de confirmation : <strong>K7M2Q9XA</strong>');
     expect(body).toContain('Permit application');
     expect(body).toContain('>Voir cette soumission</a>');
   });

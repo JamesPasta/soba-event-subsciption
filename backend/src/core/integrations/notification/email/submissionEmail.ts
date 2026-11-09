@@ -43,9 +43,9 @@ export interface SubmissionEmailFacts {
 
 const COPY: Readonly<Record<EmailLanguage, { confirmationId: string; comments: string }>> = {
   en: { confirmationId: 'Confirmation ID:', comments: 'Comments:' },
-  fr: { confirmationId: 'Numéro de confirmation :', comments: 'Commentaires :' },
+  fr: { confirmationId: 'ID de confirmation :', comments: 'Commentaires :' },
 };
-const BOTH_COMMENTS = 'Comments / Commentaires :';
+const BOTH_COMMENTS = 'Comments: / Commentaires :';
 
 // Shown once, in no particular language, whatever languages the email is in.
 const commentBlock = (order: readonly EmailLanguage[], comment: string): SafeHtml =>
