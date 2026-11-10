@@ -314,10 +314,10 @@ export function useFormWriter(formId: string) {
   const remove = useCallback(
     async (token: string): Promise<WriteOutcome<void>> => {
       await deleteSobaForm(token, formId);
-      // Clear the detail without reading the now-deleted resource, and refresh the lists.
+      // Clear the detail and all cached list pages, then re-read mounted lists.
       await Promise.all([
         mutate(designFormKey(formId), undefined, { revalidate: false }),
-        mutate((key) => Array.isArray(key) && key[0] === 'forms'),
+        mutate((key) => Array.isArray(key) && key[0] === 'forms', undefined, { revalidate: true }),
       ]);
       return { status: 'applied', value: undefined };
     },

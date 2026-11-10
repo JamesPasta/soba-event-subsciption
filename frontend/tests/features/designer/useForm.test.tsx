@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
-import useSWR, { SWRConfig } from 'swr';
+import useSWR, { SWRConfig, unstable_serialize, useSWRConfig } from 'swr';
 
 const getSobaForm = vi.fn();
 const lookupFormVersions = vi.fn();
@@ -83,6 +83,30 @@ describe('useForm', () => {
     expect(result.current.form.data).toBeUndefined();
     expect(result.current.list.data).toEqual([]);
     expect(getSobaForm).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears cached form list pages that are not mounted', async () => {
+    const key = ['forms', 'other-workspace', 'page-2'];
+    const list = vi.fn().mockResolvedValue({ items: [{ id: 'f1' }] });
+    const { result, rerender } = renderHook(
+      ({ active }) => ({
+        list: useSWR(active ? key : null, list),
+        writer: useFormWriter('f1'),
+        swr: useSWRConfig(),
+      }),
+      { wrapper, initialProps: { active: true } },
+    );
+    await waitFor(() => expect(result.current.list.data).toEqual({ items: [{ id: 'f1' }] }));
+    rerender({ active: false });
+    expect(result.current.swr.cache.get(unstable_serialize(key))?.data).toEqual({
+      items: [{ id: 'f1' }],
+    });
+
+    await act(async () => {
+      await result.current.writer.remove('token');
+    });
+
+    expect(result.current.swr.cache.get(unstable_serialize(key))?.data).toBeUndefined();
   });
 
   it('keeps the cached form when deletion is refused', async () => {

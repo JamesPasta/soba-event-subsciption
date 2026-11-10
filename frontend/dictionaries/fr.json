@@ -454,7 +454,7 @@
   "form": {
     "deleteTitle": "Supprimer le formulaire",
     "delete": "Supprimer",
-    "deleteMessage": "Supprimer « {name} »? Le formulaire ne sera plus accessible, y compris par les liens partagés. Cette action ne peut pas être annulée dans l’application.",
+    "deleteMessage": "Supprimer « {name} »? Le formulaire ne sera plus accessible, y compris par les liens partagés. Cette action est irréversible.",
     "deleteSuccess": "Le formulaire a été supprimé.",
     "deleteError": "Impossible de supprimer le formulaire.",
     "saved": "Formulaire enregistré avec succès.",

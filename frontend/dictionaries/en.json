@@ -453,7 +453,7 @@
   "form": {
     "deleteTitle": "Delete form",
     "delete": "Delete",
-    "deleteMessage": "Delete \"{name}\"? The form will no longer be available, including through shared links. This action cannot be undone in the application.",
+    "deleteMessage": "Delete \"{name}\"? The form will no longer be available, including through shared links. This cannot be undone.",
     "deleteSuccess": "Form deleted successfully.",
     "deleteError": "Failed to delete the form.",
     "saved": "Form saved successfully.",
