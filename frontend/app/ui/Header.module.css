@@ -16,6 +16,38 @@
   padding-inline: var(--layout-padding-medium);
 }
 
+/*
+ * The design system injects its stylesheet from JavaScript, so the server-rendered header has none
+ * of it until the client bundle runs. Until then the logo's paths take no colour and fill black, and
+ * the skip link sits in plain view. These repeat the design system's own values, so nothing moves
+ * when its stylesheet arrives.
+ */
+.chrome :global(.bcds-header > .bcds-header--container svg#bcgov-logo-header) {
+  min-width: 129px;
+  width: 129px;
+}
+
+/* Its colours are only in that stylesheet, so the logo keeps its space but stays hidden until then. */
+.chrome:not([data-styled]) :global(svg#bcgov-logo-header) {
+  visibility: hidden;
+}
+
+.chrome :global(.bcds-header > .bcds-header--container > ul.bcds-header--skiplinks) {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: absolute;
+}
+
+.chrome :global(.bcds-header > .bcds-header--container > ul.bcds-header--skiplinks li a) {
+  position: absolute;
+  margin-left: -100000px;
+}
+
+.chrome :global(.bcds-header > .bcds-header--container > ul.bcds-header--skiplinks li a:focus) {
+  margin-left: 0;
+}
+
 /* The acronym stands in for the title, which otherwise wraps to three lines on a phone. */
 .titleFull {
   display: none;

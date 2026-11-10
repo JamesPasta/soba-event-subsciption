@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useMemo } from 'react';
 import { Heading, Button, Link } from '@bcgov/design-system-react-components';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 
 import type { Dictionary } from '@/src/types/dictionary';
 import { useForm } from '@/src/features/designer/data/useForm';
@@ -25,7 +25,6 @@ export default function FormShareTab({
   formDesc,
 }: Readonly<FormShareTabProps>) {
   const pathname = usePathname();
-  const router = useRouter();
   const locale = getLocaleFromPath(pathname);
   const { addNotification } = useNotificationStore();
   const { form } = useForm(formId ?? '');
@@ -64,9 +63,8 @@ export default function FormShareTab({
         <Link
           className="bcds-react-aria-Link medium false ms-2"
           data-testid="share-tab-form-link"
-          onPress={() => {
-            router.push(link);
-          }}
+          target="_blank"
+          href={link}
         >
           {link}
         </Link>

@@ -60,6 +60,12 @@ function Header({ designMode }: Readonly<HeaderProps>) {
     return () => observer.disconnect();
   }, []);
 
+  // The design system injects its stylesheet when its module loads, which is before this mounts.
+  // Until then the logo has no colours, so the CSS keeps it hidden until this is set.
+  useEffect(() => {
+    headerChromeRef.current?.setAttribute('data-styled', '');
+  }, []);
+
   // The cache and this tab's view state outlive the session, so the next person signing in here
   // must not be served the previous user's data. The dismissed-modal flag is this feature's, so it
   // is cleared here rather than in the shared session-data hook.
