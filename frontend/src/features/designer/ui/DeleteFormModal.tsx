@@ -43,7 +43,7 @@ export function DeleteFormModal({
       danger
       title={dict.form.deleteTitle}
       message={dict.form.deleteMessage.replace('{name}', () => name)}
-      confirmLabel={dict.form.deleteTitle}
+      confirmLabel={dict.form.delete}
       pending={pending}
       confirmDisabled={!token}
       onConfirm={() => void remove()}
