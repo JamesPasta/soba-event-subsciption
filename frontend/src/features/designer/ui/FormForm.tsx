@@ -7,6 +7,7 @@ import { CenteredProgress } from '@/app/ui/base/CenteredProgress';
 import { Modal as CommonModal } from '@/src/components/Modal';
 import styles from './FormForm.module.css';
 
+import type { Webform } from '@formio/js';
 import type { FormType } from '@formio/react';
 import { newFormSchema } from '@soba/lib';
 
@@ -162,6 +163,36 @@ function useActiveTab(permissions: {
   }
 
   return { activeTab, openedTabs, openTab };
+}
+
+type PreviewSubmission = { state?: string; data: Parameters<Webform['validate']>[0] };
+
+// Form.io runs beforeSubmit before its own validation, so the hook validates.
+function previewBeforeSubmit(onCancel: () => void) {
+  return function beforeSubmit(
+    this: Pick<Webform, 'validate' | 'triggerChange'>,
+    submission: PreviewSubmission,
+    next: (error?: unknown) => void,
+  ) {
+    const isDraft = submission.state === 'draft';
+    // Drafts skip Form.io validation, so their check stays silent.
+    const errors = this.validate(
+      submission.data,
+      isDraft
+        ? { dirty: false, silentCheck: true }
+        : { dirty: true, silentCheck: false, process: 'submit' },
+    );
+    if (errors.length && !isDraft) {
+      next(errors);
+      return;
+    }
+    onCancel();
+    next({ silent: true });
+    // A silent cancel disables disable-on-invalid buttons; a non-silent change re-checks validity.
+    if (!errors.length) {
+      this.triggerChange();
+    }
+  };
 }
 
 function FormForm({ formId }: Readonly<{ formId: string }>) {
@@ -637,11 +668,15 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
         footer={
           <div className="d-flex flex-column gap-3 w-100">
             {previewSubmitAttempts > 0 && (
-              <div key={previewSubmitAttempts} role="alert" aria-atomic="true">
-                <InlineAlert variant="warning" role="presentation">
-                  {dict.form.previewSubmissionDisabled}
-                </InlineAlert>
-              </div>
+              <InlineAlert
+                key={previewSubmitAttempts}
+                variant="warning"
+                // BCDS points the alert's aria-labelledby at an id it only emits alongside `title`,
+                // so a notice without one has no accessible name.
+                title={dict.form.previewSubmissionDisabled}
+                role="alert"
+                data-testid="preview-submission-warning"
+              />
             )}
             <div className="d-flex justify-content-start">
               <Button
@@ -661,13 +696,9 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
             form={formSchema}
             options={{
               hooks: {
-                beforeSubmit: (
-                  _submission: unknown,
-                  next: (error: { silent: boolean }) => void,
-                ) => {
-                  setPreviewSubmitAttempts((attempts) => attempts + 1);
-                  next({ silent: true });
-                },
+                beforeSubmit: previewBeforeSubmit(() =>
+                  setPreviewSubmitAttempts((attempts) => attempts + 1),
+                ),
               },
             }}
           />
