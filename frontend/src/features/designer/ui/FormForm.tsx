@@ -2,11 +2,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Tabs, Tab } from 'react-bootstrap';
-import { Button, Select } from '@bcgov/design-system-react-components';
+import { Button, InlineAlert, Select } from '@bcgov/design-system-react-components';
 import { CenteredProgress } from '@/app/ui/base/CenteredProgress';
 import { Modal as CommonModal } from '@/src/components/Modal';
 import styles from './FormForm.module.css';
 
+import type { Webform } from '@formio/js';
 import type { FormType } from '@formio/react';
 import { newFormSchema } from '@soba/lib';
 
@@ -159,6 +160,36 @@ function useActiveTab(permissions: {
   return { activeTab, openedTabs, openTab };
 }
 
+type PreviewSubmission = { state?: string; data: Parameters<Webform['validate']>[0] };
+
+// Form.io runs beforeSubmit before its own validation, so the hook validates.
+function previewBeforeSubmit(onCancel: () => void) {
+  return function beforeSubmit(
+    this: Pick<Webform, 'validate' | 'triggerChange'>,
+    submission: PreviewSubmission,
+    next: (error?: unknown) => void,
+  ) {
+    const isDraft = submission.state === 'draft';
+    // Drafts skip Form.io validation, so their check stays silent.
+    const errors = this.validate(
+      submission.data,
+      isDraft
+        ? { dirty: false, silentCheck: true }
+        : { dirty: true, silentCheck: false, process: 'submit' },
+    );
+    if (errors.length && !isDraft) {
+      next(errors);
+      return;
+    }
+    onCancel();
+    next({ silent: true });
+    // A silent cancel disables disable-on-invalid buttons; a non-silent change re-checks validity.
+    if (!errors.length) {
+      this.triggerChange();
+    }
+  };
+}
+
 function FormForm({ formId }: Readonly<{ formId: string }>) {
   const dict = useDictionary();
   const { authenticated, token, initializing } = useKeycloak();
@@ -168,6 +199,7 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
   // isSaving lags a render, so a second call in the same task still sees false; this does not.
   const writing = useRef(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [previewSubmitAttempts, setPreviewSubmitAttempts] = useState(0);
 
   const {
     form,
@@ -443,7 +475,10 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
           <Button
             variant="secondary"
             data-testid="preview-form-button"
-            onPress={() => setShowPreview(true)}
+            onPress={() => {
+              setPreviewSubmitAttempts(0);
+              setShowPreview(true);
+            }}
             isDisabled={isSaving || loading}
           >
             {dict.form.preview || 'Preview'}
@@ -611,17 +646,42 @@ function FormForm({ formId }: Readonly<{ formId: string }>) {
         onClose={() => setShowPreview(false)}
         size="lg"
         footer={
-          <Button
-            variant="secondary"
-            data-testid="close-preview-button"
-            onPress={() => setShowPreview(false)}
-          >
-            {dict.form.closePreview || 'Close Preview'}
-          </Button>
+          <div className="d-flex flex-column gap-3 w-100">
+            {previewSubmitAttempts > 0 && (
+              <InlineAlert
+                key={previewSubmitAttempts}
+                variant="warning"
+                // BCDS points the alert's aria-labelledby at an id it only emits alongside `title`,
+                // so a notice without one has no accessible name.
+                title={dict.form.previewSubmissionDisabled}
+                role="alert"
+                data-testid="preview-submission-warning"
+              />
+            )}
+            <div className="d-flex justify-content-start">
+              <Button
+                variant="secondary"
+                data-testid="close-preview-button"
+                onPress={() => setShowPreview(false)}
+              >
+                {dict.form.closePreview || 'Close Preview'}
+              </Button>
+            </div>
+          </div>
         }
       >
         {formSchema ? (
-          <DynamicForm src="" form={formSchema} />
+          <DynamicForm
+            src=""
+            form={formSchema}
+            options={{
+              hooks: {
+                beforeSubmit: previewBeforeSubmit(() =>
+                  setPreviewSubmitAttempts((attempts) => attempts + 1),
+                ),
+              },
+            }}
+          />
         ) : (
           <p className="text-center p-5 text-muted">
             {dict.form.noFormLayout || 'No form layout designed yet.'}

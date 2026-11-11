@@ -575,6 +575,7 @@
     "formPreview": "Aperçu du formulaire",
     "untitledForm": "Formulaire sans titre",
     "closePreview": "Fermer l'aperçu",
+    "previewSubmissionDisabled": "La soumission est désactivée pendant l'aperçu.",
     "noFormLayout": "Aucune mise en page de formulaire n'a encore été conçue.",
     "createForm": "Créer un Formulaire",
     "status": "Status",

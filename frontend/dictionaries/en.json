@@ -574,6 +574,7 @@
     "formPreview": "Form Preview",
     "untitledForm": "Untitled Form",
     "closePreview": "Close Preview",
+    "previewSubmissionDisabled": "Submission during a preview is disabled.",
     "noFormLayout": "No form layout designed yet.",
     "createForm": "Create Form",
     "status": "Status",
