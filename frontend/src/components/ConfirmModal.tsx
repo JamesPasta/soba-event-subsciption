@@ -17,6 +17,7 @@ export interface ConfirmModalProps {
   pending?: boolean;
   /** Holds the confirm button off, such as while the message waits on a read. */
   confirmDisabled?: boolean;
+  danger?: boolean;
 }
 
 /** Prompt before an action that cannot be undone. */
@@ -30,6 +31,7 @@ export function ConfirmModal({
   onCancel,
   pending = false,
   confirmDisabled = false,
+  danger = false,
 }: Readonly<ConfirmModalProps>) {
   const dict = useDictionary();
 
@@ -43,6 +45,7 @@ export function ConfirmModal({
         <>
           <Button
             variant="primary"
+            danger={danger}
             isDisabled={pending || confirmDisabled}
             onPress={onConfirm}
             data-testid="confirm-modal-confirm"

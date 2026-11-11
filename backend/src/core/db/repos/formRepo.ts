@@ -1,10 +1,25 @@
-import { and, count, eq, ilike, inArray, isNull, ne, type InferSelectModel } from 'drizzle-orm';
+import {
+  and,
+  count,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  ne,
+  sql,
+  type InferSelectModel,
+} from 'drizzle-orm';
 import { db, type DbOrTx } from '../client';
 import { forms, formVersions, workspaces } from '../schema';
 import { likePattern, orderByForSort, type SortColumns } from '../listSort';
 import { readListPage } from '../listRead';
 import { NotFoundError } from '../../errors';
-import { listAllowsNothing, permittedFormsWhere, type FormAccessGrant } from './formAccessRepo';
+import {
+  listAllowsNothing,
+  permissionsByForm,
+  permittedFormsWhere,
+  type FormAccessGrant,
+} from './formAccessRepo';
 import { liveForm } from './liveRows';
 
 import { FORM_SORT_FIELDS, type SortLocale, type SortToken } from '@soba/lib';
@@ -19,6 +34,7 @@ const FORM_SORT_COLUMNS: SortColumns<FormListSortField> = {
 };
 
 export interface ListFormsForWorkspaceInput {
+  actorId: string;
   /** The anchored workspace, or every workspace the actor is an active member of. */
   workspaceIds: string[];
   formAccess: FormAccessGrant;
@@ -32,6 +48,7 @@ export interface ListFormsForWorkspaceInput {
 }
 
 export interface FormListRow {
+  permissions: string[];
   id: string;
   workspaceId: string;
   workspaceName: string;
@@ -98,10 +115,15 @@ export const listFormsForWorkspace = async (
   }
 
   const where = and(...whereClauses);
+  const visibleForms = db.select({ id: forms.id }).from(forms).where(where);
+  const permissions = permissionsByForm(input.actorId, { formIds: visibleForms }).as(
+    'caller_permission',
+  );
 
   return readListPage(async (tx) => {
     const items = await tx
       .select({
+        permissions: sql<string[]>`coalesce(${permissions.permissions}, '{}'::text[])`,
         id: forms.id,
         workspaceId: forms.workspaceId,
         workspaceName: workspaces.name,
@@ -116,6 +138,7 @@ export const listFormsForWorkspace = async (
       })
       .from(forms)
       .innerJoin(workspaces, eq(workspaces.id, forms.workspaceId))
+      .leftJoin(permissions, eq(permissions.formId, forms.id))
       .where(where)
       .orderBy(...orderByForSort(FORM_SORT_COLUMNS, input.sort, forms.id, input.locale))
       .limit(input.limit)

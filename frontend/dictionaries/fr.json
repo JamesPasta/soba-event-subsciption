@@ -187,7 +187,7 @@
       "systemGroup": "Groupe système",
       "systemGroupTooltip": "Les groupes système sont protégés et ne peuvent pas être supprimés.",
       "deleteConfirmTitle": "Supprimer le groupe",
-      "deleteConfirmMessage": "Êtes-vous sûr de vouloir supprimer le groupe \"{name}\" ? Les utilisateurs de ce groupe perdront l'accès à tous les formulaires de cet espace de travail.",
+      "deleteConfirmMessage": "Êtes-vous sûr de vouloir supprimer le groupe \"{name}\"? Les utilisateurs de ce groupe perdront l'accès à tous les formulaires de cet espace de travail.",
       "deleteSuccess": "Groupe supprimé avec succès.",
       "deleteError": "Échec de la suppression du groupe.",
       "createSuccess": "Groupe créé avec succès.",
@@ -256,8 +256,8 @@
       "updateSuccess": "Groupes mis à jour avec succès.",
       "updateError": "Échec de la mise à jour des groupes de cette personne.",
       "removeConfirmTitle": "Retirer la personne",
-      "removeConfirmMessage": "Retirer \"{name}\" de cet espace de travail ? Cette personne perdra l'accès à tous les formulaires de cet espace de travail.",
-      "removeConfirmRoleMessage": "Retirer \"{name}\" de cet espace de travail ? Cette personne perdra l'accès à tous les formulaires de cet espace de travail ainsi que son rôle {role}. Si elle est ajoutée de nouveau, elle aura le rôle Lecteur.",
+      "removeConfirmMessage": "Retirer \"{name}\" de cet espace de travail? Cette personne perdra l'accès à tous les formulaires de cet espace de travail.",
+      "removeConfirmRoleMessage": "Retirer \"{name}\" de cet espace de travail? Cette personne perdra l'accès à tous les formulaires de cet espace de travail ainsi que son rôle {role}. Si elle est ajoutée de nouveau, elle aura le rôle Lecteur.",
       "roleNames": {
         "admin": "Administrateur",
         "member": "Membre"
@@ -524,6 +524,11 @@
     }
   },
   "form": {
+    "deleteTitle": "Supprimer le formulaire",
+    "delete": "Supprimer",
+    "deleteMessage": "Supprimer « {name} »? Le formulaire ne sera plus accessible, y compris par les liens partagés. Ses soumissions ne seront plus accessibles au personnel ni aux soumissionnaires. Cette action est irréversible.",
+    "deleteSuccess": "Le formulaire a été supprimé.",
+    "deleteError": "Impossible de supprimer le formulaire.",
     "saved": "Formulaire enregistré avec succès.",
     "saveError": "Erreur lors de l'enregistrement du formulaire.",
     "versionConflict": "Ce formulaire a été modifié depuis son ouverture. Enregistrez vos modifications comme nouvelle version, ou abandonnez-les.",
@@ -645,7 +650,7 @@
       "downloadError": "Échec du téléchargement du modèle.",
       "delete": "Supprimer",
       "deleteTitle": "Supprimer le modèle",
-      "deleteMessage": "Supprimer « {name} » de {version} ? Cette action est irréversible.",
+      "deleteMessage": "Supprimer « {name} » de {version}? Cette action est irréversible.",
       "deleteSuccess": "Modèle supprimé.",
       "deleteError": "Échec de la suppression du modèle.",
       "loadError": "Échec du chargement des modèles.",

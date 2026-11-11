@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   addSobaSubmissionNote,
   deleteSobaSubmission,
+  deleteSobaForm,
   getSobaSubmissionReview,
   getSobaSubmissionReviewers,
   selectWorkspace,
@@ -57,7 +58,10 @@ function deleteResponse(status: number, body?: unknown) {
   } as unknown as Response;
 }
 
-describe('deleteSobaSubmission', () => {
+describe.each([
+  ['deleteSobaSubmission', deleteSobaSubmission, 'submissions'],
+  ['deleteSobaForm', deleteSobaForm, 'forms'],
+])('%s', (_name, remove, resource) => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -66,17 +70,17 @@ describe('deleteSobaSubmission', () => {
     const fetchMock = vi.fn().mockResolvedValue(deleteResponse(204));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(deleteSobaSubmission('tok', 's1')).resolves.toBeUndefined();
+    await expect(remove('tok', 's1')).resolves.toBeUndefined();
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toContain('/design/submissions/s1');
+    expect(String(url)).toContain(`/design/${resource}/s1`);
     expect(init.method).toBe('DELETE');
   });
 
   it('treats a 404 as already deleted', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(deleteResponse(404, { error: 'Not found' })));
 
-    await expect(deleteSobaSubmission('tok', 's1')).resolves.toBeUndefined();
+    await expect(remove('tok', 's1')).resolves.toBeUndefined();
   });
 
   it('throws the backend message on a 403', async () => {
@@ -85,9 +89,7 @@ describe('deleteSobaSubmission', () => {
       vi.fn().mockResolvedValue(deleteResponse(403, { error: 'Insufficient form permissions' })),
     );
 
-    await expect(deleteSobaSubmission('tok', 's1')).rejects.toThrow(
-      'Insufficient form permissions',
-    );
+    await expect(remove('tok', 's1')).rejects.toThrow('Insufficient form permissions');
   });
 });
 

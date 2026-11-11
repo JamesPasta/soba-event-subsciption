@@ -2,7 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
-import { SWRConfig } from 'swr';
+import useSWR, { SWRConfig, unstable_serialize, useSWRConfig } from 'swr';
 
 const getSobaForm = vi.fn();
 const lookupFormVersions = vi.fn();
@@ -21,7 +21,8 @@ vi.mock('@/src/shared/api/sobaApi', () => ({
 
 import makeStore from '@/lib/store';
 import { setAuthenticated, setToken } from '@/lib/slices/keycloakSlice';
-import { useForm, useFormWriter } from '@/src/features/designer/data/useForm';
+import { useDesignFormRead, useForm, useFormWriter } from '@/src/features/designer/data/useForm';
+import * as designApi from '@/src/shared/api/sobaApiDesign';
 import { ApiError } from '@/src/shared/api/sobaHelpers';
 
 const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -29,6 +30,7 @@ const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const V1 = { id: 'v1', versionNo: 1, state: 'published' };
 const V2 = { id: 'v2', versionNo: 2, state: 'draft' };
 const V3 = { id: 'v3', versionNo: 3, state: 'draft' };
+const deleteForm = vi.spyOn(designApi, 'deleteSobaForm');
 
 let store: ReturnType<typeof makeStore>;
 
@@ -47,6 +49,7 @@ function wrapper({ children }: { children: React.ReactNode }) {
 describe('useForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    deleteForm.mockReset().mockResolvedValue(undefined);
     store = makeStore();
     store.dispatch(setToken('token'));
     store.dispatch(setAuthenticated(true));
@@ -56,6 +59,73 @@ describe('useForm', () => {
       Promise.resolve([V1, V2].find((v) => v.id === id)),
     );
     getFormVersionSchema.mockResolvedValue({ components: [] });
+  });
+
+  it('clears a deleted form and refreshes lists without requesting its detail again', async () => {
+    const list = vi.fn().mockResolvedValue(['f1']);
+    const { result } = renderHook(
+      () => ({
+        form: useDesignFormRead('f1'),
+        list: useSWR(['forms', 'ws1'], list),
+        writer: useFormWriter('f1'),
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.form.data?.id).toBe('f1'));
+    await waitFor(() => expect(result.current.list.data).toEqual(['f1']));
+    list.mockResolvedValue([]);
+
+    await act(async () => {
+      await result.current.writer.remove('token');
+    });
+
+    expect(deleteForm).toHaveBeenCalledWith('token', 'f1');
+    expect(result.current.form.data).toBeUndefined();
+    expect(result.current.list.data).toEqual([]);
+    expect(getSobaForm).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears cached form list pages that are not mounted', async () => {
+    const key = ['forms', 'other-workspace', 'page-2'];
+    const list = vi.fn().mockResolvedValue({ items: [{ id: 'f1' }] });
+    const { result, rerender } = renderHook(
+      ({ active }) => ({
+        list: useSWR(active ? key : null, list),
+        writer: useFormWriter('f1'),
+        swr: useSWRConfig(),
+      }),
+      { wrapper, initialProps: { active: true } },
+    );
+    await waitFor(() => expect(result.current.list.data).toEqual({ items: [{ id: 'f1' }] }));
+    rerender({ active: false });
+    expect(result.current.swr.cache.get(unstable_serialize(key))?.data).toEqual({
+      items: [{ id: 'f1' }],
+    });
+
+    await act(async () => {
+      await result.current.writer.remove('token');
+    });
+
+    expect(result.current.swr.cache.get(unstable_serialize(key))?.data).toBeUndefined();
+  });
+
+  it('keeps the cached form when deletion is refused', async () => {
+    deleteForm.mockRejectedValue(new ApiError('Forbidden', 403));
+    const { result } = renderHook(
+      () => ({
+        form: useDesignFormRead('f1'),
+        writer: useFormWriter('f1'),
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.form.data?.id).toBe('f1'));
+
+    await act(async () => {
+      await expect(result.current.writer.remove('token')).rejects.toThrow('Forbidden');
+    });
+
+    expect(result.current.form.data?.id).toBe('f1');
+    expect(getSobaForm).toHaveBeenCalledTimes(1);
   });
 
   // "Design" on the current version's history row would otherwise open the draft read-only.

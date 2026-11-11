@@ -523,6 +523,11 @@
     }
   },
   "form": {
+    "deleteTitle": "Delete form",
+    "delete": "Delete",
+    "deleteMessage": "Delete \"{name}\"? The form will no longer be available, including through shared links. Its submissions will no longer be available to staff or submitters. This cannot be undone.",
+    "deleteSuccess": "Form deleted successfully.",
+    "deleteError": "Failed to delete the form.",
     "saved": "Form saved successfully.",
     "saveError": "Error saving form.",
     "versionConflict": "This form changed since you opened it. Save your edits as a new version, or discard them.",

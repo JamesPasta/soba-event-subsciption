@@ -43,6 +43,8 @@ export const UpdateFormBodySchema = z.object({
 
 export const FormListItemSchema = z.object({
   id: z.string(),
+  /** The caller's permissions on this form, including its group overrides. */
+  permissions: z.array(z.string()),
   workspaceId: z.string(),
   workspaceName: z.string(),
   name: z.string(),

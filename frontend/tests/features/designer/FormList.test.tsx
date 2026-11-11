@@ -1,4 +1,5 @@
 import React from 'react';
+import en from '@/dictionaries/en.json';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { act } from 'react';
@@ -7,6 +8,7 @@ import { SWRConfig } from 'swr';
 
 vi.mock('@/app/[lang]/Providers', () => ({
   useDictionary: () => ({
+    ...en,
     locale: 'en',
     general: {
       notAuthenticated: 'Not authed',
@@ -19,6 +21,7 @@ vi.mock('@/app/[lang]/Providers', () => ({
       lookupTruncated: 'Showing the first {limit}.',
     },
     form: {
+      ...en.form,
       nameLabel: 'Form Name',
       disclaimerRequired: 'Accept the workspace disclaimer before creating a form.',
       loadFormsError: 'Failed to load forms.',
@@ -60,6 +63,11 @@ vi.mock('next/navigation', async () => {
     useSearchParams: () => new URLSearchParams(search.value),
   };
 });
+
+const deleteSobaForm = vi.fn();
+vi.mock('@/src/shared/api/sobaApiDesign', () => ({
+  deleteSobaForm: (...args: unknown[]) => deleteSobaForm(...args),
+}));
 
 const getSobaForms = vi.fn();
 const lookupWorkspaces = vi.fn();
@@ -171,6 +179,7 @@ function listTree() {
 describe('FormList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    deleteSobaForm.mockResolvedValue(undefined);
     sessionStorage.clear();
     search.value = '';
     store = makeStore();
@@ -178,6 +187,7 @@ describe('FormList', () => {
       items: [
         {
           id: 'f1',
+          permissions: ['form_delete'],
           workspaceId: WS1,
           workspaceName: 'Alpha',
           name: 'Form One',
@@ -188,6 +198,7 @@ describe('FormList', () => {
         },
         {
           id: 'f2',
+          permissions: [],
           workspaceId: WS2,
           workspaceName: 'Beta',
           name: 'Form Two',
@@ -199,6 +210,53 @@ describe('FormList', () => {
       ],
       page: { offset: 0, limit: 10, total: 2 },
     });
+  });
+
+  it('offers deletion only for permitted forms and confirms the selected form', async () => {
+    seed([{ id: WS1 }, { id: WS2 }]);
+    await renderList();
+    expect(await screen.findByTestId('delete-f1-button')).toBeInTheDocument();
+    expect(screen.queryByTestId('delete-f2-button')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('delete-f1-button'));
+    expect(screen.getByTestId('confirm-modal-message')).toHaveTextContent('Form One');
+    expect(deleteSobaForm).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('confirm-modal-cancel'));
+    expect(deleteSobaForm).not.toHaveBeenCalled();
+    expect(screen.getByTestId('form-link-f1')).toBeInTheDocument();
+  });
+
+  it.each([
+    [['form_delete'], true],
+    [['*'], true],
+    [['form_update'], false],
+    [[], false],
+  ])('uses form permissions %j to control deletion', async (permissions, visible) => {
+    seed([{ id: WS1 }]);
+    getSobaForms.mockResolvedValue({
+      items: [
+        { id: 'f1', workspaceId: WS1, workspaceName: 'Alpha', name: 'Form One', permissions },
+      ],
+      page: { offset: 0, limit: 10, total: 1 },
+    });
+    await renderList();
+    await screen.findByTestId('form-link-f1');
+    expect(!!screen.queryByTestId('delete-f1-button')).toBe(visible);
+  });
+
+  it('deletes from the workspace forms table and refreshes without navigating away', async () => {
+    search.value = `forms.workspace=${WS1}`;
+    seed([{ id: WS1 }, { id: WS2 }]);
+    await renderList();
+    fireEvent.click(await screen.findByTestId('delete-f1-button'));
+    getSobaForms.mockResolvedValue({ items: [], page: { offset: 0, limit: 10, total: 0 } });
+    fireEvent.click(screen.getByTestId('confirm-modal-confirm'));
+    await waitFor(() => expect(deleteSobaForm).toHaveBeenCalledWith('token', 'f1'));
+    await waitFor(() => expect(screen.queryByTestId('form-link-f1')).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByTestId('confirm-modal-message')).not.toBeInTheDocument(),
+    );
+    expect(lastFormsQuery().workspaceId).toBe(WS1);
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('warns and disables Create when no creatable workspace has an accepted disclaimer', async () => {
