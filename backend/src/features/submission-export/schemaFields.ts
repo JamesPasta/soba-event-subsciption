@@ -1,5 +1,6 @@
 /** Column names from a Form.io schema. */
-import { SUBMISSION_FIELDS } from './formats';
+import type { ExportSchema } from './source';
+import { SUBMISSION_FIELDS } from './submissionFields';
 
 /** The Form.io component fields the export reads. */
 export interface FormComponent {
@@ -68,8 +69,11 @@ const childComponents = (component: FormComponent): FormComponent[][] => {
   return component.components ? [component.components] : [];
 };
 
-/** Answer columns in form order. */
-export const flattenComponents = (components: FormComponent[] | undefined, path = ''): string[] =>
+/** Answer fields in form order, each with whether fields sit under it, as under a grid. */
+const componentFields = (
+  components: FormComponent[] | undefined,
+  path = '',
+): Array<[field: string, hasFields: boolean]> =>
   (components ?? []).flatMap((component) => {
     if (!component) return [];
     const isLayout =
@@ -79,18 +83,48 @@ export const flattenComponents = (components: FormComponent[] | undefined, path 
       LAYOUT_TYPES.has(component.type ?? '');
     const own = component.tree || !isLayout ? ownPaths(component, path) : [];
     const sub = childPath(component, path);
-    const children = childComponents(component).flatMap((list) => flattenComponents(list, sub));
-    return [...own, ...children];
+    const children = childComponents(component).flatMap((list) => componentFields(list, sub));
+    return [...own.map((field): [string, boolean] => [field, children.length > 0]), ...children];
   });
+
+/** Answer columns in form order. */
+export const flattenComponents = (components: FormComponent[] | undefined, path = ''): string[] =>
+  componentFields(components, path).map(([field]) => field);
+
+/**
+ * The fields with fields under them, such as a grid, in any schema. Taken from the schema, as an
+ * option value can hold dots and so look like a field under another.
+ */
+export const parentFields = (schemas: ExportSchema[]): Set<string> =>
+  new Set(
+    schemas.flatMap(({ schema: { components } }) =>
+      componentFields(Array.isArray(components) ? components : undefined)
+        .filter(([, hasFields]) => hasFields)
+        .map(([field]) => field),
+    ),
+  );
+
+/** Paths of the address components, which hold the provider's result as it came. */
+const addressPaths = (components: FormComponent[] | undefined, path = ''): string[] =>
+  (components ?? []).flatMap((component) => {
+    if (!component) return [];
+    const own = component.type === 'address' && component.key ? [join(path, component.key)] : [];
+    const sub = childPath(component, path);
+    return [...own, ...childComponents(component).flatMap((list) => addressPaths(list, sub))];
+  });
+
+/** A schema's address fields. */
+export const addressFields = ({ components }: Record<string, unknown>): string[] =>
+  addressPaths(Array.isArray(components) ? components : undefined);
 
 /**
  * The fields an export can include: the submission's own, then each schema's in form order, once
  * each. Schemas come newest version first, so an older version's fields follow the newest's.
  */
-export const exportFieldNames = (schemas: Record<string, unknown>[]): string[] => [
+export const exportFieldNames = (schemas: ExportSchema[]): string[] => [
   ...new Set([
     ...Object.keys(SUBMISSION_FIELDS),
-    ...schemas.flatMap(({ components }) =>
+    ...schemas.flatMap(({ schema: { components } }) =>
       flattenComponents(Array.isArray(components) ? components : undefined),
     ),
   ]),

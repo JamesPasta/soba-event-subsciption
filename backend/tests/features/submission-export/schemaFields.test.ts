@@ -1,5 +1,7 @@
 import {
+  addressFields,
   exportFieldNames,
+  parentFields,
   flattenComponents,
   type FormComponent,
 } from '../../../src/features/submission-export/schemaFields';
@@ -157,11 +159,62 @@ describe('exportFieldNames', () => {
       ],
     };
 
-    expect(exportFieldNames([newest, older])).toEqual([...SUBMISSION, 'name', 'phone']);
+    expect(
+      exportFieldNames([
+        { versionId: 'v2', schema: newest },
+        { versionId: 'v1', schema: older },
+      ]),
+    ).toEqual([...SUBMISSION, 'name', 'phone']);
   });
 
   it("lists only the submission's fields without a schema, or one with no components", () => {
     expect(exportFieldNames([])).toEqual(SUBMISSION);
-    expect(exportFieldNames([{ display: 'form' }])).toEqual(SUBMISSION);
+    expect(exportFieldNames([{ versionId: 'v1', schema: { display: 'form' } }])).toEqual(
+      SUBMISSION,
+    );
+  });
+});
+
+describe('parentFields', () => {
+  it('lists fields with fields under them, not an option value that holds dots', () => {
+    const schema = {
+      components: [
+        {
+          type: 'datagrid',
+          key: 'grid',
+          input: true,
+          tree: true,
+          components: [{ type: 'textfield', key: 'name', input: true }],
+        },
+        {
+          type: 'selectboxes',
+          key: 'sel',
+          input: true,
+          values: [{ value: '1' }, { value: '1.5' }],
+        },
+      ],
+    };
+
+    expect(parentFields([{ versionId: 'v1', schema }])).toEqual(new Set(['grid']));
+  });
+});
+
+describe('addressFields', () => {
+  it("lists the schema's address components, nested ones under their grid", () => {
+    const schema = {
+      components: [
+        { type: 'address', key: 'home', input: true },
+        {
+          type: 'datagrid',
+          key: 'grid',
+          input: true,
+          tree: true,
+          components: [{ type: 'address', key: 'where', input: true }],
+        },
+        { type: 'datagrid', key: 'mailingAddresses', input: true, tree: true, components: [] },
+      ],
+    };
+
+    expect(addressFields(schema)).toEqual(['home', 'grid.where']);
   });
 });

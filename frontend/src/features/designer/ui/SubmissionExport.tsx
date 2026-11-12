@@ -20,7 +20,7 @@ import { CenteredProgress } from '@/app/ui/base/CenteredProgress';
 import { useDictionary } from '@/app/[lang]/Providers';
 import { useKeycloak } from '@/lib/hooks/useKeycloak';
 import { useNotificationStore } from '@/lib/hooks/useNotificationStore';
-import { usePageHeading, usePageNotices } from '@/src/components/PageHeader';
+import { usePageHeading } from '@/src/components/PageHeader';
 import { SecondaryText } from '@/src/components/SecondaryText';
 import { LoadErrorAlert } from '@/src/shared/ui/LoadErrorAlert';
 import { apiErrorMessage } from '@/src/shared/api/dataError';
@@ -75,8 +75,6 @@ export function SubmissionExport({ formId }: Readonly<{ formId: string }>) {
   const form = useExportForm(formId);
   const starter = useSubmissionExportStarter(formId);
   usePageHeading({ heading: text.pageTitle, eyebrow: form.data?.name });
-  // Placeholder: says the CSV formats are not applied yet.
-  usePageNotices([{ id: 'submission-export-sample', variant: 'info', body: text.sampleNotice }]);
 
   const [format, setFormat] = useState<SubmissionExportFormat>('csv');
   const [versionId, setVersionId] = useState(ALL_VERSIONS);

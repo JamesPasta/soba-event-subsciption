@@ -12,7 +12,13 @@ import { createFormEngineAdapter } from '../../core/integrations/form-engine/For
 import { JobFailedError } from '../../core/jobs/settlement';
 import { log } from '../../core/logging';
 import { readEngineSchema } from '../../core/services/engineSchema';
-import type { ExportBounds, ExportRow, ExportRowsOptions, ExportSource } from './source';
+import type {
+  ExportBounds,
+  ExportRow,
+  ExportRowsOptions,
+  ExportSchema,
+  ExportSource,
+} from './source';
 
 /** One submission as the submissions query returns it, before its answers are read. */
 export interface SubmissionRecord {
@@ -101,11 +107,14 @@ export const exportSchemas = async (
   workspaceId: string,
   formId: string,
   formVersionId?: string,
-): Promise<Record<string, unknown>[]> => {
+): Promise<ExportSchema[]> => {
   const engineCode = await getFormEngineCodeForForm(workspaceId, formId);
   if (!engineCode) return [];
   const refs = await exportSchemaRefs(workspaceId, formId, formVersionId);
-  const schemas = await mapInOrder(refs, (ref) => readExportSchema(engineCode, formId, ref));
+  const schemas = await mapInOrder(refs, async ({ versionId, ref }) => {
+    const schema = await readExportSchema(engineCode, formId, ref);
+    return schema && { versionId, schema };
+  });
   return schemas.filter((schema) => schema !== null);
 };
 

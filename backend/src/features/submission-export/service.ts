@@ -35,12 +35,12 @@ import { getCorrelationId, log } from '../../core/logging';
 import { exportSchemas } from './engineSource';
 import {
   EXPORT_ACCESS_LOST,
-  EXPORT_TOO_LARGE,
   ExportParamsSchema,
   SUBMISSION_EXPORT_MAX_ATTEMPTS,
   type ExportParams,
 } from './job';
 import { exportFieldNames } from './schemaFields';
+import { EXPORT_TOO_LARGE } from './sizeLimit';
 import { exportBoundsOf } from './source';
 
 /** Who is asking, about which form. */

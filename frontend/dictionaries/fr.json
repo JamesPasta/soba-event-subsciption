@@ -821,7 +821,6 @@
     "export": {
       "button": "Exporter les soumissions",
       "pageTitle": "Exporter les soumissions",
-      "sampleNotice": "Les formats CSV ne sont pas encore appliqués.",
       "back": "Retour aux soumissions",
       "loadError": "Impossible de charger le formulaire.",
       "fieldsError": "Impossible de charger les champs.",

@@ -820,7 +820,6 @@
     "export": {
       "button": "Export submissions",
       "pageTitle": "Export submissions",
-      "sampleNotice": "The CSV formats are not applied yet.",
       "back": "Back to submissions",
       "loadError": "Could not load the form.",
       "fieldsError": "Could not load the fields.",

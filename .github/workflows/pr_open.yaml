@@ -344,7 +344,7 @@ jobs:
     with:
       DEP_ENV: ${{ github.event.number || github.event.inputs.pr-number }} #Passes PR number
       pr_branch: ${{ needs.set-vars.outputs.ref }} # Passes the PR branch
-      BASE_URL: ${{ needs.set-vars.outputs.URL }}
+      BASE_URL: ${{ needs.set-vars.outputs.URL }}/en
     secrets:
       keycloakUsername: ${{ secrets.keycloakUsername }}
       keycloakPassword: ${{ secrets.keycloakPassword }}

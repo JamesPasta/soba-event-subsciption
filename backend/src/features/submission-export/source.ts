@@ -22,6 +22,12 @@ export const exportBoundsOf = (
   to: new Date(filters.to),
 });
 
+/** A form version's schema, with the version it belongs to. */
+export interface ExportSchema {
+  versionId: string;
+  schema: Record<string, unknown>;
+}
+
 /** One submission as an export writes it. */
 export interface ExportRow {
   submissionId: string;
