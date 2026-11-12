@@ -105,7 +105,7 @@ const join = (path: string, key: string) => (path ? `${path}.${key}` : key);
 /** The path is the field or sits under it. */
 const within = (path: string, field: string) => path === field || path.startsWith(`${field}.`);
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
+export const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /**

@@ -1,6 +1,7 @@
 import {
   appUrlProblem,
   assertEmailLinkBases,
+  designerSubmissionFileUrl,
   designerSubmissionUrl,
   formsSubmissionUrl,
 } from '../../../../../src/core/integrations/notification/email/url';
@@ -13,6 +14,13 @@ describe('email links', () => {
     expect(designerSubmissionUrl('https://soba.example/designer/', 'fr', 'f1', 's1')).toBe(
       'https://soba.example/designer/fr/build/f1/submissions/s1',
     );
+  });
+
+  it("points at a submission's file in the designer, encoding each part", () => {
+    expect(
+      designerSubmissionFileUrl('https://soba.example/designer/', 'en', 'f1', 's1', 'a/b'),
+    ).toBe('https://soba.example/designer/en/build/f1/submissions/s1/files/a%2Fb');
+    expect(designerSubmissionFileUrl(undefined, 'en', 'f1', 's1', 'file-1')).toBeNull();
   });
 
   it('points at the submission in the forms app, on the page asked for', () => {

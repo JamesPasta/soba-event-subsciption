@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import { hasAllPermissions, SUBMISSION_EXPORT_LAYOUTS } from '@soba/lib';
-import { JobPool } from '../../core/config/env';
+import { env, JobPool } from '../../core/config/env';
 import { quietDb } from '../../core/db/client';
 import { Features, JobType, Permissions, SubmissionExportAuditAction } from '../../core/db/codes';
 import { isFeatureEnabledCached } from '../../core/db/repos/featureRepo';
@@ -12,7 +12,9 @@ import { getLiveForm, insertExportAudit } from '../../core/db/repos/submissionEx
 import { getTempStorageAdapter } from '../../core/integrations/plugins/PluginRegistry';
 import type { JobContext, JobTypeDefinition } from '../../core/jobs/registry';
 import { JobCancelledError, JobFailedError } from '../../core/jobs/settlement';
+import { log } from '../../core/logging';
 import { engineExportSource, exportSchemas, formAnswerReader } from './engineSource';
+import { staffFileLinked } from './fileLinks';
 import { exportFormat } from './formats';
 import { exportFieldNames } from './schemaFields';
 import { sizeLimit } from './sizeLimit';
@@ -130,7 +132,10 @@ const runExport = async ({
         progress();
       },
     );
-    const text = format.serialize(rows, {
+    const designerUrl = env.getDesignerAppUrl();
+    if (!designerUrl)
+      log.warn({ jobId: job.id }, 'DESIGNER_APP_URL unset; export keeps stored file links');
+    const text = format.serialize(staffFileLinked(rows, job.formId, designerUrl), {
       fields: params.fields ?? exportFieldNames(schemas),
       layout: params.layout,
       schemas,
