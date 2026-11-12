@@ -93,22 +93,22 @@ interface Cell {
 }
 
 /** One spooled submission laid out as CSV rows. */
-type Layout = (record: Record<string, unknown>, addresses: string[]) => Cell[][];
+type Layout = (record: Record<string, unknown>, unwinds: (path: string) => boolean) => Cell[][];
 
 const join = (path: string, key: string) => (path ? `${path}.${key}` : key);
 
 /** The path is the field or sits under it. */
 const within = (path: string, field: string) => path === field || path.startsWith(`${field}.`);
 
-/** Paths of the record's arrays, parents first; an address keeps its arrays whole. */
-const arrayPaths = (value: unknown, path: string, addresses: string[]): string[] => {
+/** Paths of the record's arrays to unwind, parents first; any other array stays whole. */
+const arrayPaths = (value: unknown, path: string, unwinds: (path: string) => boolean): string[] => {
   if (value === null || typeof value !== 'object') return [];
-  if (addresses.some((address) => within(path, address))) return [];
   if (Array.isArray(value)) {
-    return [path, ...value.flatMap((item) => arrayPaths(item, path, addresses))];
+    if (!unwinds(path)) return [];
+    return [path, ...value.flatMap((item) => arrayPaths(item, path, unwinds))];
   }
   return Object.entries(value).flatMap(([key, child]) =>
-    arrayPaths(child, join(path, key), addresses),
+    arrayPaths(child, join(path, key), unwinds),
   );
 };
 
@@ -117,15 +117,14 @@ const flattenObjects = flatten({ objects: true, arrays: false, separator: '.' })
 /** One row per array item, as CHEFS 1; `blankOut` leaves a repeated row's other cells empty. */
 const multiRow =
   (blankOut: boolean): Layout =>
-  (record, addresses) =>
-    unwind({ paths: [...new Set(arrayPaths(record, '', addresses))], blankOut })(record).map(
-      (row) =>
-        Object.entries(flattenObjects(row)).map(([column, value]) => ({
-          column,
-          field: column,
-          indexes: [],
-          value,
-        })),
+  (record, unwinds) =>
+    unwind({ paths: [...new Set(arrayPaths(record, '', unwinds))], blankOut })(record).map((row) =>
+      Object.entries(flattenObjects(row)).map(([column, value]) => ({
+        column,
+        field: column,
+        indexes: [],
+        value,
+      })),
     );
 
 /** Each leaf under its indexed column; indexes are tracked, since option values can be numbers. */
@@ -194,6 +193,10 @@ export const csvFormat: ExportFormatDefinition = {
     const layout = LAYOUTS[layoutCode];
     const everyField = layoutCode === 'unFormattedCSVExport';
     const addresses = addressFields(schemas);
+    // An address keeps its arrays whole; an unticked array would only add blank rows.
+    const unwinds = (path: string) =>
+      !addresses.some((address) => within(path, address)) &&
+      fields.some((ticked) => within(ticked, path) || within(path, ticked));
     const fieldNames = exportFieldNames(schemas);
     const columns = new Map<string, ColumnRank>();
     async function* spoolLines(): AsyncIterable<string> {
@@ -201,7 +204,7 @@ export const csvFormat: ExportFormatDefinition = {
         // The submission's facts last, so an answer named `form` cannot replace them.
         const record: Record<string, unknown> = { ...row.answers, form: submissionFacts(row) };
         delete record.submit;
-        for (const cell of layout(record, addresses).flat()) {
+        for (const cell of layout(record, unwinds).flat()) {
           if (columns.has(cell.column) || within(cell.column, 'form')) continue;
           const ticked = everyField || fields.some((field) => within(cell.field, field));
           const position = ticked ? fieldPosition(cell.field, fieldNames) : -1;
@@ -239,7 +242,7 @@ export const csvFormat: ExportFormatDefinition = {
       try {
         for await (const line of createInterface({ input, crlfDelay: Infinity })) {
           signal.throwIfAborted();
-          for (const cells of layout(JSON.parse(line), addresses)) {
+          for (const cells of layout(JSON.parse(line), unwinds)) {
             const values = new Map(cells.map((cell) => [cell.column, cell.value]));
             yield `${header.map((column) => csvCell(values.get(column))).join(',')}\r\n`;
           }

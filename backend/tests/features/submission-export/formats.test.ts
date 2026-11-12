@@ -185,12 +185,15 @@ describe('csvFormat, every layout', () => {
   });
 
   it.each(LAYOUTS.filter((layout) => layout !== 'unFormattedCSVExport'))(
-    '%s: an unticked grid leaves its columns out',
+    '%s: an unticked grid leaves its columns and rows out',
     async (layout) => {
-      const lines = await csvLines([{ applicantName: 'Sam', dependants: [{ name: 'Casey' }] }], {
-        layout,
-        fields: ['form.confirmationId', 'applicantName'],
-      });
+      const lines = await csvLines(
+        [{ applicantName: 'Sam', dependants: [{ name: 'Casey' }, { name: 'Riley' }] }],
+        {
+          layout,
+          fields: ['form.confirmationId', 'applicantName'],
+        },
+      );
       expect(lines).toEqual(['form.confirmationId,applicantName', 'EF56GH78,Sam', '']);
     },
   );
