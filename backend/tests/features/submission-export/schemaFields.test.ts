@@ -158,18 +158,25 @@ describe('exportFieldNames', () => {
       ],
     };
 
-    expect(exportFieldNames([newest, older])).toEqual([...SUBMISSION, 'name', 'phone']);
+    expect(
+      exportFieldNames([
+        { versionId: 'v2', schema: newest },
+        { versionId: 'v1', schema: older },
+      ]),
+    ).toEqual([...SUBMISSION, 'name', 'phone']);
   });
 
   it("lists only the submission's fields without a schema, or one with no components", () => {
     expect(exportFieldNames([])).toEqual(SUBMISSION);
-    expect(exportFieldNames([{ display: 'form' }])).toEqual(SUBMISSION);
+    expect(exportFieldNames([{ versionId: 'v1', schema: { display: 'form' } }])).toEqual(
+      SUBMISSION,
+    );
   });
 });
 
 describe('addressFields', () => {
-  it("lists every schema's address components, nested ones under their grid, once each", () => {
-    const newest = {
+  it("lists the schema's address components, nested ones under their grid", () => {
+    const schema = {
       components: [
         { type: 'address', key: 'home', input: true },
         {
@@ -182,8 +189,7 @@ describe('addressFields', () => {
         { type: 'datagrid', key: 'mailingAddresses', input: true, tree: true, components: [] },
       ],
     };
-    const older = { components: [{ type: 'address', key: 'home', input: true }] };
 
-    expect(addressFields([newest, older])).toEqual(['home', 'grid.where']);
+    expect(addressFields(schema)).toEqual(['home', 'grid.where']);
   });
 });

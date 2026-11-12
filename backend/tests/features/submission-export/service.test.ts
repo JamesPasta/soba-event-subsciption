@@ -187,6 +187,7 @@ describe('submissionExportService.fields', () => {
     'ref-v2': { components: [field('name'), field('email')] },
     'ref-v1': { components: [field('phone'), field('name')] },
   };
+  const refs = (...names: string[]) => names.map((ref) => ({ versionId: ref.slice(4), ref }));
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -198,7 +199,7 @@ describe('submissionExportService.fields', () => {
   });
 
   it("lists the newest version's fields first, then fields only older versions have", async () => {
-    jest.mocked(exportSchemaRefs).mockResolvedValue(['ref-v2', 'ref-v1']);
+    jest.mocked(exportSchemaRefs).mockResolvedValue(refs('ref-v2', 'ref-v1'));
 
     const { fields } = await submissionExportService.fields(ctx, {});
 
@@ -211,7 +212,7 @@ describe('submissionExportService.fields', () => {
   });
 
   it("lists only the chosen version's fields", async () => {
-    jest.mocked(exportSchemaRefs).mockResolvedValue(['ref-v1']);
+    jest.mocked(exportSchemaRefs).mockResolvedValue(refs('ref-v1'));
 
     const { fields } = await submissionExportService.fields(ctx, { formVersionId: 'v1' });
 
@@ -229,7 +230,7 @@ describe('submissionExportService.fields', () => {
   });
 
   it('leaves out a version the engine no longer has', async () => {
-    jest.mocked(exportSchemaRefs).mockResolvedValue(['ref-v2', 'ref-gone', 'ref-v1']);
+    jest.mocked(exportSchemaRefs).mockResolvedValue(refs('ref-v2', 'ref-gone', 'ref-v1'));
     jest
       .mocked(readEngineSchema)
       .mockImplementation((_code, ref) =>
@@ -249,7 +250,7 @@ describe('submissionExportService.fields', () => {
   });
 
   it('fails when the engine cannot be read', async () => {
-    jest.mocked(exportSchemaRefs).mockResolvedValue(['ref-v2']);
+    jest.mocked(exportSchemaRefs).mockResolvedValue(refs('ref-v2'));
     jest.mocked(readEngineSchema).mockRejectedValue(new Error('engine down'));
 
     await expect(submissionExportService.fields(ctx, {})).rejects.toThrow('engine down');

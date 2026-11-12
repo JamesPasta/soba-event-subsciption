@@ -97,6 +97,7 @@ const components: FormComponent[] = [
     ],
   },
   { type: 'address', key: 'home', input: true },
+  { type: 'address', key: 'sites', input: true, multiple: true },
   {
     type: 'datagrid',
     key: 'mailingAddresses',
@@ -120,7 +121,7 @@ const collect = async (text: AsyncIterable<string>): Promise<string> => {
 
 const writeOptions = (options: Partial<ExportWriteOptions> = {}): ExportWriteOptions => ({
   fields: ['form.confirmationId', ...flattenComponents(components)],
-  schemas: [{ components }],
+  schemas: [{ versionId: 'v1', schema: { components } }],
   maxBytes: 1_000_000,
   signal: new AbortController().signal,
   ...options,
@@ -149,37 +150,45 @@ const LAYOUTS: SubmissionExportLayout[] = [
 ];
 
 describe('csvFormat, every layout', () => {
-  it.each<[SubmissionExportLayout, string]>([
+  it.each<[SubmissionExportLayout, string, string]>([
     [
       'multiRowEmptySpacesCSVExport',
-      'form.confirmationId,applicantName,upload.name,upload.url,count',
+      'form.confirmationId,applicantName,upload,upload.name,upload.url,count',
+      'EF56GH78,Zoë,,a.pdf,/f/1,3',
     ],
     [
       'multiRowBackFilledCSVExport',
-      'form.confirmationId,applicantName,upload.name,upload.url,count',
+      'form.confirmationId,applicantName,upload,upload.name,upload.url,count',
+      'EF56GH78,Zoë,,a.pdf,/f/1,3',
     ],
-    ['singleRowCSVExport', 'form.confirmationId,applicantName,upload.0.name,upload.0.url,count'],
-    ['unFormattedCSVExport', 'form,applicantName,upload,count'],
-  ])('%s writes a BOM, then columns in schema order', async (layout, header) => {
+    [
+      'singleRowCSVExport',
+      'form.confirmationId,applicantName,upload.0.name,upload.0.url,count',
+      'EF56GH78,Zoë,a.pdf,/f/1,3',
+    ],
+    [
+      'unFormattedCSVExport',
+      'form,applicantName,upload,count',
+      ',Zoë,"[{""name"":""a.pdf"",""url"":""/f/1""}]",3',
+    ],
+  ])('%s writes a BOM, then columns in schema order', async (layout, header, rowEnd) => {
     const lines = await csvLines(
       [{ count: 3, upload: [{ name: 'a.pdf', url: '/f/1' }], applicantName: 'Zoë', stray: 'x' }],
-      { layout },
+      { layout, fields: ['form.confirmationId', 'applicantName', 'upload', 'count'] },
     );
     expect(lines[0]).toBe(header);
+    expect(lines[1].endsWith(rowEnd)).toBe(true);
   });
 
   it.each<[SubmissionExportLayout, string]>([
-    ['multiRowEmptySpacesCSVExport', 'form.confirmationId,dependants.name,dependants.age'],
-    ['multiRowBackFilledCSVExport', 'form.confirmationId,dependants.name,dependants.age'],
-    ['singleRowCSVExport', 'form.confirmationId,dependants.0.name,dependants.0.age'],
+    ['multiRowEmptySpacesCSVExport', 'form.confirmationId,dependants.name'],
+    ['multiRowBackFilledCSVExport', 'form.confirmationId,dependants.name'],
+    ['singleRowCSVExport', 'form.confirmationId,dependants.0.name'],
     ['unFormattedCSVExport', 'form,applicantName,dependants'],
-  ])('%s: a ticked grid pulls in its columns', async (layout, header) => {
+  ])("%s: a grid's column follows its own field's tick", async (layout, header) => {
     const lines = await csvLines(
       [{ applicantName: 'Sam', dependants: [{ name: 'Casey', age: 12 }] }],
-      {
-        layout,
-        fields: ['form.confirmationId', 'dependants'],
-      },
+      { layout, fields: ['form.confirmationId', 'dependants', 'dependants.name'] },
     );
     expect(lines[0]).toBe(header);
   });
@@ -207,32 +216,52 @@ describe('csvFormat, every layout', () => {
   });
 
   it.each<[SubmissionExportLayout, string]>([
-    ['multiRowEmptySpacesCSVExport', 'form.confirmationId'],
-    ['multiRowBackFilledCSVExport', 'form.confirmationId'],
+    ['multiRowEmptySpacesCSVExport', 'form.confirmationId,applicantName,dependants.name'],
+    ['multiRowBackFilledCSVExport', 'form.confirmationId,applicantName,dependants.name'],
     ['singleRowCSVExport', 'form.confirmationId'],
     ['unFormattedCSVExport', 'form'],
   ])('%s writes only the header when there are no rows', async (layout, header) => {
-    expect(await csvLines([], { layout })).toEqual([header, '']);
+    const fields = ['form.confirmationId', 'applicantName', 'dependants', 'dependants.name'];
+    expect(await csvLines([], { layout, fields })).toEqual([header, '']);
+  });
+
+  it.each(LAYOUTS)('%s escapes line separators in the spool', async (layout) => {
+    for (const code of [0x2028, 0x2029]) {
+      const text = `a${String.fromCodePoint(code)}b`;
+      const lines = await csvLines([{ applicantName: text }], {
+        layout,
+        fields: ['applicantName'],
+      });
+      expect(lines[1].endsWith(text)).toBe(true);
+    }
   });
 });
 
 describe('csvFormat, single row', () => {
   const layout = 'singleRowCSVExport';
 
-  it('indexes columns up to the longest grid across rows, by field then index', async () => {
+  it('indexes columns up to the longest grid across rows, grid row by grid row', async () => {
     const lines = await csvLines(
       [
         { dependants: [{ name: 'Casey', age: 12 }] },
         { dependants: [{ name: 'Riley', age: 4 }, { name: 'Jo' }] },
       ],
-      { layout, fields: ['form.confirmationId', 'dependants'] },
+      { layout, fields: ['form.confirmationId', 'dependants.name', 'dependants.age'] },
     );
     expect(lines).toEqual([
-      'form.confirmationId,dependants.0.name,dependants.1.name,dependants.0.age',
-      'EF56GH78,Casey,,12',
-      'EF56GH78,Riley,Jo,4',
+      'form.confirmationId,dependants.0.name,dependants.0.age,dependants.1.name',
+      'EF56GH78,Casey,12,',
+      'EF56GH78,Riley,4,Jo',
       '',
     ]);
+  });
+
+  it('orders a grid inside a grid by row at each level', async () => {
+    const lines = await csvLines(
+      [{ dependants: [{ name: 'Casey', pets: [{ kind: 'cat' }] }, { name: 'Riley' }] }],
+      { layout, fields: ['dependants.name', 'dependants.pets.kind'] },
+    );
+    expect(lines[0]).toBe('dependants.0.name,dependants.0.pets.0.kind,dependants.1.name');
   });
 
   it('keeps a numeric option value, and one holding dots, as fields', async () => {
@@ -243,10 +272,18 @@ describe('csvFormat, single row', () => {
     expect(lines.slice(0, 2)).toEqual(['sel.1,sel.1.5', 'true,false']);
   });
 
+  it('writes only the ticked option when another option holds its value with dots', async () => {
+    const lines = await csvLines([{ sel: { '1': true, '1.5': false } }], {
+      layout,
+      fields: ['sel.1'],
+    });
+    expect(lines.slice(0, 2)).toEqual(['sel.1', 'true']);
+  });
+
   it('finds the parts of a manual address under its address key', async () => {
     const lines = await csvLines(
       [{ addr: { mode: 'manual', address: { address1: '1 Main St', city: 'Victoria' } } }],
-      { layout, fields: ['addr'] },
+      { layout, fields: ['addr', 'addr.address.address1', 'addr.address.city'] },
     );
     expect(lines.slice(0, 2)).toEqual([
       'addr.mode,addr.address.address1,addr.address.city',
@@ -256,10 +293,12 @@ describe('csvFormat, single row', () => {
 });
 
 describe('csvFormat, multi-row', () => {
-  const fields = ['form.confirmationId', 'applicantName', 'dependants'];
+  const fields = ['form.confirmationId', 'applicantName', 'dependants.name'];
   const answers = { applicantName: 'Sam', dependants: [{ name: 'Casey' }, { name: 'Riley' }] };
+  const backFilled: SubmissionExportLayout = 'multiRowBackFilledCSVExport';
+  const blankedOut: SubmissionExportLayout = 'multiRowEmptySpacesCSVExport';
 
-  it('leaves the other cells of a repeated row blank with indentation spaces', async () => {
+  it('leaves the other cells of a repeated row empty', async () => {
     expect(await csvLines([answers], { layout: 'multiRowEmptySpacesCSVExport', fields })).toEqual([
       'form.confirmationId,applicantName,dependants.name',
       'EF56GH78,Sam,Casey',
@@ -277,28 +316,56 @@ describe('csvFormat, multi-row', () => {
     ]);
   });
 
-  it('unwinds a grid inside a grid', async () => {
-    const lines = await csvLines(
-      [
-        {
-          dependants: [
-            { name: 'Casey', pets: [{ kind: 'cat' }, { kind: 'dog' }] },
-            { name: 'Riley' },
-          ],
-        },
-      ],
-      { layout: 'multiRowBackFilledCSVExport', fields: ['dependants'] },
-    );
-    expect(lines).toEqual([
+  const nested = {
+    dependants: [{ name: 'Casey', pets: [{ kind: 'cat' }, { kind: 'dog' }] }, { name: 'Riley' }],
+  };
+  const nestedFields = ['dependants.name', 'dependants.pets.kind'];
+
+  it.each<[SubmissionExportLayout, string[]]>([
+    [backFilled, ['Casey,cat', 'Casey,dog', 'Riley,']],
+    [blankedOut, ['Casey,cat', ',dog', 'Riley,']],
+  ])('%s unwinds a grid inside a grid', async (layout, lines) => {
+    expect(await csvLines([nested], { layout, fields: nestedFields })).toEqual([
       'dependants.name,dependants.pets.kind',
-      'Casey,cat',
-      'Casey,dog',
-      'Riley,',
+      ...lines,
       '',
     ]);
   });
 
-  it('keeps an address whole but unwinds a grid named like one', async () => {
+  it.each<[SubmissionExportLayout, string[]]>([
+    [backFilled, ['A,1', 'A,2', 'B,1', 'B,2']],
+    [blankedOut, ['A,1', ',2', 'B,']],
+  ])('%s crosses sibling grids, as CHEFS 1', async (layout, lines) => {
+    const siblings = {
+      dependants: [{ name: 'A' }, { name: 'B' }],
+      mailingAddresses: [{ street: '1' }, { street: '2' }],
+    };
+    const fields = ['dependants.name', 'mailingAddresses.street'];
+    expect(await csvLines([siblings], { layout, fields })).toEqual([
+      'dependants.name,mailingAddresses.street',
+      ...lines,
+      '',
+    ]);
+  });
+
+  it('lists every ticked schema field, answered or not', async () => {
+    const lines = await csvLines([{ count: 1 }], {
+      layout: backFilled,
+      fields: ['applicantName', 'dependants', 'dependants.name', 'count'],
+    });
+    expect(lines).toEqual(['applicantName,dependants.name,count', ',,1', '']);
+  });
+
+  it.each([backFilled, blankedOut])(
+    '%s gives a grid ticked without its fields no rows or columns',
+    async (layout) => {
+      expect(
+        await csvLines([answers], { layout, fields: ['form.confirmationId', 'dependants'] }),
+      ).toEqual(['form.confirmationId', 'EF56GH78', '']);
+    },
+  );
+
+  it("keeps what's inside an address whole but unwinds a grid named like one", async () => {
     const lines = await csvLines(
       [
         {
@@ -306,19 +373,61 @@ describe('csvFormat, multi-row', () => {
           mailingAddresses: [{ street: '1 A St' }, { street: '2 B St' }],
         },
       ],
-      { layout: 'multiRowBackFilledCSVExport', fields: ['home', 'mailingAddresses'] },
+      { layout: backFilled, fields: ['home', 'mailingAddresses.street'] },
     );
     expect(lines).toEqual([
-      'home.coordinates,mailingAddresses.street',
-      '"[48.4,-123.3]",1 A St',
-      '"[48.4,-123.3]",2 B St',
+      'home,home.coordinates,mailingAddresses.street',
+      ',"[48.4,-123.3]",1 A St',
+      ',"[48.4,-123.3]",2 B St',
       '',
     ]);
   });
 
+  it('gives each address of a multiple address its own row, as CHEFS 1', async () => {
+    const lines = await csvLines([{ sites: [{ label: 'A', geo: [1, 2] }, { label: 'B' }] }], {
+      layout: backFilled,
+      fields: ['sites'],
+    });
+    expect(lines).toEqual(['sites,sites.label,sites.geo', ',A,"[1,2]"', ',B,', '']);
+  });
+
+  it("uses each version's own addresses", async () => {
+    const grid: FormComponent = {
+      type: 'datagrid',
+      key: 'site',
+      input: true,
+      tree: true,
+      components: [
+        {
+          type: 'datagrid',
+          key: 'rooms',
+          input: true,
+          tree: true,
+          components: [{ type: 'textfield', key: 'label', input: true }],
+        },
+      ],
+    };
+    const schemas = [
+      { versionId: 'v2', schema: { components: [grid] } },
+      { versionId: 'v1', schema: { components: [{ type: 'address', key: 'site', input: true }] } },
+    ];
+    const row = {
+      ...rows[1],
+      versionId: 'v2',
+      answers: { site: [{ rooms: [{ label: 'a' }, { label: 'b' }] }] },
+    };
+    const text = await collect(
+      csvFormat.serialize(
+        each([row]),
+        writeOptions({ layout: backFilled, fields: ['site.rooms.label'], schemas }),
+      ),
+    );
+    expect(text.slice(1).split('\r\n')).toEqual(['site.rooms.label', 'a', 'b', '']);
+  });
+
   it('writes each number in a grid as a number', async () => {
     const lines = await csvLines([{ dependants: [{ age: -1 }, { age: 2 }] }], {
-      layout: 'multiRowBackFilledCSVExport',
+      layout: backFilled,
       fields: ['dependants.age'],
     });
     expect(lines).toEqual(['dependants.age', '-1', '2', '']);
@@ -359,14 +468,17 @@ describe('csvFormat cells', () => {
       fields: ['constructor', 'valueOf'],
       schemas: [
         {
-          components: [
-            { type: 'textfield', key: 'constructor', input: true },
-            { type: 'textfield', key: 'valueOf', input: true },
-          ],
+          versionId: 'v1',
+          schema: {
+            components: [
+              { type: 'textfield', key: 'constructor', input: true },
+              { type: 'textfield', key: 'valueOf', input: true },
+            ],
+          },
         },
       ],
     });
-    expect(lines).toEqual(['constructor', 'built', '']);
+    expect(lines).toEqual(['constructor,valueOf', 'built,', '']);
   });
 
   it("writes the submitter's facts", async () => {
@@ -388,12 +500,20 @@ describe('csvFormat cells', () => {
 });
 
 describe('csvFormat spool', () => {
-  it('fails as too large once the spooled rows pass maxBytes', async () => {
-    const written = collect(csvFormat.serialize(each(rows), writeOptions({ maxBytes: 100 })));
+  it('fails as too large once the CSV rows must pass maxBytes', async () => {
+    const written = collect(csvFormat.serialize(each(rows), writeOptions({ maxBytes: 50 })));
     await expect(written).rejects.toThrow(JobFailedError);
     await expect(
-      collect(csvFormat.serialize(each(rows), writeOptions({ maxBytes: 100 }))),
+      collect(csvFormat.serialize(each(rows), writeOptions({ maxBytes: 50 }))),
     ).rejects.toThrow(EXPORT_TOO_LARGE);
+  });
+
+  it('counts only the ticked cells against maxBytes', async () => {
+    const lines = await csvLines(
+      [{ applicantName: 'Sam', dependants: [{ name: 'x'.repeat(5000) }] }],
+      { fields: ['applicantName'], maxBytes: 100 },
+    );
+    expect(lines).toEqual(['applicantName', 'Sam', '']);
   });
 
   it('removes the spool when reading the rows fails', async () => {

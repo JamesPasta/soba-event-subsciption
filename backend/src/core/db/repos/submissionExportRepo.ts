@@ -247,19 +247,17 @@ export const exportSchemaRefsWhere = (
 
 export const newestVersionFirst = desc(formVersions.versionNo);
 
-/** The engine schema refs of the versions an export covers, newest version first. */
-export const exportSchemaRefs = async (
+/** The engine schema refs of the versions an export covers, by version, newest version first. */
+export const exportSchemaRefs = (
   workspaceId: string,
   formId: string,
   formVersionId?: string,
-): Promise<string[]> => {
-  const rows = await quietDb
-    .select({ ref: sql<string>`${formVersions.engineSchemaRef}` })
+): Promise<Array<{ versionId: string; ref: string }>> =>
+  quietDb
+    .select({ versionId: formVersions.id, ref: sql<string>`${formVersions.engineSchemaRef}` })
     .from(formVersions)
     .where(exportSchemaRefsWhere(workspaceId, formId, formVersionId))
     .orderBy(newestVersionFirst);
-  return rows.map((row) => row.ref);
-};
 
 /** Which of a form's submissions an export reads. */
 export interface ExportSubmissionRange {
