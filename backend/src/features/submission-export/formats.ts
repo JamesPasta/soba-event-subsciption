@@ -244,6 +244,74 @@ interface Column {
 /** A spooled cell: its column's id and its CSV text. */
 type SpooledCell = [id: number, text: string];
 
+/** How one version's rows are laid out. */
+interface VersionRules {
+  /** The ticked fields that give a column. */
+  columnFields: string[];
+  /** Whether the array at the path gives a row per item. */
+  unwinds: (arrayPath: string) => boolean;
+  /** Whether a cell at the column, under the field, is written. */
+  keeps: (column: string, field: string) => boolean;
+}
+
+/** The map's value for the key, worked out the first time it is asked for. */
+const cached = <V>(map: Map<string, V>, key: string, work: () => V): V => {
+  const known = map.get(key);
+  if (known !== undefined) return known;
+  const value = work();
+  map.set(key, value);
+  return value;
+};
+
+/**
+ * A version's rules, from its own fields, those holding fields and its addresses. Every row asks
+ * about the same arrays and columns, so the answers are kept.
+ */
+const versionRules = (
+  ticked: Set<string>,
+  everyField: boolean,
+  version: ExportSchema,
+): VersionRules => {
+  const own = exportFieldNames([version]);
+  const parents = parentFields([version]);
+  const addresses = addressFields(version.schema);
+  const owners = new Map<string, number>();
+  /** The version's field the path is or sits under, as `fieldPosition` finds it. */
+  const ownerOf = (path: string): string | undefined =>
+    own[cached(owners, path, () => fieldPosition(path, own))];
+  /** The path's column comes from a ticked field: one with no fields under it, or one above it. */
+  const tickedOwner = (path: string): boolean => {
+    const owner = ownerOf(path);
+    return owner !== undefined && ticked.has(owner) && (!parents.has(owner) || owner !== path);
+  };
+  const columnFields = own.filter((name) => ticked.has(name) && !parents.has(name));
+  // An array unwinds only when it holds a ticked column.
+  const holdsColumn = (arrayPath: string): boolean =>
+    columnFields.some((name) => name.startsWith(`${arrayPath}.`)) || tickedOwner(arrayPath);
+  const unwound = new Map<string, boolean>();
+  const kept = new Map<string, boolean>();
+  return {
+    columnFields,
+    // An address's own list unwinds, as CHEFS 1; the provider's result inside it stays whole.
+    unwinds: (arrayPath) =>
+      !addresses.some((address) => arrayPath.startsWith(`${address}.`)) &&
+      cached(unwound, arrayPath, () => holdsColumn(arrayPath)),
+    keeps: (column, field) =>
+      cached(
+        kept,
+        column,
+        () => ownerOf(field) !== undefined && (everyField || tickedOwner(field)),
+      ),
+  };
+};
+
+/** For a row whose version has no schema: what any version would do. */
+const anyVersionRules = (versions: VersionRules[]): VersionRules => ({
+  columnFields: [],
+  unwinds: (arrayPath) => versions.some((rules) => rules.unwinds(arrayPath)),
+  keeps: (column, field) => versions.some((rules) => rules.keeps(column, field)),
+});
+
 // JSON leaves these two line separators unescaped, and readline would end a line at either.
 const LINE_SEPARATORS = new RegExp(`[${String.fromCodePoint(0x2028, 0x2029)}]`, 'g');
 
@@ -269,39 +337,16 @@ export const csvFormat: ExportFormatDefinition = {
     const ticked = new Set(fields);
     const fieldNames = exportFieldNames(schemas);
     const positions = new Map<string, number>();
-    const positionOf = (path: string): number => {
-      if (!positions.has(path)) positions.set(path, fieldPosition(path, fieldNames));
-      return positions.get(path) ?? -1;
-    };
-    // A field with fields under it, such as a grid, has no column of its own.
-    const parents = parentFields(schemas);
-    /** The path's column comes from a ticked field: one without fields under it, or one above it. */
-    const tickedOwner = (path: string, position: number): boolean => {
-      const owner = fieldNames[position];
-      return ticked.has(owner) && (!parents.has(owner) || owner !== path);
-    };
+    const positionOf = (path: string): number =>
+      cached(positions, path, () => fieldPosition(path, fieldNames));
 
-    // An array unwinds only when it holds a ticked column; every row asks, so the answer is kept.
-    const holdsTicked = new Map<string, boolean>();
-    const unwindsIn = (addresses: string[]) => (arrayPath: string) => {
-      // An address's own list unwinds, as CHEFS 1; the provider's result inside it stays whole.
-      if (addresses.some((address) => arrayPath.startsWith(`${address}.`))) return false;
-      if (!holdsTicked.has(arrayPath)) {
-        const holds =
-          fields.some((name) => name.startsWith(`${arrayPath}.`)) ||
-          tickedOwner(arrayPath, positionOf(arrayPath));
-        holdsTicked.set(arrayPath, holds);
-      }
-      return holdsTicked.get(arrayPath) ?? false;
-    };
-    // Each version has its own addresses, as one version's address key can be another's grid.
-    const unwindsByVersion = new Map(
-      schemas.map(({ versionId, schema }) => [versionId, unwindsIn(addressFields(schema))]),
+    // A key can be a grid in one version and a text field, a file or an address in another.
+    const rulesByVersion = new Map(
+      schemas.map((version) => [version.versionId, versionRules(ticked, everyField, version)]),
     );
-    const noAddresses = unwindsIn([]);
+    const noVersion = anyVersionRules([...rulesByVersion.values()]);
 
     const columns = new Map<string, Column>();
-    const dropped = new Set<string>();
     const add = (name: string, rank: number[]): Column => {
       const column = { id: columns.size, rank };
       columns.set(name, column);
@@ -311,43 +356,45 @@ export const csvFormat: ExportFormatDefinition = {
       ? ['form']
       : Object.keys(SUBMISSION_FIELDS).filter((field) => ticked.has(field));
     for (const name of formColumns) add(name, [-1]);
-    // Multi-row lists every ticked schema field, as CHEFS 1, answered or not.
+    // Multi-row lists every ticked field that gives a column, as CHEFS 1, answered or not.
     if (
       layoutCode === 'multiRowEmptySpacesCSVExport' ||
       layoutCode === 'multiRowBackFilledCSVExport'
     ) {
+      const given = new Set([...rulesByVersion.values()].flatMap((rules) => rules.columnFields));
       fieldNames.forEach((name, position) => {
-        if (!parents.has(name) && ticked.has(name) && !within(name, 'form')) {
-          add(name, [position]);
-        }
+        if (given.has(name) && !within(name, 'form')) add(name, [position]);
       });
     }
-    /** The cell's column, or null when no ticked schema field gives it. */
-    const columnOf = ({ column: name, field, arrays }: Cell): Column | null => {
+    /** The cell's column, or null when no ticked field gives it in the row's version. */
+    const columnOf = (
+      { column: name, field, arrays }: Cell,
+      rules: VersionRules,
+    ): Column | null => {
+      // The submission's facts are added up front when ticked.
+      if (within(name, 'form')) return columns.get(name) ?? null;
+      if (!rules.keeps(name, field)) return null;
       const known = columns.get(name);
       if (known) return known;
-      if (dropped.has(name)) return null;
-      const position = within(name, 'form') ? -1 : positionOf(field);
-      if (position < 0 || !(everyField || tickedOwner(field, position))) {
-        dropped.add(name);
-        return null;
-      }
       const rank = arrays.flatMap(([array, index]) => [positionOf(array), index]);
-      return add(name, [...rank, position]);
+      return add(name, [...rank, positionOf(field)]);
     };
+    /** The cells written for a row; an empty one is left out, as reading back fills it. */
+    const spooledCells = (cells: Cell[], rules: VersionRules): SpooledCell[] =>
+      cells.flatMap((cell): SpooledCell[] => {
+        const column = columnOf(cell, rules);
+        const text = column ? csvCell(cell.value) : '';
+        return column && text ? [[column.id, text]] : [];
+      });
 
     async function* spoolLines(): AsyncIterable<string> {
       let leastBytes = 0;
       for await (const row of rows) {
         // The submission's facts last, so an answer named `form` cannot replace them.
         const record: Record<string, unknown> = { ...row.answers, form: submissionFacts(row) };
-        delete record.submit;
-        for (const cells of layout(record, unwindsByVersion.get(row.versionId) ?? noAddresses)) {
-          const spooled: SpooledCell[] = [];
-          for (const cell of cells) {
-            const column = columnOf(cell);
-            if (column) spooled.push([column.id, csvCell(cell.value)]);
-          }
+        const rules = rulesByVersion.get(row.versionId) ?? noVersion;
+        for (const cells of layout(record, rules.unwinds)) {
+          const spooled = spooledCells(cells, rules);
           // The least the row adds to the CSV: its cells, a comma per column so far, and CRLF.
           leastBytes += spooled.reduce(
             (bytes, [, text]) => bytes + Buffer.byteLength(text),

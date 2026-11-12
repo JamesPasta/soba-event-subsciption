@@ -15,7 +15,8 @@ import {
   type FormComponent,
 } from '../../../src/features/submission-export/schemaFields';
 import { EXPORT_TOO_LARGE } from '../../../src/features/submission-export/sizeLimit';
-import type { ExportRow } from '../../../src/features/submission-export/source';
+import type { ExportRow, ExportSchema } from '../../../src/features/submission-export/source';
+import type { TempResource } from '../../../src/core/integrations/temp-storage/TempStorageAdapter';
 
 const SPOOL_DIR = path.join(os.tmpdir(), `soba-export-test-${process.pid}`);
 
@@ -23,9 +24,19 @@ jest.mock('../../../src/core/integrations/plugins/PluginRegistry', () => ({
   getTempStorageAdapter: () => mockTempStorage(),
 }));
 
+// Each spool's size as it is removed.
+const spoolSizes: number[] = [];
+
 // Hoisted, so the mock can call it; the spools land in SPOOL_DIR.
 function mockTempStorage() {
-  return createDiskTempStorageAdapter(SPOOL_DIR);
+  const storage = createDiskTempStorageAdapter(SPOOL_DIR);
+  return {
+    ...storage,
+    async remove(spool: TempResource) {
+      if (fs.existsSync(spool.path)) spoolSizes.push(fs.statSync(spool.path).size);
+      await storage.remove(spool);
+    },
+  };
 }
 
 afterEach(() => {
@@ -142,6 +153,25 @@ const csvLines = async (
   return text.slice(1).split('\r\n');
 };
 
+/** Each submission written against its version's schema, as CSV split into lines. */
+const versionLines = async (
+  schemas: ExportSchema[],
+  answers: Array<Pick<ExportRow, 'versionId' | 'answers'>>,
+  options: Partial<ExportWriteOptions>,
+): Promise<string[]> => {
+  const exported = answers.map((answer, index) => ({
+    ...rows[1],
+    submissionId: `s${index}`,
+    ...answer,
+  }));
+  const text = await collect(
+    csvFormat.serialize(each(exported), writeOptions({ schemas, ...options })),
+  );
+  return text.slice(1).split('\r\n');
+};
+
+const textField = (key: string): FormComponent => ({ type: 'textfield', key, input: true });
+
 const LAYOUTS: SubmissionExportLayout[] = [
   'multiRowEmptySpacesCSVExport',
   'multiRowBackFilledCSVExport',
@@ -224,6 +254,23 @@ describe('csvFormat, every layout', () => {
     const fields = ['form.confirmationId', 'applicantName', 'dependants', 'dependants.name'];
     expect(await csvLines([], { layout, fields })).toEqual([header, '']);
   });
+
+  it.each(LAYOUTS)("%s leaves out the submit button's value", async (layout) => {
+    const lines = await csvLines([{ applicantName: 'Sam', submit: true }], { layout });
+    expect(lines[0].split(',')).not.toContain('submit');
+  });
+
+  it.each(LAYOUTS.filter((layout) => layout !== 'unFormattedCSVExport'))(
+    '%s writes a field keyed submit',
+    async (layout) => {
+      const schemas = [{ versionId: 'v1', schema: { components: [textField('submit')] } }];
+      const lines = await versionLines(schemas, [{ versionId: 'v1', answers: { submit: 'yes' } }], {
+        layout,
+        fields: ['submit'],
+      });
+      expect(lines).toEqual(['submit', 'yes', '']);
+    },
+  );
 
   it.each(LAYOUTS)('%s escapes line separators in the spool', async (layout) => {
     for (const code of [0x2028, 0x2029]) {
@@ -365,6 +412,18 @@ describe('csvFormat, multi-row', () => {
     },
   );
 
+  it.each([backFilled, blankedOut])(
+    '%s gives a grid inside a grid, ticked without its fields, no rows',
+    async (layout) => {
+      const fields = ['form.confirmationId', 'applicantName', 'dependants', 'dependants.pets'];
+      expect(await csvLines([{ applicantName: 'Sam', ...nested }], { layout, fields })).toEqual([
+        'form.confirmationId,applicantName',
+        'EF56GH78,Sam',
+        '',
+      ]);
+    },
+  );
+
   it("keeps what's inside an address whole but unwinds a grid named like one", async () => {
     const lines = await csvLines(
       [
@@ -432,6 +491,125 @@ describe('csvFormat, multi-row', () => {
     });
     expect(lines).toEqual(['dependants.age', '-1', '2', '']);
   });
+});
+
+describe('csvFormat, versions', () => {
+  const backFilled: SubmissionExportLayout = 'multiRowBackFilledCSVExport';
+  const person: FormComponent = {
+    type: 'container',
+    key: 'person',
+    input: true,
+    tree: true,
+    components: [textField('first')],
+  };
+  const personSchemas = [
+    { versionId: 'v2', schema: { components: [person] } },
+    { versionId: 'v1', schema: { components: [textField('person')] } },
+  ];
+
+  it.each<SubmissionExportLayout>([backFilled, 'singleRowCSVExport'])(
+    '%s keeps an older answer whose key holds fields in a newer version',
+    async (layout) => {
+      const lines = await versionLines(
+        personSchemas,
+        [
+          { versionId: 'v1', answers: { person: 'Pat' } },
+          { versionId: 'v2', answers: { person: { first: 'Lee' } } },
+        ],
+        { layout, fields: ['person', 'person.first'] },
+      );
+      expect(lines).toEqual(['person,person.first', 'Pat,', ',Lee', '']);
+    },
+  );
+
+  it('unwinds an array only in a version where it holds a ticked column', async () => {
+    const grid: FormComponent = {
+      type: 'datagrid',
+      key: 'x',
+      input: true,
+      tree: true,
+      components: [textField('y')],
+    };
+    const schemas = [
+      { versionId: 'v2', schema: { components: [textField('n'), grid] } },
+      {
+        versionId: 'v1',
+        schema: { components: [textField('n'), { ...textField('x'), multiple: true }] },
+      },
+    ];
+    const lines = await versionLines(
+      schemas,
+      [
+        { versionId: 'v1', answers: { n: 'one', x: ['a', 'b', 'c'] } },
+        { versionId: 'v2', answers: { n: 'two', x: [{ y: 'p' }, { y: 'q' }] } },
+      ],
+      { layout: backFilled, fields: ['n', 'x.y'] },
+    );
+    expect(lines).toEqual(['n,x.y', 'one,', 'two,p', 'two,q', '']);
+  });
+
+  it.each<[SubmissionExportLayout, string[]]>([
+    [backFilled, ['doc,doc.url,doc.name', ',/f/a,a.pdf', '']],
+    ['singleRowCSVExport', ['doc.0.url,doc.0.name', '/f/a,a.pdf', '']],
+  ])("%s takes a cell's field from its row's version", async (layout, expected) => {
+    const grid: FormComponent = {
+      type: 'datagrid',
+      key: 'doc',
+      input: true,
+      tree: true,
+      components: [textField('name')],
+    };
+    const schemas = [
+      { versionId: 'v2', schema: { components: [grid] } },
+      { versionId: 'v1', schema: { components: [{ type: 'file', key: 'doc', input: true }] } },
+    ];
+    const answers = { doc: [{ name: 'a.pdf', url: '/f/a' }] };
+    const lines = await versionLines(schemas, [{ versionId: 'v1', answers }], {
+      layout,
+      fields: ['doc'],
+    });
+    expect(lines).toEqual(expected);
+  });
+
+  it.each(LAYOUTS)(
+    "%s leaves out an older version's button under a newer version's submit field",
+    async (layout) => {
+      const schemas = [
+        { versionId: 'v2', schema: { components: [textField('submit')] } },
+        {
+          versionId: 'v1',
+          schema: { components: [{ type: 'button', key: 'submit', input: true }] },
+        },
+      ];
+      const lines = await versionLines(
+        schemas,
+        [
+          { versionId: 'v1', answers: { submit: true } },
+          { versionId: 'v2', answers: { submit: 'yes' } },
+        ],
+        { layout, fields: ['submit'] },
+      );
+      expect(lines.map((line) => line.split(',').at(-1))).toEqual(['submit', '', 'yes', '']);
+    },
+  );
+
+  it.each<[SubmissionExportLayout, string[]]>([
+    [backFilled, ['person,person.first', 'Zed,', '']],
+    ['singleRowCSVExport', ['person', 'Zed', '']],
+  ])(
+    '%s writes a row whose version has no schema as any version would',
+    async (layout, expected) => {
+      const lines = await versionLines(
+        personSchemas,
+        [{ versionId: 'v0', answers: { person: 'Zed' } }],
+        {
+          layout,
+          fields: ['person', 'person.first'],
+        },
+      );
+      expect(lines).toEqual(expected);
+    },
+  );
 });
 
 describe('csvFormat, unformatted', () => {
@@ -514,6 +692,15 @@ describe('csvFormat spool', () => {
       { fields: ['applicantName'], maxBytes: 100 },
     );
     expect(lines).toEqual(['applicantName', 'Sam', '']);
+  });
+
+  it('leaves an unanswered field out of the spool, and its cell empty', async () => {
+    const layout: SubmissionExportLayout = 'multiRowBackFilledCSVExport';
+    const answered = await csvLines([{ applicantName: 'Sam' }], { layout });
+    const answeredSpool = spoolSizes.at(-1);
+    const blanks = { applicantName: 'Sam', upload: '', home: '', count: '' };
+    expect(await csvLines([blanks], { layout })).toEqual(answered);
+    expect(spoolSizes.at(-1)).toBe(answeredSpool);
   });
 
   it('removes the spool when reading the rows fails', async () => {
