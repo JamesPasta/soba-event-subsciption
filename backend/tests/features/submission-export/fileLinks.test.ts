@@ -65,12 +65,4 @@ describe('staffFileLinked', () => {
       expect(linked.answers).toEqual({ upload: [{ ...file('f1'), url: link }] });
     }
   });
-
-  it('keeps the stored url when DESIGNER_APP_URL is not set', async () => {
-    const [linked] = await collect(
-      staffFileLinked(rowsOf(row({ upload: [file('f1')] })), 'form-1', undefined),
-    );
-
-    expect(linked.answers).toEqual({ upload: [file('f1')] });
-  });
 });

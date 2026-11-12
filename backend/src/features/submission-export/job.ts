@@ -135,7 +135,8 @@ const runExport = async ({
     const designerUrl = env.getDesignerAppUrl();
     if (!designerUrl)
       log.warn({ jobId: job.id }, 'DESIGNER_APP_URL unset; export keeps stored file links');
-    const text = format.serialize(staffFileLinked(rows, job.formId, designerUrl), {
+    const linked = designerUrl ? staffFileLinked(rows, job.formId, designerUrl) : rows;
+    const text = format.serialize(linked, {
       fields: params.fields ?? exportFieldNames(schemas),
       layout: params.layout,
       schemas,

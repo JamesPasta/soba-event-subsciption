@@ -18,11 +18,11 @@ export const withStaffFileLinks = (
   );
 };
 
-/** Each row with its files linked to the staff download page; without a base, as stored. */
+/** Each row with its files linked to the staff download page under `base`. */
 export async function* staffFileLinked(
   rows: AsyncIterable<ExportRow>,
   formId: string,
-  base: string | undefined,
+  base: string,
 ): AsyncIterable<ExportRow> {
   for await (const row of rows) {
     yield {
