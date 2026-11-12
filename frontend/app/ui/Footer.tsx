@@ -1,5 +1,5 @@
 'use client';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Footer as BCFooter } from '@bcgov/design-system-react-components';
 import { useDictionary } from '../[lang]/Providers';
 import styles from './Footer.module.css';
@@ -26,6 +26,7 @@ type FooterProps = React.ComponentProps<typeof BCFooter> & {
 
 const Footer = ({ version, ...props }: FooterProps) => {
   const dict = useDictionary();
+  const footerChromeRef = useRef<HTMLDivElement>(null);
   const copyright =
     props.copyright ?? `© ${new Date().getUTCFullYear()} Government of British Columbia.`;
 
@@ -52,7 +53,7 @@ const Footer = ({ version, ...props }: FooterProps) => {
   // runtime. Cast until the upstream prop widens to ReactNode.
   // The wrapper carries the class: FooterProps has no className.
   return (
-    <div className={styles.chrome}>
+    <div ref={footerChromeRef} className={styles.chrome}>
       <BCFooter {...props} copyright={content as unknown as string} />
     </div>
   );
