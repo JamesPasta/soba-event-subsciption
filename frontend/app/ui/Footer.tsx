@@ -33,7 +33,7 @@ const Footer = ({ version, ...props }: FooterProps) => {
   // The design system injects its stylesheet when its module loads, which is before this mounts.
   // Until then the logo has no colours, so the CSS keeps it hidden until this is set.
   useEffect(() => {
-    headerChromeRef.current?.setAttribute('data-styled', '');
+    footerChromeRef.current?.setAttribute('data-styled', '');
   }, []);
 
   // The space between the spans looks redundant next to the flex gap, but it is what separates
