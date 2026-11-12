@@ -8,7 +8,7 @@ import {
   type SubmissionExportLayout,
 } from '@soba/lib';
 import { getTempStorageAdapter } from '../../core/integrations/plugins/PluginRegistry';
-import { addressFields, exportFieldNames } from './schemaFields';
+import { addressFields, exportFieldNames, parentFields } from './schemaFields';
 import { tooLarge } from './sizeLimit';
 import type { ExportRow, ExportSchema } from './source';
 import { SUBMISSION_FIELDS } from './submissionFields';
@@ -274,13 +274,11 @@ export const csvFormat: ExportFormatDefinition = {
       return positions.get(path) ?? -1;
     };
     // A field with fields under it, such as a grid, has no column of its own.
-    const leafFields = new Set(
-      fieldNames.filter((name) => !fieldNames.some((other) => other.startsWith(`${name}.`))),
-    );
-    /** The path's column comes from a ticked field: a leaf, or one the path sits under. */
+    const parents = parentFields(schemas);
+    /** The path's column comes from a ticked field: one without fields under it, or one above it. */
     const tickedOwner = (path: string, position: number): boolean => {
       const owner = fieldNames[position];
-      return ticked.has(owner) && (leafFields.has(owner) || owner !== path);
+      return ticked.has(owner) && (!parents.has(owner) || owner !== path);
     };
 
     // An array unwinds only when it holds a ticked column; every row asks, so the answer is kept.
@@ -319,7 +317,7 @@ export const csvFormat: ExportFormatDefinition = {
       layoutCode === 'multiRowBackFilledCSVExport'
     ) {
       fieldNames.forEach((name, position) => {
-        if (leafFields.has(name) && ticked.has(name) && !within(name, 'form')) {
+        if (!parents.has(name) && ticked.has(name) && !within(name, 'form')) {
           add(name, [position]);
         }
       });

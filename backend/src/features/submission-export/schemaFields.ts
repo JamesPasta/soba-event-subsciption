@@ -69,8 +69,11 @@ const childComponents = (component: FormComponent): FormComponent[][] => {
   return component.components ? [component.components] : [];
 };
 
-/** Answer columns in form order. */
-export const flattenComponents = (components: FormComponent[] | undefined, path = ''): string[] =>
+/** Answer fields in form order, each with whether fields sit under it, as under a grid. */
+const componentFields = (
+  components: FormComponent[] | undefined,
+  path = '',
+): Array<[field: string, hasFields: boolean]> =>
   (components ?? []).flatMap((component) => {
     if (!component) return [];
     const isLayout =
@@ -80,9 +83,26 @@ export const flattenComponents = (components: FormComponent[] | undefined, path 
       LAYOUT_TYPES.has(component.type ?? '');
     const own = component.tree || !isLayout ? ownPaths(component, path) : [];
     const sub = childPath(component, path);
-    const children = childComponents(component).flatMap((list) => flattenComponents(list, sub));
-    return [...own, ...children];
+    const children = childComponents(component).flatMap((list) => componentFields(list, sub));
+    return [...own.map((field): [string, boolean] => [field, children.length > 0]), ...children];
   });
+
+/** Answer columns in form order. */
+export const flattenComponents = (components: FormComponent[] | undefined, path = ''): string[] =>
+  componentFields(components, path).map(([field]) => field);
+
+/**
+ * The fields with fields under them, such as a grid, in any schema. Taken from the schema, as an
+ * option value can hold dots and so look like a field under another.
+ */
+export const parentFields = (schemas: ExportSchema[]): Set<string> =>
+  new Set(
+    schemas.flatMap(({ schema: { components } }) =>
+      componentFields(Array.isArray(components) ? components : undefined)
+        .filter(([, hasFields]) => hasFields)
+        .map(([field]) => field),
+    ),
+  );
 
 /** Paths of the address components, which hold the provider's result as it came. */
 const addressPaths = (components: FormComponent[] | undefined, path = ''): string[] =>

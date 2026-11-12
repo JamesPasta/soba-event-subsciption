@@ -1,6 +1,7 @@
 import {
   addressFields,
   exportFieldNames,
+  parentFields,
   flattenComponents,
   type FormComponent,
 } from '../../../src/features/submission-export/schemaFields';
@@ -171,6 +172,30 @@ describe('exportFieldNames', () => {
     expect(exportFieldNames([{ versionId: 'v1', schema: { display: 'form' } }])).toEqual(
       SUBMISSION,
     );
+  });
+});
+
+describe('parentFields', () => {
+  it('lists fields with fields under them, not an option value that holds dots', () => {
+    const schema = {
+      components: [
+        {
+          type: 'datagrid',
+          key: 'grid',
+          input: true,
+          tree: true,
+          components: [{ type: 'textfield', key: 'name', input: true }],
+        },
+        {
+          type: 'selectboxes',
+          key: 'sel',
+          input: true,
+          values: [{ value: '1' }, { value: '1.5' }],
+        },
+      ],
+    };
+
+    expect(parentFields([{ versionId: 'v1', schema }])).toEqual(new Set(['grid']));
   });
 });
 
