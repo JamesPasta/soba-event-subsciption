@@ -1,5 +1,5 @@
 /** Column names from a Form.io schema. */
-import { SUBMISSION_FIELDS } from './formats';
+import { SUBMISSION_FIELDS } from './submissionFields';
 
 /** The Form.io component fields the export reads. */
 export interface FormComponent {
@@ -82,6 +82,24 @@ export const flattenComponents = (components: FormComponent[] | undefined, path 
     const children = childComponents(component).flatMap((list) => flattenComponents(list, sub));
     return [...own, ...children];
   });
+
+/** Paths of the address components, which hold the provider's result as it came. */
+const addressPaths = (components: FormComponent[] | undefined, path = ''): string[] =>
+  (components ?? []).flatMap((component) => {
+    if (!component) return [];
+    const own = component.type === 'address' && component.key ? [join(path, component.key)] : [];
+    const sub = childPath(component, path);
+    return [...own, ...childComponents(component).flatMap((list) => addressPaths(list, sub))];
+  });
+
+/** The address fields of every schema, once each. */
+export const addressFields = (schemas: Record<string, unknown>[]): string[] => [
+  ...new Set(
+    schemas.flatMap(({ components }) =>
+      addressPaths(Array.isArray(components) ? components : undefined),
+    ),
+  ),
+];
 
 /**
  * The fields an export can include: the submission's own, then each schema's in form order, once

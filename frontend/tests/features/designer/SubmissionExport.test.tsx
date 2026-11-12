@@ -152,7 +152,7 @@ describe('SubmissionExport', () => {
     startSobaSubmissionExport.mockResolvedValue(QUEUED);
   });
 
-  it('starts as CSV, all versions and all dates, and says the CSV formats are not applied', async () => {
+  it('starts as CSV, all versions and all dates, with no sample notice', async () => {
     await openExport();
 
     expect(radio('CSV').checked).toBe(true);
@@ -160,9 +160,7 @@ describe('SubmissionExport', () => {
     expect(screen.getByTestId('export-version')).toHaveTextContent('All versions');
     expect(screen.queryByTestId('export-range')).toBeNull();
     expect(lastFieldsFilters()).toEqual({ layout: FIRST_LAYOUT });
-    expect(screen.getByTestId('page-notice-submission-export-sample')).toHaveTextContent(
-      'The CSV formats are not applied yet.',
-    );
+    expect(screen.queryByTestId('page-notice-submission-export-sample')).toBeNull();
   });
 
   it.each([

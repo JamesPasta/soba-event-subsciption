@@ -16,6 +16,9 @@ importers:
       '@asteasolutions/zod-to-openapi':
         specifier: ^8.1.0
         version: 8.5.0(zod@4.3.6)
+      '@json2csv/transforms':
+        specifier: ^7.0.8
+        version: 7.0.8
       '@soba/lib':
         specifier: workspace:*
         version: link:../lib
@@ -1193,6 +1196,9 @@ packages:
 
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
+
+  '@json2csv/transforms@7.0.8':
+    resolution: {integrity: sha512-5fOkUCTKTYg5GVX/mJIUDjwH5LSrRpgLciaWkeWvoIuckC7jaHF7HDULIr0qbNX2NZA/2wkTMpukrWUKhmydqw==}
 
   '@jsonjoy.com/base64@1.1.2':
     resolution: {integrity: sha512-q6XAnWQDIMA3+FTiOYajoYqySkO+JSat0ytXGSuRdq9uXE7o92gzuQwQM14xaCRlBLGq3v5miDGC4vkVTn54xA==}
@@ -6826,6 +6832,8 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@js-sdsl/ordered-map@4.4.2': {}
+
+  '@json2csv/transforms@7.0.8': {}
 
   '@jsonjoy.com/base64@1.1.2(tslib@2.8.1)':
     dependencies:

@@ -58,8 +58,9 @@
     "typescript-eslint": "^8.48.0"
   },
   "dependencies": {
-    "@soba/lib": "workspace:*",
     "@asteasolutions/zod-to-openapi": "^8.1.0",
+    "@json2csv/transforms": "^7.0.8",
+    "@soba/lib": "workspace:*",
     "@temporalio/activity": "^1.15.0",
     "@temporalio/client": "^1.15.0",
     "@temporalio/worker": "^1.15.0",
