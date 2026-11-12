@@ -137,7 +137,7 @@ const csvLines = async (
     answers: answer,
   }));
   const text = await collect(csvFormat.serialize(each(exported), writeOptions(options)));
-  expect(text.startsWith('﻿')).toBe(true);
+  expect(text.startsWith('\uFEFF')).toBe(true);
   return text.slice(1).split('\r\n');
 };
 
@@ -407,7 +407,7 @@ describe('csvFormat spool', () => {
     const controller = new AbortController();
     const text = csvFormat.serialize(each(rows), writeOptions({ signal: controller.signal }));
     const chunks = text[Symbol.asyncIterator]();
-    expect((await chunks.next()).value).toBe('﻿');
+    expect((await chunks.next()).value).toBe('\uFEFF');
     await chunks.next();
     controller.abort(new Error('stopped'));
     await expect(chunks.next()).rejects.toThrow('stopped');

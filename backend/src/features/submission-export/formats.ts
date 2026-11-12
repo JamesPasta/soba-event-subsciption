@@ -105,36 +105,27 @@ const arrayPaths = (value: unknown, path: string, addresses: string[]): string[]
   if (value === null || typeof value !== 'object') return [];
   if (addresses.some((address) => within(path, address))) return [];
   if (Array.isArray(value)) {
-    return [
-      path,
-      ...value.flatMap((item) => (Array.isArray(item) ? [] : arrayPaths(item, path, addresses))),
-    ];
+    return [path, ...value.flatMap((item) => arrayPaths(item, path, addresses))];
   }
   return Object.entries(value).flatMap(([key, child]) =>
     arrayPaths(child, join(path, key), addresses),
   );
 };
 
-const flattenObjects = flatten<Record<string, unknown>, Record<string, unknown>>({
-  objects: true,
-  arrays: false,
-  separator: '.',
-});
+const flattenObjects = flatten({ objects: true, arrays: false, separator: '.' });
 
 /** One row per array item, as CHEFS 1; `blankOut` leaves a repeated row's other cells empty. */
 const multiRow =
   (blankOut: boolean): Layout =>
   (record, addresses) =>
-    unwind<Record<string, unknown>, Record<string, unknown>>({
-      paths: [...new Set(arrayPaths(record, '', addresses))],
-      blankOut,
-    })(record).map((row) =>
-      Object.entries(flattenObjects(row)).map(([column, value]) => ({
-        column,
-        field: column,
-        indexes: [],
-        value,
-      })),
+    unwind({ paths: [...new Set(arrayPaths(record, '', addresses))], blankOut })(record).map(
+      (row) =>
+        Object.entries(flattenObjects(row)).map(([column, value]) => ({
+          column,
+          field: column,
+          indexes: [],
+          value,
+        })),
     );
 
 /** Each leaf under its indexed column; indexes are tracked, since option values can be numbers. */
@@ -205,20 +196,17 @@ export const csvFormat: ExportFormatDefinition = {
     const addresses = addressFields(schemas);
     const fieldNames = exportFieldNames(schemas);
     const columns = new Map<string, ColumnRank>();
-    const collect = (record: Record<string, unknown>) => {
-      for (const cell of layout(record, addresses).flat()) {
-        if (columns.has(cell.column) || within(cell.column, 'form')) continue;
-        const ticked = everyField || fields.some((field) => within(cell.field, field));
-        const position = ticked ? fieldPosition(cell.field, fieldNames) : -1;
-        columns.set(cell.column, { position, indexes: cell.indexes, seen: columns.size });
-      }
-    };
     async function* spoolLines(): AsyncIterable<string> {
       for await (const row of rows) {
         // The submission's facts last, so an answer named `form` cannot replace them.
         const record: Record<string, unknown> = { ...row.answers, form: submissionFacts(row) };
         delete record.submit;
-        collect(record);
+        for (const cell of layout(record, addresses).flat()) {
+          if (columns.has(cell.column) || within(cell.column, 'form')) continue;
+          const ticked = everyField || fields.some((field) => within(cell.field, field));
+          const position = ticked ? fieldPosition(cell.field, fieldNames) : -1;
+          columns.set(cell.column, { position, indexes: cell.indexes, seen: columns.size });
+        }
         yield `${JSON.stringify(record)}\n`;
       }
     }
@@ -235,7 +223,7 @@ export const csvFormat: ExportFormatDefinition = {
       const header = [
         ...(everyField
           ? ['form']
-          : Object.keys(SUBMISSION_FIELDS).filter((f) => fields.includes(f))),
+          : Object.keys(SUBMISSION_FIELDS).filter((field) => fields.includes(field))),
         ...[...columns]
           .filter(([, rank]) => rank.position >= 0)
           .sort(
@@ -244,7 +232,7 @@ export const csvFormat: ExportFormatDefinition = {
           )
           .map(([column]) => column),
       ];
-      yield '﻿';
+      yield '\uFEFF';
       yield `${header.map(quoteCell).join(',')}\r\n`;
 
       const input = temp.createReadStream(spool);
