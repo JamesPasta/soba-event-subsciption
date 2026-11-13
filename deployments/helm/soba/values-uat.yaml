@@ -20,11 +20,6 @@ backend:
     minReplicas: 3
     maxReplicas: 6
     targetCPUUtilizationPercentage: 75
-  # Files and templates in S3; credentials and bucket come from Vault.
-  storage:
-    defaultBackend: storage-s3
-    defaultPrefix: uat
-    s3VaultKeyInfix: UAT
   config:
     nodeEnv: production
     logLevel: warn

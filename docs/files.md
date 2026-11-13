@@ -46,29 +46,37 @@ fails on one.
 Renaming a profile, or changing its backend, `BASE_PATH`, bucket or `PREFIX`, after files are stored
 leaves them unreadable until they are moved.
 
-Each feature chooses a profile, a key prefix and an upload limit:
+Each feature chooses a profile, a key prefix and a size limit:
 
-| feature     | profile                                 | prefix                                   | max upload (MB)                   |
-| ----------- | --------------------------------------- | ---------------------------------------- | --------------------------------- |
-| attachments | `FILES_STORAGE_PROFILE` (`default`)     | `FILES_STORAGE_PREFIX` (`attachments`)   | `FILES_MAX_FILE_SIZE_MB` (10)     |
-| templates   | `TEMPLATES_STORAGE_PROFILE` (`default`) | `TEMPLATES_STORAGE_PREFIX` (`templates`) | `TEMPLATES_MAX_FILE_SIZE_MB` (10) |
+| feature     | profile                                   | prefix                                   | max size                                 |
+| ----------- | ----------------------------------------- | ---------------------------------------- | ---------------------------------------- |
+| attachments | `FILES_STORAGE_PROFILE` (`default`)       | `FILES_STORAGE_PREFIX` (`attachments`)   | `FILES_MAX_FILE_SIZE_MB` (10 MB)         |
+| templates   | `TEMPLATES_STORAGE_PROFILE` (`default`)   | `TEMPLATES_STORAGE_PREFIX` (`templates`) | `TEMPLATES_MAX_FILE_SIZE_MB` (10 MB)     |
+| job results | `JOB_RESULTS_STORAGE_PROFILE` (`default`) | `JOB_RESULTS_STORAGE_PREFIX` (`jobs`)    | `JOB_RESULT_MAX_BYTES` (209715200 bytes) |
 
 ### Helm
 
-`backend.storage` configures the `default` profile. Dev, test, UAT and prod use `storage-s3`, each
-under its own `defaultPrefix` (`dev`, `test`, `uat`, `prod`). Their endpoint, bucket and credentials
-come from Vault: `s3VaultKeyInfix` (`DEV`, `TEST`, `UAT`, `PROD`) picks the keys
-`S3_<infix>_ENDPOINT`, `S3_<infix>_BUCKET_NAME`, `S3_<infix>_ACCESS_KEY_ID` and
-`S3_<infix>_ACCESS_SECRET_KEY` in `vault.secretPath`, and every key must be there.
+`backend.storage.profiles` lists the profiles the chart sets up: `default`, `s3` or both.
 
-PR deployments use `storage-local` on the `<fullname>-backend-filestore` PVC (ReadWriteMany,
-`netapp-file-standard`, 1Gi) mounted at `/app/files`, and write nothing to S3. The chart keeps the
-PVC on uninstall unless `global.forceCleanup` is set; the PR close workflow deletes it.
+`default` is `storage-local` on the `<fullname>-backend-filestore` PVC (ReadWriteMany,
+`netapp-file-standard`, 1Gi) mounted at `/app/files`, or `storage-memory`. The chart keeps the PVC
+on uninstall unless `global.forceCleanup` is set; the PR close workflow deletes a PR slot's.
 
-The chart fails on `storage-memory` with more than one replica or with autoscaling, `storage-local`
-without an absolute `defaultBasePath`, `storage-s3` without a valid `defaultPrefix`,
-`s3VaultKeyInfix` without `vault.enabled`, and a malformed feature prefix. Without
-`s3VaultKeyInfix` it does not set the S3 `ACCESS_KEY` or `SECRET_KEY`.
+`s3` is `storage-s3`. Its endpoint, bucket and credentials come from `vault.secretPath` under their
+env var names: `STORAGE_PROFILE_S3_ENDPOINT`, `STORAGE_PROFILE_S3_BUCKET_NAME`,
+`STORAGE_PROFILE_S3_ACCESS_KEY` and `STORAGE_PROFILE_S3_SECRET_KEY`. Every key must be there.
+`s3.prefix`, `s3.port` and `s3.useSsl` set its `PREFIX`, `PORT` and `USE_SSL` when set.
+
+| environment          | `profiles`   | attachments, templates, job results |
+| -------------------- | ------------ | ----------------------------------- |
+| PR                   | `default`    | `default`                           |
+| dev, test, UAT, prod | `default,s3` | `s3`                                |
+
+The chart fails on a profile other than `default` or `s3`, a feature profile that is not listed,
+`s3` without `vault.enabled`, an invalid `s3.prefix`, `s3.port` or `s3.useSsl`, a `default`
+backend other than `storage-local` or `storage-memory`, `storage-memory` with more than one replica
+or with autoscaling, `storage-local` without an absolute `defaultBasePath`, and a malformed feature
+prefix.
 
 ## File store
 

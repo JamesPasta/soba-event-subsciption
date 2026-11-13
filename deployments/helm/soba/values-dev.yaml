@@ -18,11 +18,6 @@ backend:
     limits:
       cpu: 250m
       memory: 512Mi
-  # Files and templates in S3; credentials and bucket come from Vault.
-  storage:
-    defaultBackend: storage-s3
-    defaultPrefix: dev
-    s3VaultKeyInfix: DEV
   config:
     logLevel: debug
     nodeEnv: development
