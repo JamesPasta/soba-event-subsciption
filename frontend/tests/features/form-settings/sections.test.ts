@@ -49,6 +49,7 @@ describe('form settings sections', () => {
       'submitter-settings',
       'review-settings',
       'document-templates',
+      'event-subscription',
       'form-api-keys',
     ]);
   });
