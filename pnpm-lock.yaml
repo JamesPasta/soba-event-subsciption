@@ -212,6 +212,9 @@ importers:
       bootstrap:
         specifier: ^5.3.8
         version: 5.3.8(@popperjs/core@2.11.8)
+      formio-components@0.0.1:
+        specifier: github:bcgov/formio-components#v0.0.1
+        version: '@bcgov/formio-components@https://codeload.github.com/bcgov/formio-components/tar.gz/a9d810778c091ab889a13063ec2d9fc4d3a9ab23(@formio/js@5.4.0-api98.1(@popperjs/core@2.11.8))'
       keycloak-js:
         specifier: ^26.2.3
         version: 26.2.4

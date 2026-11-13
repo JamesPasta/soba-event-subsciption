@@ -33,6 +33,7 @@
     "@formio/react": "6.2.1-api98.0",
     "@reduxjs/toolkit": "^2.11.2",
     "bootstrap": "^5.3.8",
+    "formio-components@0.0.1": "github:bcgov/formio-components#v0.0.1",
     "keycloak-js": "^26.2.3",
     "negotiator": "^1.0.0",
     "next": "16.1.6",
