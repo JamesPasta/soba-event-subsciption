@@ -43,7 +43,7 @@ export function ensureBcgovFormioRegistered(): Promise<{ filesEnabled: boolean }
     await loadFrontendRuntimeConfig().catch(() => {});
 
     const { Formio } = await import('@formio/js');
-    const bcgovMod = (await import('formio-components@0.0.1')) as unknown as BcgovFormioModule;
+    const bcgovMod = (await import('@bcgov/formio-components')) as unknown as BcgovFormioModule;
     const formio = Formio as unknown as FormioWithProviders;
 
     formio.use(bcgovMod.default ?? bcgovMod);

@@ -14,7 +14,7 @@
     "db:dev-data:verify": "tsx src/features/dev-data/access/cli.ts",
     "build": "tsc",
     "serve": "pnpm run build && node dist/src/app.js",
-    "dev": "npx nodemon",
+    "dev": "nodemon",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier . --write",

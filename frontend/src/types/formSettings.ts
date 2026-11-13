@@ -3,6 +3,8 @@ export {
   AUDIENCE_SETTINGS_KEY,
   REVIEW_SETTINGS_KEY,
   SUBMITTER_SETTINGS_KEY,
+  EVENT_SUBSCRIPTION_SETTINGS_KEY,
+  SetEventSubscriptionSettingsBodySchema,
 } from '@soba/lib';
 export type {
   Audience,
@@ -18,5 +20,7 @@ export type {
   SetFormSubmitterSettingsBody,
   SetInheritableSettingsBody,
   SubmitterSettings,
+  EventSubscriptionSettings,
+  SetEventSubscriptionSettingsBody,
   WorkspaceSettings,
 } from '@soba/lib';

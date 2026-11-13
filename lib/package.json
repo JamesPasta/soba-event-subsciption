@@ -15,7 +15,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json -w",
     "prepare": "pnpm run build",
     "test": "jest",

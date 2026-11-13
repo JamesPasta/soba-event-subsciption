@@ -58,6 +58,70 @@ npm run dev --prefix frontend -- --host
 
 Or use the VS Code launch configuration **SOBA Frontend**.
 
+### Start both services on Windows
+
+From PowerShell at the repository root, run:
+
+```powershell
+.\start-soba.ps1
+```
+
+The script builds the shared library, starts the local Docker services,
+initializes the database, and opens the backend and frontend development
+servers in separate PowerShell windows.
+It uses the SOBA PostgreSQL container on port 5432 by default. If another
+service owns that port, it selects a free port in 5440–5499 and reuses the
+container's port on subsequent starts (including `-SkipServices`). Set
+`DATABASE_URL` or the individual `DB_*` variables to use a different database.
+Because no local SSO provider
+is included, it also uses placeholder development IdP values; real IDIR login
+requires overriding the IdP environment variables with valid SSO settings.
+The launcher configures the local Form.io sidecar at `http://localhost:3001`
+with the development credentials from `.devcontainer/docker-compose.yml`, so
+creating forms works when the sidecar is running.
+For endpoint tokens, it generates a per-user development encryption key on the
+first start and reuses the Windows-protected key in
+`%LOCALAPPDATA%\SOBA\event-subscription.key`. An explicitly set
+`SOBA_EVENT_SUBSCRIPTION_ENCRYPTION_KEY` takes precedence; keep that key stable
+so saved tokens remain readable.
+You can optionally enable a development-only local mock administrator with
+`-MockAuth` so the Login button can be exercised without Keycloak; this mock
+requires both `SOBA_LOCAL_MOCK_AUTH=true` and `NODE_ENV=development`.
+The application is available at:
+
+- **Frontend**: http://localhost:3000
+- **Backend**: http://localhost:4000
+
+To start only the application servers when the Docker services are already
+running, use:
+
+```powershell
+.\start-soba.ps1 -SkipServices
+```
+
+To enable the local development mock administrator instead of Keycloak:
+
+```powershell
+.\start-soba.ps1 -SkipServices -MockAuth
+```
+
+When startup detects existing application processes on ports 3000, 3100, or
+4000, it prompts before stopping them. The default response is **Yes**.
+Startup also asks whether to enable local mock authentication. The default
+response is **No**.
+
+To stop the backend and frontend development servers:
+
+```powershell
+.\stop-soba.ps1
+```
+
+To stop the development servers and Docker backing services:
+
+```powershell
+.\stop-soba.ps1 -StopServices
+```
+
 ### MongoDB (Optional)
 
 If enabled in `.devcontainer/docker-compose.yml`, MongoDB runs as a sidecar container and is available at:

@@ -1,5 +1,6 @@
 import { sobaFetch } from '@/src/shared/api/sobaFetch';
 import { parseJson } from '@/src/shared/api/sobaHelpers';
+import { EVENT_SUBSCRIPTION_SETTINGS_KEY } from '@/src/types/formSettings';
 
 const settingsPath = (formId: string, key: string) => `/design/forms/${formId}/settings/${key}`;
 
@@ -26,6 +27,22 @@ export async function setFormSettings<TBody, TSettings>(
     json: body,
   });
   return parseJson(response);
+}
+
+/** Fetches a saved event subscription token only when an editor asks to reveal it. */
+export async function revealFormEventSubscriptionToken(
+  token: string,
+  formId: string,
+): Promise<string> {
+  const response = await sobaFetch(
+    `${settingsPath(formId, EVENT_SUBSCRIPTION_SETTINGS_KEY)}/token`,
+    {
+      token,
+      cache: 'no-store',
+    },
+  );
+  const result = await parseJson<{ token: string }>(response);
+  return result.token;
 }
 
 const workspaceSettingsPath = (workspaceId: string, key: string) =>

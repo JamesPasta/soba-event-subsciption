@@ -13,6 +13,7 @@ let kcInstance: Keycloak.KeycloakInstance | null = null;
 // Distinguishes "the session ended" from "not booted yet": both leave kcInstance null, but only the
 // first means a caller's token is dead and must not be sent.
 let sessionEnded = false;
+const isLocalMockAuthEnabled = process.env.NEXT_PUBLIC_SOBA_LOCAL_MOCK_AUTH === 'true';
 
 export type KeycloakState = {
   token?: string;
@@ -46,6 +47,10 @@ type InitResult = {
 export const initKeycloak = createAsyncThunk<InitResult, void, { rejectValue: string }>(
   'keycloak/init',
   async (_, { rejectWithValue }) => {
+    if (isLocalMockAuthEnabled) {
+      return { authenticated: true, token: 'local-development-token' };
+    }
+
     if (kcInstance) {
       // If we already have an instance (e.g. after a layout remount from a language change),
       // just restore the state from it without re-initializing.
@@ -144,6 +149,12 @@ export const { setToken, setIdTokenParsed, setAuthenticated, clear } = slice.act
 
 // Helper thunks
 export const login = () => async (dispatch: AppDispatch) => {
+  if (isLocalMockAuthEnabled) {
+    dispatch(setToken('local-development-token'));
+    dispatch(setAuthenticated(true));
+    return;
+  }
+
   let kc: Keycloak.KeycloakInstance | null = kcInstance;
   try {
     if (!kc) {

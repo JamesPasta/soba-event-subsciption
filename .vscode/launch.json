@@ -25,15 +25,34 @@
   ],
   "configurations": [
     {
+      "name": "SOBA Start (PowerShell)",
+      "type": "PowerShell",
+      "request": "launch",
+      "script": "${workspaceFolder}/start-soba.ps1"
+    },
+    {
+      "name": "SOBA Stop (PowerShell)",
+      "type": "PowerShell",
+      "request": "launch",
+      "script": "${workspaceFolder}/stop-soba.ps1"
+    },
+    {
       "name": "SOBA Backend",
       "type": "node",
       "request": "launch",
       "cwd": "${workspaceFolder}/backend",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev"],
+      "runtimeExecutable": "corepack",
+      "windows": {
+        "runtimeExecutable": "corepack.cmd"
+      },
+      "runtimeArgs": ["pnpm", "dev"],
       "env": {
         "API_BASE_PATH": "/chefs",
-        "CORS_DEV_ORIGIN": "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3100,http://127.0.0.1:3100,http://localhost:3101,http://127.0.0.1:3101"
+        "CORS_DEV_ORIGIN": "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3100,http://127.0.0.1:3100,http://localhost:3101,http://127.0.0.1:3101",
+        "NODE_ENV": "development",
+        "DATABASE_URL": "postgres://postgres:postgres@localhost:5432/soba",
+        "IDP_PLUGIN_DEFAULT_SSO_JWT_ISSUER": "https://example.test/realms/test",
+        "IDP_PLUGIN_DEFAULT_SSO_JWKS_URI": "https://example.test/realms/test/protocol/openid-connect/certs"
       },
       "skipFiles": ["<node_internals>/**"],
       "console": "integratedTerminal"
@@ -43,11 +62,31 @@
       "type": "node",
       "request": "launch",
       "cwd": "${workspaceFolder}/backend",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["exec", "tsx", "watch", "temporal-worker.ts"],
+      "runtimeExecutable": "corepack",
+      "windows": {
+        "runtimeExecutable": "corepack.cmd"
+      },
+      "runtimeArgs": ["pnpm", "exec", "tsx", "watch", "temporal-worker.ts"],
       "env": {
         "TEMPORAL_TASK_QUEUE": "soba",
         "TEMPORAL_WORKER_HEALTH_PORT": "9090"
+      },
+      "skipFiles": ["<node_internals>/**"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "SOBA Temporal Worker (document-generation)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/backend",
+      "runtimeExecutable": "corepack",
+      "windows": {
+        "runtimeExecutable": "corepack.cmd"
+      },
+      "runtimeArgs": ["pnpm", "exec", "tsx", "watch", "temporal-worker.ts"],
+      "env": {
+        "TEMPORAL_TASK_QUEUE": "document-generation",
+        "TEMPORAL_WORKER_HEALTH_PORT": "9091"
       },
       "skipFiles": ["<node_internals>/**"],
       "console": "integratedTerminal"
@@ -57,8 +96,15 @@
       "type": "node",
       "request": "launch",
       "cwd": "${workspaceFolder}/frontend",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev:combined"],
+      "runtimeExecutable": "corepack",
+      "windows": {
+        "runtimeExecutable": "corepack.cmd"
+      },
+      "runtimeArgs": ["pnpm", "dev:combined"],
+      "env": {
+        "NEXT_PUBLIC_SOBA_API_BASE_URL": "http://localhost:4000/api/v1",
+        "SOBA_API_INTERNAL_URL": "http://localhost:4000/api/v1"
+      },
       "skipFiles": ["<node_internals>/**"],
       "console": "integratedTerminal"
     },
@@ -67,8 +113,11 @@
       "type": "node",
       "request": "launch",
       "cwd": "${workspaceFolder}/frontend",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev:designer"],
+      "runtimeExecutable": "corepack",
+      "windows": {
+        "runtimeExecutable": "corepack.cmd"
+      },
+      "runtimeArgs": ["pnpm", "dev:designer"],
       "skipFiles": ["<node_internals>/**"],
       "console": "integratedTerminal"
     },
@@ -77,8 +126,11 @@
       "type": "node",
       "request": "launch",
       "cwd": "${workspaceFolder}/frontend",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev:forms"],
+      "runtimeExecutable": "corepack",
+      "windows": {
+        "runtimeExecutable": "corepack.cmd"
+      },
+      "runtimeArgs": ["pnpm", "dev:forms"],
       "skipFiles": ["<node_internals>/**"],
       "console": "integratedTerminal"
     },

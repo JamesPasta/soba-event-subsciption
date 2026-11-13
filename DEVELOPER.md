@@ -160,6 +160,20 @@ The devcontainer **initialize** and **post-create** steps copy from example file
 - Frontend uses **[Next.js](https://nextjs.org) built-in** env loading (no extra lib): `.env`, `.env.local`, `.env.development` / `.env.production` are read automatically; expose client-side values via the `NEXT_PUBLIC_` prefix.
 - The devcontainer does **not** inject `backend/.env` or `backend/.env.local` into the container environment; shells and one-off CLI commands only see variables you export yourself. App servers started inside the container still pick up the files through dotenv / Next.js.
 
+**Event Subscription:** To save an endpoint token, set
+`SOBA_EVENT_SUBSCRIPTION_ENCRYPTION_KEY` in the backend's uncommitted
+`.env.local` (or supply it in the server environment). Generate a unique
+32-byte hex key with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`.
+On Windows, `start-soba.ps1` generates and reuses a development key protected
+for the current user at `%LOCALAPPDATA%\SOBA\event-subscription.key` when the
+environment variable is unset. Other launch methods require an explicit key.
+Keep the key stable and backed up: changing or losing it makes saved tokens
+unreadable. The ordinary settings response returns only whether a token is
+saved. The settings page loads the saved token into a masked field through a
+non-cached endpoint requiring `form_update` permission; Show Secret makes it
+visible, and Hide Secret masks it again.
+Event delivery is not implemented by these settings.
+
 ---
 
 ## Backend
