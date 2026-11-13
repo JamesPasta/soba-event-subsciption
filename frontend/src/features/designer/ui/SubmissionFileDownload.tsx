@@ -24,6 +24,11 @@ export function SubmissionFileDownload({
   const router = useRouter();
   const locale = getLocaleFromPath(usePathname());
   const load = useMemo(() => submissionFileLoader(submissionId, fileId), [submissionId, fileId]);
+  const text = dict.fileDownload;
+  const facts = [
+    { name: text.fileId, value: fileId, testId: 'file-id' },
+    { name: text.submissionId, value: submissionId, testId: 'submission-id' },
+  ];
 
   return (
     <div className="mt-3">
@@ -33,7 +38,7 @@ export function SubmissionFileDownload({
       >
         {dict.submission.backToSubmission}
       </Link>
-      <FileDownload load={load} />
+      <FileDownload load={load} facts={facts} />
     </div>
   );
 }

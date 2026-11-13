@@ -1,14 +1,16 @@
-import { withoutTrailingSlashes } from '../emailText';
-import type { EmailLanguage } from './language';
+import { withoutTrailingSlashes } from './url';
 
 declare const safeUrl: unique symbol;
 
 /** An absolute link into one of the apps, made only by the helpers here. */
 export type SafeUrl = string & { readonly [safeUrl]: true };
 
+/** The language segment every app path starts with. */
+export type AppLanguage = 'en' | 'fr';
+
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
-/** Why `base` cannot start an email link, or null when it can. */
+/** Why `base` cannot start an app link, or null when it can. */
 export const appUrlProblem = (base: string): string | null => {
   let url: URL;
   try {
@@ -23,8 +25,8 @@ export const appUrlProblem = (base: string): string | null => {
   return 'must use https, or http on localhost';
 };
 
-/** Stops startup when an app URL that email links start from is set but unusable. */
-export const assertEmailLinkBases = (bases: Readonly<Record<string, string | undefined>>): void => {
+/** Stops startup when an app URL that links start from is set but unusable. */
+export const assertAppLinkBases = (bases: Readonly<Record<string, string | undefined>>): void => {
   for (const [name, base] of Object.entries(bases)) {
     const problem = base ? appUrlProblem(base) : null;
     if (problem) throw new Error(`${name} ${problem}`);
@@ -35,7 +37,7 @@ export const assertEmailLinkBases = (bases: Readonly<Record<string, string | und
 const appLink = (base: string | undefined, segments: readonly string[]): SafeUrl | null => {
   if (!base) return null;
   const problem = appUrlProblem(base);
-  if (problem) throw new Error(`An email link base ${problem}`);
+  if (problem) throw new Error(`An app link base ${problem}`);
   const { origin, pathname } = new URL(base);
   const path = segments.map(encodeURIComponent).join('/');
   return `${origin}${withoutTrailingSlashes(pathname)}/${path}` as SafeUrl;
@@ -44,10 +46,20 @@ const appLink = (base: string | undefined, segments: readonly string[]): SafeUrl
 /** The submission in the designer; opening it needs sign-in and access to the submission. */
 export const designerSubmissionUrl = (
   base: string | undefined,
-  language: EmailLanguage,
+  language: AppLanguage,
   formId: string,
   submissionId: string,
 ): SafeUrl | null => appLink(base, [language, 'build', formId, 'submissions', submissionId]);
+
+/** A submission's uploaded file in the designer; opening it needs sign-in and access to the submission. */
+export const designerSubmissionFileUrl = (
+  base: string | undefined,
+  language: AppLanguage,
+  formId: string,
+  submissionId: string,
+  fileId: string,
+): SafeUrl | null =>
+  appLink(base, [language, 'build', formId, 'submissions', submissionId, 'files', fileId]);
 
 /** A forms-app page for the submission: `submit` to change it, `submission` to read it. */
 export type FormsSubmissionPage = 'submit' | 'submission';
@@ -55,7 +67,7 @@ export type FormsSubmissionPage = 'submit' | 'submission';
 /** The submission in the forms app; opening it needs sign-in as one of its submitters. */
 export const formsSubmissionUrl = (
   base: string | undefined,
-  language: EmailLanguage,
+  language: AppLanguage,
   page: FormsSubmissionPage,
   submissionId: string,
 ): SafeUrl | null => appLink(base, [language, page, submissionId]);

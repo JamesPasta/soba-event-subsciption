@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import { hasAllPermissions, SUBMISSION_EXPORT_LAYOUTS } from '@soba/lib';
-import { JobPool } from '../../core/config/env';
+import { env, JobPool } from '../../core/config/env';
 import { quietDb } from '../../core/db/client';
 import { Features, JobType, Permissions, SubmissionExportAuditAction } from '../../core/db/codes';
 import { isFeatureEnabledCached } from '../../core/db/repos/featureRepo';
@@ -13,6 +13,7 @@ import { getTempStorageAdapter } from '../../core/integrations/plugins/PluginReg
 import type { JobContext, JobTypeDefinition } from '../../core/jobs/registry';
 import { JobCancelledError, JobFailedError } from '../../core/jobs/settlement';
 import { engineExportSource, exportSchemas, formAnswerReader } from './engineSource';
+import { staffLinkedRows } from './fileLinks';
 import { exportFormat } from './formats';
 import { exportFieldNames } from './schemaFields';
 import { sizeLimit } from './sizeLimit';
@@ -90,6 +91,7 @@ const stillAllowed = async (job: JobContext['job']): Promise<string> => {
 const runExport = async ({
   job,
   signal,
+  log,
   reportProgress,
   resultMaxBytes,
   storeResult,
@@ -130,7 +132,8 @@ const runExport = async ({
         progress();
       },
     );
-    const text = format.serialize(rows, {
+    const linked = staffLinkedRows(rows, job.formId, env.getDesignerAppUrl(), log);
+    const text = format.serialize(linked, {
       fields: params.fields ?? exportFieldNames(schemas),
       layout: params.layout,
       schemas,

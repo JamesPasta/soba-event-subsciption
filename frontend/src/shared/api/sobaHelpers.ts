@@ -8,12 +8,15 @@ import { NetworkError } from './sobaFetch';
 export class ApiError extends Error {
   readonly status: number;
   readonly code: ApiErrorCode | undefined;
+  /** The id the server's logs carry for the request, when its response named one. */
+  readonly requestId: string | undefined;
 
-  constructor(message: string, status: number, code?: ApiErrorCode) {
+  constructor(message: string, status: number, code?: ApiErrorCode, requestId?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.requestId = requestId;
   }
 }
 
@@ -29,6 +32,14 @@ export const isNotFound = (err: unknown): boolean => err instanceof ApiError && 
 /** The server refused a write because what it targets changed since the caller read it. */
 export const isConflict = (err: unknown): boolean => err instanceof ApiError && err.status === 409;
 
+const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+
+/** The response's request id, only in the UUID form the backend mints: a proxy's may name hosts. */
+const requestIdOf = (response: Response): string | undefined => {
+  const id = response.headers.get('X-Request-Id');
+  return id && UUID.test(id) ? id : undefined;
+};
+
 export async function parseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     // Surface the backend's `{ error }` message (e.g. name-taken, disclaimer) when present, and its
@@ -43,14 +54,14 @@ export async function parseJson<T>(response: Response): Promise<T> {
     } catch {
       // Non-JSON error body; keep the status-based message.
     }
-    throw new ApiError(message, response.status, code);
+    throw new ApiError(message, response.status, code, requestIdOf(response));
   }
   try {
     // Unchecked cast. A caller that expects a list has to guard for one.
     return (await response.json()) as T;
   } catch (err) {
     // A body cut off mid-read rejects with a TypeError; invalid JSON is a SyntaxError.
-    if (err instanceof TypeError) throw new NetworkError(err);
+    if (err instanceof TypeError) throw new NetworkError(err, requestIdOf(response));
     throw err;
   }
 }
@@ -62,7 +73,7 @@ export async function parseBlob(response: Response): Promise<Blob> {
     return await response.blob();
   } catch (err) {
     // A body cut off mid-read rejects with a TypeError.
-    if (err instanceof TypeError) throw new NetworkError(err);
+    if (err instanceof TypeError) throw new NetworkError(err, requestIdOf(response));
     throw err;
   }
 }

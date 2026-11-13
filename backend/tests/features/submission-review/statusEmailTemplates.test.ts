@@ -4,7 +4,7 @@ import {
   type SubmissionEmailFacts,
   type SubmissionEmailTemplate,
 } from '../../../src/core/integrations/notification/email/submissionEmail';
-import { designerSubmissionUrl } from '../../../src/core/integrations/notification/email/url';
+import { designerSubmissionUrl } from '../../../src/core/appLinks';
 import {
   ASSIGNED_EMAIL,
   COMPLETED_EMAIL,

@@ -4,8 +4,9 @@ import {
   DocumentRenderRequest,
   DocumentRenderResult,
 } from '../../core/integrations/document-generation/DocumentGenerationAdapter';
-import { HttpClient, joinUrl } from '../../core/http/httpClient';
+import { HttpClient } from '../../core/http/httpClient';
 import { postBinaryOrThrow } from '../../core/http/httpErrorMapper';
+import { joinUrl } from '../../core/url';
 import { toCdogsRenderBody } from '../shared/cdogs/renderBody';
 
 const SERVICE = 'CDOGS';

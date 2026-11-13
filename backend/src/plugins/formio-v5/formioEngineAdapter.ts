@@ -9,6 +9,7 @@ import {
 import { PluginConfigReader } from '../../core/config/pluginConfig';
 import { InternalError, ValidationError } from '../../core/errors';
 import { mapInOrder } from '../../core/inOrder';
+import { withoutTrailingSlashes } from '../../core/url';
 import {
   getAuthenticatedFormioClient,
   isFormioNotFound,
@@ -240,7 +241,7 @@ export class FormioEngineAdapter implements FormEngineAdapter {
 
   async readinessCheck(): Promise<FormEngineReadinessResult> {
     try {
-      const url = this.config.renderApiUrl.replace(/\/$/, '') || this.config.renderApiUrl;
+      const url = withoutTrailingSlashes(this.config.renderApiUrl) || this.config.renderApiUrl;
       const res = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) });
       if (res.ok || res.status === 404) {
         return { ok: true };

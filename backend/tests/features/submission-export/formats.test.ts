@@ -9,6 +9,7 @@ import {
   jsonFormat,
   type ExportWriteOptions,
 } from '../../../src/features/submission-export/formats';
+import { staffFileLinked } from '../../../src/features/submission-export/fileLinks';
 import { exportFileName } from '../../../src/features/submission-export/job';
 import {
   flattenComponents,
@@ -764,6 +765,40 @@ describe('jsonFormat', () => {
         await collect(jsonFormat.serialize(each([]), writeOptions({ fields: [], schemas: [] }))),
       ),
     ).toEqual([]);
+  });
+});
+
+describe('staff file links', () => {
+  const fileId = '01a1d585-48e9-712a-9d0a-e9e281cb6a22';
+  const link = `https://soba.example/designer/en/build/form-1/submissions/s2/files/${fileId}`;
+  const linked = () =>
+    staffFileLinked(
+      each([
+        {
+          ...rows[1],
+          answers: { upload: [{ storage: 'chefs', id: fileId, url: `/submit/files/${fileId}` }] },
+        },
+      ]),
+      'form-1',
+      'https://soba.example/designer',
+    );
+
+  it.each<[SubmissionExportLayout, string]>([
+    ['multiRowEmptySpacesCSVExport', 'upload.url'],
+    ['singleRowCSVExport', 'upload.0.url'],
+  ])('write the link in the url column of the %s CSV', async (layout, column) => {
+    const text = await collect(csvFormat.serialize(linked(), writeOptions({ layout })));
+    const [header, line] = text.slice(1).split('\r\n');
+
+    expect(line.split(',')[header.split(',').indexOf(column)]).toBe(link);
+  });
+
+  it('write the link in the JSON', async () => {
+    const parsed = JSON.parse(
+      await collect(jsonFormat.serialize(linked(), writeOptions({ fields: [], schemas: [] }))),
+    );
+
+    expect(parsed[0].upload[0].url).toBe(link);
   });
 });
 

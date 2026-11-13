@@ -50,6 +50,7 @@ describe('SubmissionExportDownload', () => {
       'Housing 2026-10-20.csv',
     );
     expect(mockDownload).toHaveBeenCalledWith('token', 'f1', 'e1');
+    expect(screen.getByTestId('file-download-export-id')).toHaveTextContent('e1');
     expect(screen.getByTestId('export-file-back')).toHaveAttribute(
       'href',
       '/en/build/f1/submissions/exports',
@@ -63,5 +64,6 @@ describe('SubmissionExportDownload', () => {
     expect(await screen.findByTestId('file-download-notfound')).toHaveTextContent(
       'This export is no longer available. Start a new one.',
     );
+    expect(screen.getByTestId('file-download-export-id')).toHaveTextContent('e1');
   });
 });

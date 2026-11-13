@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { isStoragePrefix } from '../integrations/storage-engine/storageKey';
+import { withoutTrailingSlashes } from '../url';
 
 let loaded = false;
 
@@ -136,7 +137,7 @@ export function resolveApiBasePath(source: EnvSource): string {
     return '';
   }
   const withLeadingSlash = raw.startsWith('/') ? raw : `/${raw}`;
-  return withLeadingSlash.endsWith('/') ? withLeadingSlash.slice(0, -1) : withLeadingSlash;
+  return withoutTrailingSlashes(withLeadingSlash);
 }
 
 /** The value when it is a whole number of at least 1; undefined otherwise. */

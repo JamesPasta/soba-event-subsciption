@@ -35,13 +35,16 @@ layout frames any email, and a block for each kind of email fills it.
 | file                 | role                                                                                                                                                                                                     |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `html.ts`            | `markup`, a template tag that escapes every value unless it is markup the tag built, and `SafeHtml`, which nothing else can make. A look-alike object or `true` throws                                   |
-| `url.ts`             | `designerSubmissionUrl` and `formsSubmissionUrl`, the only makers of `SafeUrl`. `assertEmailLinkBases`, which stops startup when `DESIGNER_APP_URL` or `FORMS_APP_URL` is set but unusable               |
 | `language.ts`        | `EmailLanguage` (`en`, `fr`), `EmailLanguages` (adds `both`) and `DEFAULT_EMAIL_LANGUAGE`                                                                                                                |
 | `layout.ts`          | `renderEmail(parts, languages)`: the container, the order of `both`, "(Le français suit)", the divider, the footer and a one-line subject. Also `paragraph`, `link`, `languageSection`, `withLineBreaks` |
 | `submissionEmail.ts` | the block for an email about a submission: `defineSubmissionEmail` and `renderSubmissionEmail`                                                                                                           |
 
 The tag is named `markup`, not `html`: Prettier reformats the contents of any template tagged
 `html`, which would change the emails.
+
+Links in emails come from `backend/src/core/appLinks.ts`, which any feature uses for links into the
+designer and forms apps. Its helpers are the only makers of `SafeUrl`, and `assertAppLinkBases`
+stops startup when `DESIGNER_APP_URL` or `FORMS_APP_URL` is set but unusable.
 
 The layout knows nothing about submissions. An email about something else, such as a form reminder
 or a finished export, gets its own small block on the layout. It does not stretch the submission
@@ -223,7 +226,7 @@ its event; a submit records one only where post-submission actions are available
 1. Choose the block. An email about a submission uses `defineSubmissionEmail`; anything else gets a
    block of its own on `layout.ts`.
 2. Write the template beside the feature that sends it, in English and French.
-3. Build its link with a link helper, or add one to `url.ts` if the page is new.
+3. Build its link with a link helper, or add one to `backend/src/core/appLinks.ts` if the page is new.
 4. Add a `JobType` code (`backend/src/core/db/codes/index.ts`) and a job spec in
    `backend/src/core/jobs/` with its pool, `maxAttempts`, `timeoutMs` and params schema. Keep the
    spec apart from the handler, so queuing the job does not load the handler.

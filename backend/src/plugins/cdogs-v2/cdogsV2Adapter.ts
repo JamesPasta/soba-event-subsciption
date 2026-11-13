@@ -5,11 +5,12 @@ import {
   DocumentRenderRequest,
   DocumentRenderResult,
 } from '../../core/integrations/document-generation/DocumentGenerationAdapter';
-import { HttpClient, HttpClientError, joinUrl } from '../../core/http/httpClient';
+import { HttpClient, HttpClientError } from '../../core/http/httpClient';
 import { httpErrorToAppError } from '../../core/http/httpErrorMapper';
 import { OAuth2TokenProvider } from '../../core/auth/oauth2TokenProvider';
 import { toCdogsRenderBody } from '../shared/cdogs/renderBody';
 import { log } from '../../core/logging';
+import { joinUrl } from '../../core/url';
 
 const SERVICE = 'CDOGS';
 const PLUGIN = 'cdogs-v2';

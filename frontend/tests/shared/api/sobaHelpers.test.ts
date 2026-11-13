@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { ApiErrorCode } from '@soba/lib';
 import { ApiError, parseBlob, parseDownload, parseJson } from '@/src/shared/api/sobaHelpers';
-import { apiErrorMessage, classifyDataError } from '@/src/shared/api/dataError';
+import { apiErrorMessage, classifyDataError, failureDetail } from '@/src/shared/api/dataError';
 import { isNetworkError, NetworkError, SessionExpiredError } from '@/src/shared/api/sobaFetch';
+
+const REQUEST_ID = 'd8e6bd30-df89-11f1-983d-e151395694de';
 
 const errorResponse = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -36,6 +38,17 @@ describe('parseJson', () => {
   });
 
   it.each([
+    ['a request id the backend minted', REQUEST_ID, REQUEST_ID],
+    ['an id in any other form, which a proxy may have set', '10.0.0.7:443_1A2B_5', undefined],
+    ['no request id', null, undefined],
+  ])('keeps %s only in the form the backend mints', async (_label, header, requestId) => {
+    const answered = errorResponse(503, { error: 'Unavailable', code: 'file_unavailable' });
+    if (header) answered.headers.set('X-Request-Id', header);
+
+    expect(await errorFrom(answered)).toMatchObject({ requestId });
+  });
+
+  it.each([
     ['an unknown code', { error: 'No', code: 'not_a_code' }],
     ['no code', { error: 'No' }],
   ])('drops %s', async (_label, body) => {
@@ -44,7 +57,12 @@ describe('parseJson', () => {
 
   it('reports a body cut off mid-read as a NetworkError', async () => {
     const cutOff = new TypeError('network error');
-    const response = { ok: true, status: 200, json: () => Promise.reject(cutOff) } as Response;
+    const response = {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: () => Promise.reject(cutOff),
+    } as unknown as Response;
     const err = await errorFrom(response);
     expect(isNetworkError(err)).toBe(true);
     expect((err as Error).cause).toBe(cutOff);
@@ -57,12 +75,18 @@ describe('parseJson', () => {
 });
 
 describe('parseBlob', () => {
-  it('reports a body cut off mid-read as a NetworkError', async () => {
+  it('reports a body cut off mid-read as a NetworkError, with the request id the server sent', async () => {
     const cutOff = new TypeError('network error');
-    const response = { ok: true, status: 200, blob: () => Promise.reject(cutOff) } as Response;
+    const response = {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'X-Request-Id': REQUEST_ID }),
+      blob: () => Promise.reject(cutOff),
+    } as unknown as Response;
     const err = await parseBlob(response).catch((e: unknown) => e);
     expect(isNetworkError(err)).toBe(true);
     expect((err as Error).cause).toBe(cutOff);
+    expect(err).toMatchObject({ requestId: REQUEST_ID });
   });
 
   it('throws a refusal as its ApiError', async () => {
@@ -81,6 +105,27 @@ describe('classifyDataError', () => {
     ['a server failure', new ApiError('Internal server error', 500), 'failed'],
   ])('classifies %s', (_label, cause, kind) => {
     expect(classifyDataError(cause).kind).toBe(kind);
+  });
+});
+
+describe('failureDetail', () => {
+  it.each([
+    [
+      'an API error with a code',
+      new ApiError('Unavailable', 503, 'file_unavailable', REQUEST_ID),
+      { code: 'file_unavailable', requestId: REQUEST_ID },
+    ],
+    ['an API error without one', new ApiError('Bad gateway', 502), { code: 'HTTP 502' }],
+    [
+      'a read cut off mid-way',
+      new NetworkError(new TypeError('network error'), REQUEST_ID),
+      { requestId: REQUEST_ID },
+    ],
+    ['no response at all', new NetworkError(new TypeError('Failed to fetch')), {}],
+    ['an error that is not from the API', new TypeError('x is undefined'), {}],
+  ])('reports %s', (_label, cause, detail) => {
+    const { code, requestId } = failureDetail(cause);
+    expect({ code, requestId }).toEqual({ code: undefined, requestId: undefined, ...detail });
   });
 });
 

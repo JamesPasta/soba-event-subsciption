@@ -1,5 +1,6 @@
 import { env } from '../config/env';
 import { log } from '../logging';
+import { joinUrl, withoutQuery, withoutTrailingSlashes } from '../url';
 
 /** AbortSignal.timeout runs on a 32-bit signed timer; larger values fire immediately. */
 const MAX_TIMER_MS = 2_147_483_647;
@@ -98,22 +99,6 @@ export interface BinaryResponse {
   contentType?: string;
 }
 
-function stripTrailingSlashes(value: string): string {
-  let end = value.length;
-  while (end > 0 && value[end - 1] === '/') end--;
-  return value.slice(0, end);
-}
-
-/** Join a base URL and a path segment with exactly one slash, tolerating stray slashes on either side. */
-export function joinUrl(base: string, segment: string): string {
-  return `${stripTrailingSlashes(base)}/${segment.replace(/^\/+/, '')}`;
-}
-
-export function withoutQuery(url: string): string {
-  const index = url.indexOf('?');
-  return index < 0 ? url : url.slice(0, index);
-}
-
 /**
  * Minimal fetch wrapper for outbound service calls: joins the base URL, injects a bearer
  * token when a provider is supplied, and turns non-2xx responses into HttpClientError.
@@ -126,7 +111,7 @@ export class HttpClient {
   private readonly timeoutMs: number;
 
   constructor(options: HttpClientOptions) {
-    this.baseUrl = stripTrailingSlashes(options.baseUrl);
+    this.baseUrl = withoutTrailingSlashes(options.baseUrl);
     this.getToken = options.getToken;
     this.defaultHeaders = options.defaultHeaders ?? {};
     this.timeoutMs = resolveTimeoutMs(options.timeoutMs, 'HttpClient timeoutMs');

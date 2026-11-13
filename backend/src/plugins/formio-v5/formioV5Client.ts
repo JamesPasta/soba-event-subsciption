@@ -5,6 +5,7 @@
 
 import type { PluginConfigReader } from '../../core/config/pluginConfig';
 import { resolveTimeoutMs } from '../../core/http/httpClient';
+import { withoutTrailingSlashes } from '../../core/url';
 
 const TIMEOUT_LABEL = 'PLUGIN_FORMIO_V5_TIMEOUT_MS';
 
@@ -75,7 +76,7 @@ export class FormioCommunityEditionAPIv5Client {
   private token: string | null = null;
 
   constructor(options: FormioCommunityEditionAPIv5Options) {
-    this._baseUrl = options.baseUrl.replace(/\/$/, '');
+    this._baseUrl = withoutTrailingSlashes(options.baseUrl);
     this.username = options.username;
     this.password = options.password;
     this.actor = options.actor;
@@ -133,7 +134,7 @@ export class FormioCommunityEditionAPIv5Client {
     password: string,
   ): Promise<string> {
     const client = new FormioCommunityEditionAPIv5Client({
-      baseUrl: baseUrl.replace(/\/$/, ''),
+      baseUrl,
       username: email,
       password,
     });

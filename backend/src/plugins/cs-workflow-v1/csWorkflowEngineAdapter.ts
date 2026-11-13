@@ -7,9 +7,10 @@ import type {
   Workflow,
   GetWorkflowParams,
 } from '../../core/integrations/workflow/WorkflowEngineAdapter';
-import { HttpClientError, joinUrl, resolveTimeoutMs } from '../../core/http/httpClient';
+import { HttpClientError, resolveTimeoutMs } from '../../core/http/httpClient';
 import { ServiceUnavailableError } from '../../core/errors';
 import { log } from '../../core/logging';
+import { joinUrl } from '../../core/url';
 
 const PLUGIN = 'cs-workflow-v1';
 const SERVICE = 'Connected Services Workflow';

@@ -36,7 +36,7 @@ import { initializePassport } from './core/auth/passport';
 import { Features } from './core/db/codes';
 import { pool } from './core/db/client';
 import { assertJobShutdownFits, getJobSettings, startJobs, stopJobs } from './core/jobs';
-import { assertEmailLinkBases } from './core/integrations/notification/email/url';
+import { assertAppLinkBases } from './core/appLinks';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const app = express();
@@ -45,7 +45,7 @@ const port = Number(process.env.PORT) || 4000;
 // Read before listening, so an invalid value stops startup before the port opens.
 const shutdownSettings = env.getShutdownSettings();
 assertJobShutdownFits(getJobSettings(), shutdownSettings.timeoutMs);
-assertEmailLinkBases({
+assertAppLinkBases({
   DESIGNER_APP_URL: env.getDesignerAppUrl(),
   FORMS_APP_URL: env.getFormsAppUrl(),
 });
@@ -59,8 +59,8 @@ app.set('trust proxy', env.getTrustProxySetting());
 
 initializePassport();
 
-// Downloads read their file name from Content-Disposition.
-const corsExposedHeaders = ['Content-Disposition'];
+// Downloads read their file name from Content-Disposition; failed reads show X-Request-Id.
+const corsExposedHeaders = ['Content-Disposition', 'X-Request-Id'];
 // CORS is always restricted to an explicit allowlist of trusted origins (never `*`).
 // Production origins come from CORS_ORIGIN; in development we fall back to CORS_DEV_ORIGIN
 // (configurable per developer via .env) when CORS_ORIGIN is unset.
