@@ -11,38 +11,6 @@ const unauthorizedResponse = {
   statusCode: 401,
 };
 
-const isLocalMockAuthEnabled =
-  process.env.NODE_ENV === 'development' && process.env.SOBA_LOCAL_MOCK_AUTH === 'true';
-
-const localMockUser: Express.User = {
-  pluginCode: 'bcgov-sso',
-  authPayload: {
-    sub: 'soba-local-admin',
-    identity_provider: 'azureidir',
-    preferred_username: 'soba-local-admin',
-    email: 'soba-local-admin@example.test',
-    name: 'Local SOBA Administrator',
-    roles: ['soba_admin'],
-  },
-  subject: 'soba-local-admin',
-  providerCode: 'azureidir',
-  profile: {
-    displayName: 'Local SOBA Administrator',
-    displayLabel: 'Local SOBA Administrator',
-    email: 'soba-local-admin@example.test',
-    preferredUsername: 'soba-local-admin',
-  },
-  idpAttributes: {
-    sub: 'soba-local-admin',
-    identity_provider: 'azureidir',
-    preferred_username: 'soba-local-admin',
-    email: 'soba-local-admin@example.test',
-    name: 'Local SOBA Administrator',
-    roles: ['soba_admin'],
-  },
-  sobaAdmin: true,
-};
-
 /**
  * Passport-backed IdP auth middleware; rejects with 401 when no plugin authenticates. With
  * `allowPublic`, a request that sends no bearer continues unauthenticated (req.user stays unset).
@@ -50,14 +18,6 @@ const localMockUser: Express.User = {
  */
 export const checkJwt = (opts: { allowPublic?: boolean } = {}): RequestHandler => {
   return (req, res, next) => {
-    if (isLocalMockAuthEnabled) {
-      req.user = localMockUser;
-      req.idpPluginCode = localMockUser.pluginCode;
-      req.authPayload = localMockUser.authPayload;
-      req.idpType = localMockUser.providerCode;
-      return next();
-    }
-
     passport.authenticate(
       SOBA_PASSPORT_STRATEGY,
       { session: false },

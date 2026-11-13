@@ -1,16 +1,10 @@
 [CmdletBinding()]
 param(
-    [switch]$SkipServices,
-    [switch]$MockAuth
+    [switch]$SkipServices
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$useMockAuth = [bool]$MockAuth
-if (-not $useMockAuth) {
-    $mockAuthAnswer = Read-Host 'Start with local mock authentication and administrator permissions? [y/N]'
-    $useMockAuth = $mockAuthAnswer -match '^[Yy]'
-}
 
 $shell = (Get-Command 'pwsh' -ErrorAction SilentlyContinue).Source
 if (-not $shell) {
@@ -165,17 +159,6 @@ if (-not $SkipServices) {
     }
 }
 
-$backendMockAuth = if ($useMockAuth) {
-    "`$env:SOBA_LOCAL_MOCK_AUTH = 'true'"
-} else {
-    ''
-}
-$frontendMockAuth = if ($useMockAuth) {
-    "`$env:NEXT_PUBLIC_SOBA_LOCAL_MOCK_AUTH = 'true'"
-} else {
-    ''
-}
-
 $backendCommand = @"
 Set-Location -LiteralPath '$repoRoot'
 $nodePathCommand
@@ -191,7 +174,6 @@ if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) { throw 'Node.js 
 `$env:PLUGIN_FORMIO_V5_RENDER_API_URL = 'http://localhost:3001'
 `$env:PLUGIN_FORMIO_V5_ADMIN_USERNAME = 'formio@localhost.com'
 `$env:PLUGIN_FORMIO_V5_ADMIN_PASSWORD = 'formio'
-$backendMockAuth
 $packageManagerCommand --dir '$repoRoot\backend' dev
 "@
 
@@ -205,7 +187,6 @@ if (-not (Test-Path -LiteralPath '$repoRoot\frontend\node_modules\.bin\next.cmd'
 `$env:NEXT_PUBLIC_SOBA_API_BASE_URL = 'http://localhost:4000/api/v1'
 `$env:SOBA_API_INTERNAL_URL = 'http://localhost:4000/api/v1'
 `$env:NEXT_PUBLIC_SOBA_FEATURES_ALLOWED = 'workspaces,design-mode,submit-mode,files,meta,marketing'
-$frontendMockAuth
 & '$repoRoot\frontend\node_modules\.bin\next.cmd' dev --hostname 0.0.0.0 -p 3000
 "@
 

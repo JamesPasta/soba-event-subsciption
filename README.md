@@ -84,9 +84,6 @@ first start and reuses the Windows-protected key in
 `%LOCALAPPDATA%\SOBA\event-subscription.key`. An explicitly set
 `SOBA_EVENT_SUBSCRIPTION_ENCRYPTION_KEY` takes precedence; keep that key stable
 so saved tokens remain readable.
-You can optionally enable a development-only local mock administrator with
-`-MockAuth` so the Login button can be exercised without Keycloak; this mock
-requires both `SOBA_LOCAL_MOCK_AUTH=true` and `NODE_ENV=development`.
 The application is available at:
 
 - **Frontend**: http://localhost:3000
@@ -99,16 +96,8 @@ running, use:
 .\start-soba.ps1 -SkipServices
 ```
 
-To enable the local development mock administrator instead of Keycloak:
-
-```powershell
-.\start-soba.ps1 -SkipServices -MockAuth
-```
-
 When startup detects existing application processes on ports 3000, 3100, or
 4000, it prompts before stopping them. The default response is **Yes**.
-Startup also asks whether to enable local mock authentication. The default
-response is **No**.
 
 To stop the backend and frontend development servers:
 
