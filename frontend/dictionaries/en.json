@@ -1099,7 +1099,16 @@
     "loading": "Downloading the file…",
     "saved": "{name} is ready. If it did not save, use Download again.",
     "again": "Download again",
-    "loadError": "Could not download this file."
+    "loadError": "Could not download this file.",
+    "detailsHeading": "Details",
+    "fileId": "File ID",
+    "submissionId": "Submission ID",
+    "exportId": "Export ID",
+    "type": "Type",
+    "size": "Size",
+    "errorCode": "Error code",
+    "reference": "Reference",
+    "time": "Date and time"
   },
   "Basic": "Basic",
   "Text Field": "Text Field",

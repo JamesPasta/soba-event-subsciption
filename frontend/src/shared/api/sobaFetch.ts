@@ -32,9 +32,13 @@ function buildUrl(path: string, options: SobaFetchOptions): string {
  * may or may not have reached the server.
  */
 export class NetworkError extends Error {
-  constructor(cause: unknown) {
+  /** The id the server's logs carry for the request, when its response had started. */
+  readonly requestId: string | undefined;
+
+  constructor(cause: unknown, requestId?: string) {
     super('Network request failed', { cause });
     this.name = 'NetworkError';
+    this.requestId = requestId;
   }
 }
 

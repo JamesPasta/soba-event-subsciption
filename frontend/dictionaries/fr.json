@@ -1100,7 +1100,16 @@
     "loading": "Téléchargement du fichier…",
     "saved": "{name} est prêt. S'il n'a pas été enregistré, utilisez « Télécharger de nouveau ».",
     "again": "Télécharger de nouveau",
-    "loadError": "Impossible de télécharger ce fichier."
+    "loadError": "Impossible de télécharger ce fichier.",
+    "detailsHeading": "Détails",
+    "fileId": "Identifiant de fichier",
+    "submissionId": "Identifiant de soumission",
+    "exportId": "Identifiant d'exportation",
+    "type": "Type",
+    "size": "Taille",
+    "errorCode": "Code d'erreur",
+    "reference": "Référence",
+    "time": "Date et heure"
   },
   "Basic": "Basique",
   "Text Field": "Champ de Texte",

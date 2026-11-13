@@ -28,7 +28,11 @@ export function SubmissionExportDownload({
       <Link href={`/${locale}/build/${formId}/submissions/exports`} data-testid="export-file-back">
         {text.backToExports}
       </Link>
-      <FileDownload load={load} notFound={text.fileNotFound} />
+      <FileDownload
+        load={load}
+        notFound={text.fileNotFound}
+        facts={[{ name: dict.fileDownload.exportId, value: exportId, testId: 'export-id' }]}
+      />
     </div>
   );
 }

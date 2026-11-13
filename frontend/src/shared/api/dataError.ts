@@ -1,6 +1,6 @@
 import type { ApiErrorCode } from '@soba/lib';
 import type { DataError } from './dataContracts';
-import { isNetworkError, isSessionExpired } from './sobaFetch';
+import { isNetworkError, isSessionExpired, NetworkError } from './sobaFetch';
 import { ApiError, isForbidden, isNotFound } from './sobaHelpers';
 
 /**
@@ -45,6 +45,17 @@ export function apiErrorMessage(
   if (failed === undefined || isSessionExpired(cause)) return null;
   if (cause instanceof ApiError) return cause.status >= 500 ? failed : null;
   return failed;
+}
+
+/** What a failed request leaves to report: the API's code or HTTP status, and its log reference. */
+export type FailureDetail = Readonly<{ code?: string; requestId?: string }>;
+
+export function failureDetail(cause: unknown): FailureDetail {
+  if (cause instanceof ApiError) {
+    return { code: cause.code ?? `HTTP ${cause.status}`, requestId: cause.requestId };
+  }
+  if (cause instanceof NetworkError) return { requestId: cause.requestId };
+  return {};
 }
 
 export { isNetworkError, isSessionExpired } from './sobaFetch';

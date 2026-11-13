@@ -42,6 +42,10 @@ describe('SubmissionFileDownload', () => {
 
     expect(await screen.findByTestId('file-download-saved')).toHaveTextContent('plan.pdf');
     expect(mockDownload).toHaveBeenCalledWith('token', 'sub-1', 'file-1');
+    expect(screen.getByTestId('file-download-file-id')).toHaveTextContent('file-1');
+    expect(screen.getByTestId('file-download-submission-id')).toHaveTextContent('sub-1');
+    // The response gave no type, so there is none to show.
+    expect(screen.queryByTestId('file-download-type')).toBeNull();
 
     fireEvent.click(screen.getByTestId('submission-file-back'));
     expect(mockPush).toHaveBeenCalledWith('/en/build/f1/submissions/sub-1');
