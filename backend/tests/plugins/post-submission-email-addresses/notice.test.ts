@@ -1,5 +1,5 @@
 import { renderSubmissionEmail } from '../../../src/core/integrations/notification/email/submissionEmail';
-import { designerSubmissionUrl } from '../../../src/core/integrations/notification/email/url';
+import { designerSubmissionUrl } from '../../../src/core/appLinks';
 import { buildNotice, NOTICE } from '../../../src/plugins/post-submission-email-addresses/notice';
 
 const DESIGNER = 'https://soba.example/designer';

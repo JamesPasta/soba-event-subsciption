@@ -12,9 +12,8 @@ import { getLiveForm, insertExportAudit } from '../../core/db/repos/submissionEx
 import { getTempStorageAdapter } from '../../core/integrations/plugins/PluginRegistry';
 import type { JobContext, JobTypeDefinition } from '../../core/jobs/registry';
 import { JobCancelledError, JobFailedError } from '../../core/jobs/settlement';
-import { log } from '../../core/logging';
 import { engineExportSource, exportSchemas, formAnswerReader } from './engineSource';
-import { staffFileLinked } from './fileLinks';
+import { staffLinkedRows } from './fileLinks';
 import { exportFormat } from './formats';
 import { exportFieldNames } from './schemaFields';
 import { sizeLimit } from './sizeLimit';
@@ -92,6 +91,7 @@ const stillAllowed = async (job: JobContext['job']): Promise<string> => {
 const runExport = async ({
   job,
   signal,
+  log,
   reportProgress,
   resultMaxBytes,
   storeResult,
@@ -132,10 +132,7 @@ const runExport = async ({
         progress();
       },
     );
-    const designerUrl = env.getDesignerAppUrl();
-    if (!designerUrl)
-      log.warn({ jobId: job.id }, 'DESIGNER_APP_URL unset; export keeps stored file links');
-    const linked = designerUrl ? staffFileLinked(rows, job.formId, designerUrl) : rows;
+    const linked = staffLinkedRows(rows, job.formId, env.getDesignerAppUrl(), log);
     const text = format.serialize(linked, {
       fields: params.fields ?? exportFieldNames(schemas),
       layout: params.layout,

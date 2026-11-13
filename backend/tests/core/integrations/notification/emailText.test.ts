@@ -1,7 +1,4 @@
-import {
-  cleanName,
-  withoutTrailingSlashes,
-} from '../../../../src/core/integrations/notification/emailText';
+import { cleanName } from '../../../../src/core/integrations/notification/emailText';
 
 describe('cleanName', () => {
   it('drops control and format characters and keeps one line', () => {
@@ -29,14 +26,5 @@ describe('cleanName', () => {
     ['Licensing B.C. renewal', 'Licensing B.C. renewal'],
   ])('removes links from %j', (name, cleaned) => {
     expect(cleanName(name)).toBe(cleaned);
-  });
-
-  it('drops every trailing slash and nothing else', () => {
-    expect(withoutTrailingSlashes('https://soba.example/designer//')).toBe(
-      'https://soba.example/designer',
-    );
-    expect(withoutTrailingSlashes('https://soba.example/designer')).toBe(
-      'https://soba.example/designer',
-    );
   });
 });

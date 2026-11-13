@@ -7,9 +7,10 @@ import type {
   TenantEngineAdapter,
   TenantEngineReadinessResult,
 } from '../../core/integrations/tenant/TenantEngineAdapter';
-import { HttpClientError, joinUrl, resolveTimeoutMs } from '../../core/http/httpClient';
+import { HttpClientError, resolveTimeoutMs } from '../../core/http/httpClient';
 import { ServiceUnavailableError } from '../../core/errors';
 import { log } from '../../core/logging';
+import { joinUrl } from '../../core/url';
 
 const PLUGIN = 'cstar-v1';
 const SERVICE = 'CSTAR';

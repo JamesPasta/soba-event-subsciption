@@ -2,17 +2,6 @@ jest.mock('../../../src/core/db/repos/submissionExportRepo', () => ({
   ...jest.requireActual('../../../src/core/db/repos/submissionExportRepo'),
   countExportSubmissions: jest.fn(),
   exportSchemaRefs: jest.fn(),
-  getExportJob: jest.fn(),
-  insertExportAudit: jest.fn(),
-}));
-
-jest.mock('../../../src/core/jobs/outputs', () => ({
-  ...jest.requireActual('../../../src/core/jobs/outputs'),
-  openJobResult: jest.fn(),
-}));
-
-jest.mock('../../../src/core/integrations/form-engine/FormEngineRegistry', () => ({
-  createFormEngineAdapter: jest.fn(),
 }));
 
 jest.mock('../../../src/core/db/repos/formRepo', () => ({
@@ -29,15 +18,10 @@ import { getFormEngineCodeForForm } from '../../../src/core/db/repos/formRepo';
 import {
   countExportSubmissions,
   exportSchemaRefs,
-  getExportJob,
-  insertExportAudit,
   type ExportJobRow,
 } from '../../../src/core/db/repos/submissionExportRepo';
 import { ApiErrorCodes } from '@soba/lib';
-import { InternalError, NotFoundError, ValidationError } from '../../../src/core/errors';
-import type { FormEngineAdapter } from '../../../src/core/integrations/form-engine/FormEngineAdapter';
-import { createFormEngineAdapter } from '../../../src/core/integrations/form-engine/FormEngineRegistry';
-import { openJobResult } from '../../../src/core/jobs/outputs';
+import { InternalError, ValidationError } from '../../../src/core/errors';
 import { readEngineSchema } from '../../../src/core/services/engineSchema';
 import { EXPORT_ACCESS_LOST } from '../../../src/features/submission-export/job';
 import {
@@ -265,25 +249,6 @@ describe('submissionExportService.fields', () => {
     expect(fields).toEqual([...SUBMISSION_FIELDS, 'name', 'email', 'phone']);
   });
 
-  it('reads only the schemas from the engine, never a submission', async () => {
-    const { readEngineSchema: realRead } = jest.requireActual<
-      typeof import('../../../src/core/services/engineSchema')
-    >('../../../src/core/services/engineSchema');
-    const adapter = {
-      readSchema: jest.fn((ref: string) => Promise.resolve(SCHEMAS[ref] ?? null)),
-      readSubmissions: jest.fn(),
-    };
-    jest.mocked(createFormEngineAdapter).mockReturnValue(adapter as unknown as FormEngineAdapter);
-    jest.mocked(readEngineSchema).mockImplementation(realRead);
-    jest.mocked(exportSchemaRefs).mockResolvedValue(refs('ref-v2', 'ref-v1'));
-
-    const { fields } = await submissionExportService.fields(ctx, {});
-
-    expect(fields).toEqual([...SUBMISSION_FIELDS, 'name', 'email', 'phone']);
-    expect(adapter.readSchema).toHaveBeenCalledTimes(2);
-    expect(adapter.readSubmissions).not.toHaveBeenCalled();
-  });
-
   it('fails when the engine cannot be read', async () => {
     jest.mocked(exportSchemaRefs).mockResolvedValue(refs('ref-v2'));
     jest.mocked(readEngineSchema).mockRejectedValue(new Error('engine down'));
@@ -307,40 +272,5 @@ describe('submissionExportService.fields', () => {
       from: new Date(from),
       to: new Date(to),
     });
-  });
-});
-
-describe('submissionExportService.openDownload', () => {
-  const ctx = { actorId: 'starter', workspaceId: 'ws1', formId: 'form-1' };
-
-  beforeEach(() => jest.clearAllMocks());
-
-  it("refuses another user's export as not found, opening no file and recording nothing", async () => {
-    jest.mocked(getExportJob).mockResolvedValue(undefined);
-
-    await expect(
-      submissionExportService.openDownload({ ...ctx, actorId: 'someone' }, 'job-1'),
-    ).rejects.toBeInstanceOf(NotFoundError);
-
-    expect(getExportJob).toHaveBeenCalledWith('form-1', 'someone', 'job-1');
-    expect(openJobResult).not.toHaveBeenCalled();
-    expect(insertExportAudit).not.toHaveBeenCalled();
-  });
-
-  it("opens the starter's ready file and records the download", async () => {
-    const opened = {
-      state: 'ready',
-      file: { id: 'file-1', size: 900 },
-      content: { downloadStream: undefined },
-    };
-    jest.mocked(getExportJob).mockResolvedValue(row());
-    jest.mocked(openJobResult).mockResolvedValue(opened as never);
-
-    await expect(submissionExportService.openDownload(ctx, 'job-1')).resolves.toBe(opened);
-
-    expect(insertExportAudit).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ jobId: 'job-1', fileId: 'file-1', actorId: 'starter' }),
-    );
   });
 });

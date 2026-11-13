@@ -14,7 +14,7 @@ import {
   formsSubmissionUrl,
   type FormsSubmissionPage,
   type SafeUrl,
-} from '../../core/integrations/notification/email/url';
+} from '../../core/appLinks';
 import { ASSIGNED_EMAIL, COMPLETED_EMAIL, REVISING_EMAIL } from './statusEmailTemplates';
 
 /** Who a status email goes to: the assignee, or the people who submitted it. */

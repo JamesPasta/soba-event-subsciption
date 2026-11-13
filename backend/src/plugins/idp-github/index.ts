@@ -11,6 +11,7 @@ import type {
 } from '../../core/auth/IdpPlugin';
 import type { NormalizedProfile, IdpAttributes } from '../../core/auth/jwtClaims';
 import { getToken } from '../../core/auth/IdpPlugin';
+import { withoutTrailingSlashes } from '../../core/url';
 
 const DEFAULT_GITHUB_API_URL = 'https://api.github.com';
 
@@ -29,7 +30,7 @@ function getApiUrl(config: PluginConfigReader): string {
 }
 
 async function fetchUserWithToken(apiUrl: string, token: string): Promise<GitHubUser> {
-  const base = apiUrl.replace(/\/$/, '');
+  const base = withoutTrailingSlashes(apiUrl);
   const res = await fetch(`${base}/user`, {
     headers: {
       Accept: 'application/vnd.github+json',

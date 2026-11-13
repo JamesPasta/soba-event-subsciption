@@ -9,7 +9,7 @@ import {
   withLineBreaks,
   type RenderedEmail,
 } from './layout';
-import type { SafeUrl } from './url';
+import type { SafeUrl } from '../../../appLinks';
 
 /** What a submission email's words are given: the form's name, already made fit for an email. */
 export interface SubmissionEmailVars {

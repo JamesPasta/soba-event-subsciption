@@ -4,7 +4,7 @@ import {
   renderSubmissionEmail,
   type SubmissionEmailFacts,
 } from '../../../../../src/core/integrations/notification/email/submissionEmail';
-import { designerSubmissionUrl } from '../../../../../src/core/integrations/notification/email/url';
+import { designerSubmissionUrl } from '../../../../../src/core/appLinks';
 
 const template = defineSubmissionEmail({
   en: {

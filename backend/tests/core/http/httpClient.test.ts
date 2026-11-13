@@ -5,9 +5,7 @@ import {
   HttpClientError,
   HttpClientTimeoutError,
   defaultTimeoutMs,
-  joinUrl,
   routeTimeoutMs,
-  withoutQuery,
 } from '../../../src/core/http/httpClient';
 
 const binaryResponse = (body: number[], contentType = 'application/pdf') =>
@@ -124,13 +122,6 @@ describe('HttpClient', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('http://svc.test/users?email=alice%40example.com');
     expect(err).toBeInstanceOf(HttpClientError);
     expect(err.url).toBe('http://svc.test/users');
-  });
-});
-
-describe('withoutQuery', () => {
-  it('drops the query string and leaves a URL without one alone', () => {
-    expect(withoutQuery('http://svc.test/users?email=a&lastName=b')).toBe('http://svc.test/users');
-    expect(withoutQuery('http://svc.test/users')).toBe('http://svc.test/users');
   });
 });
 
@@ -327,13 +318,5 @@ describe('timeout configuration', () => {
   it('rejects an unusable HTTP_ROUTE_TIMEOUT_MS', () => {
     process.env.HTTP_ROUTE_TIMEOUT_MS = '0';
     expect(() => routeTimeoutMs()).toThrow('HTTP_ROUTE_TIMEOUT_MS must be a positive integer');
-  });
-});
-
-describe('joinUrl', () => {
-  it('joins with exactly one slash regardless of stray slashes', () => {
-    expect(joinUrl('http://x/api', 'v2')).toBe('http://x/api/v2');
-    expect(joinUrl('http://x/api/', 'v2')).toBe('http://x/api/v2');
-    expect(joinUrl('http://x/api/', '/v2')).toBe('http://x/api/v2');
   });
 });

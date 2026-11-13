@@ -769,13 +769,14 @@ describe('jsonFormat', () => {
 });
 
 describe('staff file links', () => {
-  const link = 'https://soba.example/designer/en/build/form-1/submissions/s2/files/f1';
+  const fileId = '01a1d585-48e9-712a-9d0a-e9e281cb6a22';
+  const link = `https://soba.example/designer/en/build/form-1/submissions/s2/files/${fileId}`;
   const linked = () =>
     staffFileLinked(
       each([
         {
           ...rows[1],
-          answers: { upload: [{ storage: 'chefs', id: 'f1', url: '/submit/files/f1' }] },
+          answers: { upload: [{ storage: 'chefs', id: fileId, url: `/submit/files/${fileId}` }] },
         },
       ]),
       'form-1',

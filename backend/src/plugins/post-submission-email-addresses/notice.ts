@@ -4,7 +4,7 @@ import {
   defineSubmissionEmail,
   renderSubmissionEmail,
 } from '../../core/integrations/notification/email/submissionEmail';
-import { designerSubmissionUrl } from '../../core/integrations/notification/email/url';
+import { designerSubmissionUrl } from '../../core/appLinks';
 import type { PostSubmissionActionSubmission } from '../../core/integrations/post-submission-action/PostSubmissionActionPluginDefinition';
 
 export const NOTICE = defineSubmissionEmail({

@@ -1,6 +1,6 @@
 import { markup, toHtmlString, type HtmlValue, type SafeHtml } from './html';
 import type { EmailLanguage, EmailLanguages } from './language';
-import type { SafeUrl } from './url';
+import type { SafeUrl } from '../../../appLinks';
 
 /** One language's part of an email. */
 export interface EmailPart {

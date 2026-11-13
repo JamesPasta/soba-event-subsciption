@@ -1,13 +1,13 @@
 import {
   appUrlProblem,
-  assertEmailLinkBases,
+  assertAppLinkBases,
   designerSubmissionFileUrl,
   designerSubmissionUrl,
   formsSubmissionUrl,
-} from '../../../../../src/core/integrations/notification/email/url';
+} from '../../src/core/appLinks';
 
-describe('email links', () => {
-  it("points at the submission in the designer, in the email's language, whatever the base's trailing slash", () => {
+describe('app links', () => {
+  it("points at the submission in the designer, in the language asked for, whatever the base's trailing slash", () => {
     expect(designerSubmissionUrl('https://soba.example/designer', 'en', 'f1', 's1')).toBe(
       'https://soba.example/designer/en/build/f1/submissions/s1',
     );
@@ -70,15 +70,15 @@ describe('email links', () => {
 
   it('refuses to build a link from an unusable base', () => {
     expect(() => designerSubmissionUrl('javascript:alert(1)', 'en', 'f1', 's1')).toThrow(
-      'An email link base must use https, or http on localhost',
+      'An app link base must use https, or http on localhost',
     );
   });
 
   it('stops startup on an unusable base and names its variable, and lets unset ones pass', () => {
     expect(() =>
-      assertEmailLinkBases({ DESIGNER_APP_URL: undefined, FORMS_APP_URL: 'https://soba.example' }),
+      assertAppLinkBases({ DESIGNER_APP_URL: undefined, FORMS_APP_URL: 'https://soba.example' }),
     ).not.toThrow();
-    expect(() => assertEmailLinkBases({ FORMS_APP_URL: 'http://soba.example/forms' })).toThrow(
+    expect(() => assertAppLinkBases({ FORMS_APP_URL: 'http://soba.example/forms' })).toThrow(
       'FORMS_APP_URL must use https, or http on localhost',
     );
   });

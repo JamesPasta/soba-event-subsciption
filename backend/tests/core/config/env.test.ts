@@ -3,6 +3,7 @@ import {
   parseNumberEnvValue,
   parseCsvValue,
   createEnvReader,
+  resolveApiBasePath,
   resolveDatabaseUrl,
   resolveTrustProxySetting,
 } from '../../../src/core/config/env';
@@ -261,5 +262,16 @@ describe('env', () => {
     const reader = createEnvReader({ USER_SEARCH_PLUGINS: ' other-v1 , css-v1 ' });
     expect(reader.getUserSearchPlugins()).toEqual(['other-v1', 'css-v1']);
     expect(createEnvReader({}).getUserSearchPlugins()).toEqual([]);
+  });
+
+  it.each([
+    [undefined, ''],
+    ['/', ''],
+    ['//', ''],
+    ['chefs', '/chefs'],
+    ['/chefs/', '/chefs'],
+    [' /chefs// ', '/chefs'],
+  ])('resolveApiBasePath reads API_BASE_PATH %j as %j', (raw, expected) => {
+    expect(resolveApiBasePath({ API_BASE_PATH: raw })).toBe(expected);
   });
 });
