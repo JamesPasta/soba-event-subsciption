@@ -74,8 +74,8 @@ service owns that port, it selects a free port in 5440–5499 and reuses the
 container's port on subsequent starts (including `-SkipServices`). Set
 `DATABASE_URL` or the individual `DB_*` variables to use a different database.
 Because no local SSO provider
-is included, it also uses placeholder development IdP values; real IDIR login
-requires overriding the IdP environment variables with valid SSO settings.
+is included, it uses placeholder development IdP values only when the IdP
+environment variables are unset; real IDIR login requires valid SSO settings.
 The launcher configures the local Form.io sidecar at `http://localhost:3001`
 with the development credentials from `.devcontainer/docker-compose.yml`, so
 creating forms works when the sidecar is running.

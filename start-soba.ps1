@@ -167,8 +167,8 @@ if (-not (Get-Command node.exe -ErrorAction SilentlyContinue)) { throw 'Node.js 
 `$env:NODE_ENV = 'development'
 `$env:API_BASE_PATH = ''
 `$env:CORS_DEV_ORIGIN = 'http://localhost:3000,http://127.0.0.1:3000,http://localhost:3100,http://127.0.0.1:3100'
-`$env:IDP_PLUGIN_DEFAULT_SSO_JWT_ISSUER = 'https://example.test/realms/test'
-`$env:IDP_PLUGIN_DEFAULT_SSO_JWKS_URI = 'https://example.test/realms/test/protocol/openid-connect/certs'
+if (-not `$env:IDP_PLUGIN_DEFAULT_SSO_JWT_ISSUER) { `$env:IDP_PLUGIN_DEFAULT_SSO_JWT_ISSUER = 'https://example.test/realms/test' }
+if (-not `$env:IDP_PLUGIN_DEFAULT_SSO_JWKS_URI) { `$env:IDP_PLUGIN_DEFAULT_SSO_JWKS_URI = 'https://example.test/realms/test/protocol/openid-connect/certs' }
 `$env:PLUGIN_FORMIO_V5_API_BASE_URL = 'http://localhost:3001'
 `$env:PLUGIN_FORMIO_V5_ADMIN_API_URL = 'http://localhost:3001'
 `$env:PLUGIN_FORMIO_V5_RENDER_API_URL = 'http://localhost:3001'

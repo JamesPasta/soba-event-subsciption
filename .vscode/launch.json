@@ -50,9 +50,7 @@
         "API_BASE_PATH": "/chefs",
         "CORS_DEV_ORIGIN": "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3100,http://127.0.0.1:3100,http://localhost:3101,http://127.0.0.1:3101",
         "NODE_ENV": "development",
-        "DATABASE_URL": "postgres://postgres:postgres@localhost:5432/soba",
-        "IDP_PLUGIN_DEFAULT_SSO_JWT_ISSUER": "https://example.test/realms/test",
-        "IDP_PLUGIN_DEFAULT_SSO_JWKS_URI": "https://example.test/realms/test/protocol/openid-connect/certs"
+        "DATABASE_URL": "postgres://postgres:postgres@localhost:5432/soba"
       },
       "skipFiles": ["<node_internals>/**"],
       "console": "integratedTerminal"
@@ -102,8 +100,8 @@
       },
       "runtimeArgs": ["pnpm", "dev:combined"],
       "env": {
-        "NEXT_PUBLIC_SOBA_API_BASE_URL": "http://localhost:4000/api/v1",
-        "SOBA_API_INTERNAL_URL": "http://localhost:4000/api/v1"
+        "NEXT_PUBLIC_SOBA_API_BASE_URL": "http://localhost:4000/chefs/api/v1",
+        "SOBA_API_INTERNAL_URL": "http://localhost:4000/chefs/api/v1"
       },
       "skipFiles": ["<node_internals>/**"],
       "console": "integratedTerminal"

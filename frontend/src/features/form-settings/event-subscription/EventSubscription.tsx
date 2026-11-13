@@ -19,10 +19,10 @@ import {
 } from '@/src/types/formSettings';
 
 export default function EventSubscription({ dict, drawerName, formId }: FormSettingsSectionProps) {
-  const { token } = useKeycloak();
+  const { token, authenticated, idTokenParsed } = useKeycloak();
   return (
     <EventSubscriptionContent
-      key={`${formId}:${token ?? ''}`}
+      key={`${formId}:${authenticated ? (idTokenParsed?.sub ?? 'authenticated') : ''}`}
       dict={dict}
       drawerName={drawerName}
       formId={formId}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
 import { SWRConfig } from 'swr';
@@ -25,7 +25,7 @@ vi.mock('@/lib/hooks/useNotificationStore', () => ({
 }));
 
 import makeStore from '@/lib/store';
-import { setAuthenticated, setToken } from '@/lib/slices/keycloakSlice';
+import { setAuthenticated, setIdTokenParsed, setToken } from '@/lib/slices/keycloakSlice';
 import EventSubscription from '@/src/features/form-settings/event-subscription/EventSubscription';
 
 const dict = {
@@ -67,7 +67,7 @@ function renderDrawer() {
   const store = makeStore();
   store.dispatch(setToken('auth-token'));
   store.dispatch(setAuthenticated(true));
-  return render(
+  const view = render(
     <Provider store={store}>
       <SWRConfig
         value={{ provider: () => new Map(), dedupingInterval: 0, shouldRetryOnError: false }}
@@ -76,6 +76,7 @@ function renderDrawer() {
       </SWRConfig>
     </Provider>,
   );
+  return { ...view, store };
 }
 
 describe('EventSubscription', () => {
@@ -193,6 +194,56 @@ describe('EventSubscription', () => {
     await user.type(field, 'file:///secret');
     await user.click(screen.getByTestId('form-settings-event-subscription-save'));
     expect(setSettings).not.toHaveBeenCalled();
+  });
+
+  it('keeps unsaved edits when the access token rotates', async () => {
+    const user = userEvent.setup();
+    const { store } = renderDrawer();
+    await user.click(screen.getByRole('button', { name: 'Event Subscription' }));
+    const field = screen.getByTestId('event-subscription-url').querySelector('input')!;
+    await waitFor(() => expect(field).toHaveValue(saved.endpointUrl));
+    await user.clear(field);
+    await user.type(field, 'https://example.test/updated');
+
+    act(() => {
+      store.dispatch(setToken('rotated-token'));
+    });
+
+    expect(screen.getByTestId('event-subscription-url').querySelector('input')).toHaveValue(
+      'https://example.test/updated',
+    );
+    await user.click(screen.getByTestId('form-settings-event-subscription-save'));
+    await waitFor(() =>
+      expect(setSettings).toHaveBeenCalledWith(
+        'rotated-token',
+        'f1',
+        'event-subscription',
+        expect.objectContaining({ endpointUrl: 'https://example.test/updated' }),
+      ),
+    );
+  });
+
+  it('discards unsaved edits when the authenticated user changes', async () => {
+    const user = userEvent.setup();
+    const { store } = renderDrawer();
+    act(() => {
+      store.dispatch(setIdTokenParsed({ sub: 'first-user' }));
+    });
+    await user.click(screen.getByRole('button', { name: 'Event Subscription' }));
+    const field = screen.getByTestId('event-subscription-url').querySelector('input')!;
+    await waitFor(() => expect(field).toHaveValue(saved.endpointUrl));
+    await user.clear(field);
+    await user.type(field, 'https://example.test/unsaved');
+
+    act(() => {
+      store.dispatch(setIdTokenParsed({ sub: 'second-user' }));
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('event-subscription-url').querySelector('input')).toHaveValue(
+        saved.endpointUrl,
+      ),
+    );
   });
 
   it('explains when token storage has not been configured', async () => {
