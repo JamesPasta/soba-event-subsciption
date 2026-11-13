@@ -171,3 +171,13 @@ describe('Header workspace modal', () => {
     expect(screen.queryByTestId('workspace-modal')).not.toBeInTheDocument();
   });
 });
+
+describe('Header logo', () => {
+  it('marks the header styled once it mounts, which reveals the logo', async () => {
+    await act(async () => {
+      renderHeader();
+    });
+
+    expect(screen.getByTestId('app-header')).toHaveAttribute('data-styled');
+  });
+});

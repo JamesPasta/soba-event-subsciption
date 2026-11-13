@@ -1,5 +1,5 @@
 'use client';
-
+import { useEffect, useRef } from 'react';
 import { Footer as BCFooter } from '@bcgov/design-system-react-components';
 import { useDictionary } from '../[lang]/Providers';
 import styles from './Footer.module.css';
@@ -26,8 +26,15 @@ type FooterProps = React.ComponentProps<typeof BCFooter> & {
 
 const Footer = ({ version, ...props }: FooterProps) => {
   const dict = useDictionary();
+  const footerChromeRef = useRef<HTMLDivElement>(null);
   const copyright =
     props.copyright ?? `© ${new Date().getUTCFullYear()} Government of British Columbia.`;
+
+  // The design system injects its stylesheet when its module loads, which is before this mounts.
+  // Until then the logo has no colours, so the CSS keeps it hidden until this is set.
+  useEffect(() => {
+    footerChromeRef.current?.setAttribute('data-styled', '');
+  }, []);
 
   // The space between the spans looks redundant next to the flex gap, but it is what separates
   // the two strings in textContent for screen readers and test assertions.
@@ -46,7 +53,7 @@ const Footer = ({ version, ...props }: FooterProps) => {
   // runtime. Cast until the upstream prop widens to ReactNode.
   // The wrapper carries the class: FooterProps has no className.
   return (
-    <div className={styles.chrome}>
+    <div ref={footerChromeRef} className={styles.chrome}>
       <BCFooter {...props} copyright={content as unknown as string} />
     </div>
   );
