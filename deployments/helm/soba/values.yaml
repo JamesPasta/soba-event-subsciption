@@ -138,7 +138,7 @@ backend:
     messagebusDefaultCode: messagebus-memory
     eventStreamDefaultCode: eventstream-memory
     # Temp storage plugin. Default tempstorage-os stages temp bytes under
-    # os.tmpdir() (per-pod, no PVC). Override to tempstorage-mount for a shared
+    # os.tmpdir(), the per-pod /tmp emptyDir. Override to tempstorage-mount for a shared
     # RWX PVC across replicas (see the tempStorage block below).
     tempStorageDefaultCode: tempstorage-os
     # Virus scan plugin. Deployments scan for real against the shared clamav
@@ -204,66 +204,62 @@ backend:
     resultRetentionDays: ""
     resultSweepBatch: ""
 
-  # -- Shared temp storage PVC (RWX so it survives horizontal scaling).
-  # Only provisioned/mounted when config.tempStorageDefaultCode is
-  # tempstorage-mount; mountPath doubles as the plugin's DIR. Ignored otherwise.
+  # -- Temp storage.
   tempStorage:
+    # Size of the emptyDir every backend pod mounts at /tmp, where tempstorage-os stages files. A
+    # running CSV export holds its result, up to backend.jobs.resultMaxBytes, and a spool of its
+    # ticked cells, which can be several times larger.
+    tmpSizeLimit: 2Gi
+    # Shared temp storage PVC (RWX so it survives horizontal scaling). Only provisioned/mounted when
+    # config.tempStorageDefaultCode is tempstorage-mount; mountPath doubles as the plugin's DIR.
     mountPath: /app/tmp
     accessMode: ReadWriteMany
     size: 1Gi
     storageClassName: ""
 
-  # -- configmap-storage: files and templates features + storage profiles (STORAGE_* + FILES_* +
-  # TEMPLATES_*)
+  # -- configmap-storage: storage profiles and the features that use them (STORAGE_* + FILES_* +
+  # TEMPLATES_* + JOB_RESULTS_*)
   storage:
-    # Active storage profiles (comma-separated). Each needs a *Backend below.
-    profiles: "default"
-    # Backend for the 'default' profile. 'storage-memory' is in-process and ephemeral — no PVC,
-    # no external service, lost on restart, per-replica. Fine for ephemeral (PR) namespaces, and
-    # refused with more than one replica or with autoscaling.
-    # 'storage-local' keeps files on the RWX PVC below (localVolume, defaultBasePath).
-    # For durable, multi-replica environments override to 'storage-s3' and set the endpoint, bucket
-    # and prefix below (credentials come from a Secret).
-    defaultBackend: storage-memory
-    # Profile the /files API reads/writes, and the max upload size it accepts (MB).
-    filesStorageProfile: "default"
+    # Profiles the chart sets up, comma-separated: default, s3 or both. Nothing uses the default
+    # profile unless a feature below names it.
+    profiles: "default,s3"
+    # Backend for the 'default' profile. 'storage-local' keeps files on the RWX PVC below
+    # (localVolume, defaultBasePath). 'storage-memory' keeps them in one process, lost on restart,
+    # and is refused with more than one replica or with autoscaling.
+    defaultBackend: storage-local
+    # Profile the /files API reads/writes, the key prefix it stores under, and the max upload size
+    # it accepts (MB).
+    filesStorageProfile: "s3"
+    filesStoragePrefix: attachments
     filesMaxFileSizeMb: "10"
-    # Profile the /templates API reads/writes, and the max upload size it accepts (MB).
-    templatesStorageProfile: "default"
+    # Profile the /templates API reads/writes, the key prefix it stores under, and the max upload
+    # size it accepts (MB).
+    templatesStorageProfile: "s3"
+    templatesStoragePrefix: templates
     templatesMaxFileSizeMb: "10"
-    # Key prefixes the features store under within their profiles. Empty uses the defaults in code
-    # (attachments, templates).
-    filesStoragePrefix: ""
-    templatesStoragePrefix: ""
-    # Profile and key prefix for files background jobs produce, such as submission exports. Empty
-    # uses the defaults in code (default, job-results).
-    jobResultsStorageProfile: ""
-    jobResultsStoragePrefix: ""
+    # Profile and key prefix for files background jobs produce, such as submission exports.
+    jobResultsStorageProfile: "s3"
+    jobResultsStoragePrefix: jobs
 
     # storage-local only: where the file store PVC is mounted and the default profile writes.
-    # Required for storage-local.
-    defaultBasePath: ""
-    # storage-local only: the file store PVC, created only when defaultBackend is storage-local.
+    defaultBasePath: /app/files
+    # The file store PVC, created only when the default profile is listed and on storage-local.
     # ReadWriteMany, shared by every replica.
     localVolume:
       accessMode: ReadWriteMany
       size: 1Gi
-      storageClassName: ""
+      storageClassName: netapp-file-standard
 
-    # storage-s3 only — non-credential keys, rendered only when set. ACCESS_KEY/SECRET_KEY are
-    # NOT here; supply them via a Secret. A URL endpoint sets the SSL flag, and its port when it has
-    # one, else defaultPort, else the scheme's default (443 or 80); defaultUseSsl is ignored. A host
-    # endpoint takes defaultUseSsl, and defaultPort or 9000.
-    defaultEndpoint: ""
-    defaultBucketName: ""
-    defaultPort: ""
-    defaultUseSsl: ""
-    # Root every object in the default profile is stored under. Required for storage-s3. Unique per
-    # environment, not inside another environment's root, and fixed once files are stored.
-    defaultPrefix: ""
-    # Vault key infix for the S3 secrets: S3_<infix>_ACCESS_KEY_ID, _ACCESS_SECRET_KEY, _BUCKET_NAME
-    # and _ENDPOINT (infix e.g. PR, DEV, TEST, UAT, PROD). Used only with storage-s3 and vault.enabled.
-    s3VaultKeyInfix: ""
+    # 's3' profile on storage-s3. Needs vault.enabled: STORAGE_PROFILE_S3_ENDPOINT, _BUCKET_NAME,
+    # _ACCESS_KEY and _SECRET_KEY come from vault.secretPath under those names. The keys below are
+    # optional and rendered only when set.
+    s3:
+      # Root every object is stored under. Fixed once files are stored.
+      prefix: ""
+      # A URL endpoint sets SSL from its scheme, and the port when it has one, else this port, else
+      # 443 or 80. A host endpoint takes useSsl ("true" or "false"), and this port or 9000.
+      port: ""
+      useSsl: ""
 
   # -- configmap-formio: PLUGIN_FORMIO_V5_* (non-secret values)
   formio:

@@ -186,45 +186,82 @@ which must hold PLUGIN_CSS_V1_CLIENT_ID and PLUGIN_CSS_V1_CLIENT_SECRET when it 
 {{- end }}
 
 {{/*
-Truthy ("true") only when the default storage profile is storage-local. Gates the
+Profile names in backend.storage.profiles, as a list. Empty entries are dropped, as the backend
+drops them.
+*/}}
+{{- define "soba.storageProfiles" -}}
+{{- compact (splitList "," (nospace .Values.backend.storage.profiles)) | toJson -}}
+{{- end }}
+
+{{/*
+Truthy ("true") only when backend.storage.profiles lists the default profile.
+*/}}
+{{- define "soba.storageUsesDefault" -}}
+{{- if has "default" (include "soba.storageProfiles" . | fromJsonArray) -}}true{{- end -}}
+{{- end }}
+
+{{/*
+Truthy ("true") only when the default profile is listed and on storage-local. Gates the
 file store PVC, its mount, and STORAGE_PROFILE_DEFAULT_BASE_PATH off one value so they
 cannot drift apart.
 */}}
 {{- define "soba.storageUsesLocal" -}}
-{{- if eq .Values.backend.storage.defaultBackend "storage-local" -}}true{{- end -}}
+{{- if and (include "soba.storageUsesDefault" .) (eq .Values.backend.storage.defaultBackend "storage-local") -}}true{{- end -}}
 {{- end }}
 
 {{/*
-Truthy ("true") only when the default storage profile is storage-s3 with its credentials in Vault
-(s3VaultKeyInfix set). Gates the S3 Vault secret and the backend sourcing it off one value so they
+Truthy ("true") only when backend.storage.profiles lists the s3 profile. Gates
+STORAGE_PROFILE_S3_*, the S3 Vault secret and the backend sourcing it off one value so they
 cannot drift apart.
 */}}
-{{- define "soba.storageUsesS3Vault" -}}
-{{- if and (eq .Values.backend.storage.defaultBackend "storage-s3") .Values.backend.storage.s3VaultKeyInfix -}}true{{- end -}}
+{{- define "soba.storageUsesS3" -}}
+{{- if has "s3" (include "soba.storageProfiles" . | fromJsonArray) -}}true{{- end -}}
 {{- end }}
 
 {{/*
-Fails the render on storage values the backend would refuse, or that would lose files:
-storage-memory keeps files in one process, so it cannot back more than one replica; key prefixes
-are lowercase words joined by dashes, in slash-separated segments; the storage-local base path is
-absolute.
+Fails the render on storage values the backend would refuse, or that would lose files.
 */}}
 {{- define "soba.validateStorage" -}}
 {{- $storage := .Values.backend.storage -}}
+{{- $profiles := include "soba.storageProfiles" . | fromJsonArray -}}
 {{- $prefix := "^[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*)*$" -}}
-{{- if and (eq $storage.defaultBackend "storage-memory") (or (gt (int .Values.backend.replicas) 1) .Values.backend.autoscaling.enabled) -}}
-{{- fail "backend.storage.defaultBackend storage-memory keeps files in one process; use storage-local or storage-s3 with more than one replica or with autoscaling" -}}
+{{- range $profiles -}}
+{{- if not (has . (list "default" "s3")) -}}
+{{- fail (printf "backend.storage.profiles lists '%s'; the chart supports default and s3" .) -}}
 {{- end -}}
-{{- if and (eq $storage.defaultBackend "storage-local") $storage.defaultBasePath (not (hasPrefix "/" $storage.defaultBasePath)) -}}
+{{- end -}}
+{{- range $key := list "filesStorageProfile" "templatesStorageProfile" "jobResultsStorageProfile" -}}
+{{- $profile := index $storage $key | default "default" -}}
+{{- if not (has $profile $profiles) -}}
+{{- fail (printf "backend.storage.%s resolves to '%s', which backend.storage.profiles does not list" $key $profile) -}}
+{{- end -}}
+{{- end -}}
+{{- if include "soba.storageUsesDefault" . -}}
+{{- if not (has $storage.defaultBackend (list "storage-local" "storage-memory")) -}}
+{{- fail (printf "backend.storage.defaultBackend must be storage-local or storage-memory, got '%s'" $storage.defaultBackend) -}}
+{{- end -}}
+{{- if and (eq $storage.defaultBackend "storage-memory") (or (gt (int .Values.backend.replicas) 1) .Values.backend.autoscaling.enabled) -}}
+{{- fail "backend.storage.defaultBackend storage-memory keeps files in one process; use storage-local with more than one replica or with autoscaling" -}}
+{{- end -}}
+{{- end -}}
+{{- if and (include "soba.storageUsesLocal" .) $storage.defaultBasePath (not (hasPrefix "/" $storage.defaultBasePath)) -}}
 {{- fail "backend.storage.defaultBasePath must be an absolute path" -}}
 {{- end -}}
-{{- if and (eq $storage.defaultBackend "storage-s3") $storage.defaultPrefix (not (regexMatch $prefix (toString $storage.defaultPrefix))) -}}
-{{- fail "backend.storage.defaultPrefix must be lowercase words joined by dashes, in slash-separated segments" -}}
+{{- if include "soba.storageUsesS3" . -}}
+{{- if not .Values.vault.enabled -}}
+{{- fail "backend.storage.profiles lists s3, which needs vault.enabled=true to inject its secrets" -}}
 {{- end -}}
-{{- if and (include "soba.storageUsesS3Vault" .) (not .Values.vault.enabled) -}}
-{{- fail "backend.storage.s3VaultKeyInfix needs vault.enabled=true to inject the S3 secrets" -}}
+{{- if and $storage.s3.prefix (not (regexMatch $prefix (toString $storage.s3.prefix))) -}}
+{{- fail "backend.storage.s3.prefix must be lowercase words joined by dashes, in slash-separated segments" -}}
 {{- end -}}
-{{- range $key := list "filesStoragePrefix" "templatesStoragePrefix" -}}
+{{- if and $storage.s3.port (not (regexMatch "^[0-9]+$" (toString $storage.s3.port))) -}}
+{{- fail (printf "backend.storage.s3.port must be a port number, got '%v'" $storage.s3.port) -}}
+{{- end -}}
+{{- if and (not (kindIs "invalid" $storage.s3.useSsl)) (ne (toString $storage.s3.useSsl) "") (not (has (toString $storage.s3.useSsl) (list "true" "false"))) -}}
+{{- fail (printf "backend.storage.s3.useSsl must be true or false, got '%v'" $storage.s3.useSsl) -}}
+{{- end -}}
+{{- end -}}
+{{- range $key := list "filesStoragePrefix" "templatesStoragePrefix" "jobResultsStoragePrefix" -}}
 {{- $value := index $storage $key -}}
 {{- if and $value (not (regexMatch $prefix (toString $value))) -}}
 {{- fail (printf "backend.storage.%s must be lowercase words joined by dashes, in slash-separated segments" $key) -}}

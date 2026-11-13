@@ -22,11 +22,6 @@ backend:
     limits:
       cpu: 500m
       memory: 512Mi
-  # Files and templates in S3; credentials and bucket come from Vault.
-  storage:
-    defaultBackend: storage-s3
-    defaultPrefix: test
-    s3VaultKeyInfix: TEST
   config:
     nodeEnv: production
     documentGenerationDefaultCode: cdogs-v2

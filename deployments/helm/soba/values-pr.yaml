@@ -15,12 +15,13 @@ backend:
   jobs:
     resultMaxBytes: "52428800"
     resultRetentionDays: "1"
-  # Files and templates on a per-PR PVC, which pr_close deletes with the release. PRs write nothing to S3.
+  # Files, templates and job results on a per-PR PVC, which pr_close deletes with the release. PRs
+  # write nothing to S3.
   storage:
-    defaultBackend: storage-local
-    defaultBasePath: /app/files
-    localVolume:
-      storageClassName: netapp-file-standard
+    profiles: default
+    filesStorageProfile: default
+    templatesStorageProfile: default
+    jobResultsStorageProfile: default
   config:
     documentGenerationDefaultCode: cdogs-v2
     tenantEngineDefaultCode: cstar-v1

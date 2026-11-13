@@ -85,16 +85,15 @@ spec:
           {{`export PLUGIN_CSS_V1_CLIENT_SECRET="{{ .Data.data.PLUGIN_CSS_V1_CLIENT_SECRET }}"`}}
           {{`{{- end }}`}}
         {{- end }}
-        {{- if include "soba.storageUsesS3Vault" . }}
-        {{- $s3 := upper .Values.backend.storage.s3VaultKeyInfix }}
+        {{- if include "soba.storageUsesS3" . }}
         vault.hashicorp.com/error-on-missing-key-soba-s3: 'true'
         vault.hashicorp.com/agent-inject-secret-soba-s3: {{ .Values.vault.secretPath | quote }}
         vault.hashicorp.com/agent-inject-template-soba-s3: |
           {{`{{- with secret "`}}{{ .Values.vault.secretPath }}{{`" }}`}}
-          {{`export STORAGE_PROFILE_DEFAULT_ACCESS_KEY="{{ .Data.data.S3_`}}{{ $s3 }}{{`_ACCESS_KEY_ID }}"`}}
-          {{`export STORAGE_PROFILE_DEFAULT_SECRET_KEY="{{ .Data.data.S3_`}}{{ $s3 }}{{`_ACCESS_SECRET_KEY }}"`}}
-          {{`export STORAGE_PROFILE_DEFAULT_BUCKET_NAME="{{ .Data.data.S3_`}}{{ $s3 }}{{`_BUCKET_NAME }}"`}}
-          {{`export STORAGE_PROFILE_DEFAULT_ENDPOINT="{{ .Data.data.S3_`}}{{ $s3 }}{{`_ENDPOINT }}"`}}
+          {{`export STORAGE_PROFILE_S3_ENDPOINT="{{ .Data.data.STORAGE_PROFILE_S3_ENDPOINT }}"`}}
+          {{`export STORAGE_PROFILE_S3_BUCKET_NAME="{{ .Data.data.STORAGE_PROFILE_S3_BUCKET_NAME }}"`}}
+          {{`export STORAGE_PROFILE_S3_ACCESS_KEY="{{ .Data.data.STORAGE_PROFILE_S3_ACCESS_KEY }}"`}}
+          {{`export STORAGE_PROFILE_S3_SECRET_KEY="{{ .Data.data.STORAGE_PROFILE_S3_SECRET_KEY }}"`}}
           {{`{{- end }}`}}
         {{- end }}
         {{- end }}
@@ -123,7 +122,7 @@ spec:
               {{- if eq .Values.backend.config.credentialIssuerDefaultCode "aps-credential-issuer-v3" }}
               . /vault/secrets/soba-aps-credential-issuer
               {{- end }}
-              {{- if include "soba.storageUsesS3Vault" . }}
+              {{- if include "soba.storageUsesS3" . }}
               . /vault/secrets/soba-s3
               {{- end }}
               {{- if include "soba.userSearchUsesCss" . }}
@@ -190,8 +189,9 @@ spec:
             timeoutSeconds: {{ .Values.backend.readinessProbe.timeoutSeconds }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
-          {{- if or (include "soba.tempStorageUsesMount" .) (include "soba.storageUsesLocal" .) }}
           volumeMounts:
+            - name: tmp
+              mountPath: /tmp
             {{- if include "soba.tempStorageUsesMount" . }}
             - name: app-tmp
               mountPath: {{ .Values.backend.tempStorage.mountPath }}
@@ -200,9 +200,11 @@ spec:
             - name: app-filestore
               mountPath: {{ .Values.backend.storage.defaultBasePath }}
             {{- end }}
-          {{- end }}
-      {{- if or (include "soba.tempStorageUsesMount" .) (include "soba.storageUsesLocal" .) }}
       volumes:
+        # Past sizeLimit the kubelet evicts the pod.
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ required "backend.tempStorage.tmpSizeLimit is required" .Values.backend.tempStorage.tmpSizeLimit }}
         {{- if include "soba.tempStorageUsesMount" . }}
         - name: app-tmp
           persistentVolumeClaim:
@@ -213,4 +215,3 @@ spec:
           persistentVolumeClaim:
             claimName: {{ include "soba.fullname" . }}-backend-filestore
         {{- end }}
-      {{- end }}

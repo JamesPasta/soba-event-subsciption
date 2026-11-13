@@ -6,48 +6,39 @@ metadata:
   labels:
     {{- include "soba.labels" (dict "root" . "component" "backend") | nindent 4 }}
 data:
-  # Files and templates features + storage profiles. The default profile uses 'storage-memory'
-  # (in-process, ephemeral, no volume or external service, single replica only). 'storage-local'
-  # keeps files on the file store PVC; 'storage-s3' uses the endpoint, bucket and prefix below
-  # (credentials come from a Secret).
+  # The s3 profile's endpoint, bucket and credentials come from Vault, not this ConfigMap.
   STORAGE_PROFILES: {{ .Values.backend.storage.profiles | quote }}
-  STORAGE_PROFILE_DEFAULT_BACKEND: {{ .Values.backend.storage.defaultBackend | quote }}
   FILES_STORAGE_PROFILE: {{ .Values.backend.storage.filesStorageProfile | quote }}
   FILES_MAX_FILE_SIZE_MB: {{ .Values.backend.storage.filesMaxFileSizeMb | quote }}
   TEMPLATES_STORAGE_PROFILE: {{ .Values.backend.storage.templatesStorageProfile | quote }}
   TEMPLATES_MAX_FILE_SIZE_MB: {{ .Values.backend.storage.templatesMaxFileSizeMb | quote }}
+  JOB_RESULTS_STORAGE_PROFILE: {{ .Values.backend.storage.jobResultsStorageProfile | quote }}
   {{- with .Values.backend.storage.filesStoragePrefix }}
   FILES_STORAGE_PREFIX: {{ . | quote }}
   {{- end }}
   {{- with .Values.backend.storage.templatesStoragePrefix }}
   TEMPLATES_STORAGE_PREFIX: {{ . | quote }}
   {{- end }}
-  {{- with .Values.backend.storage.jobResultsStorageProfile }}
-  JOB_RESULTS_STORAGE_PROFILE: {{ . | quote }}
-  {{- end }}
   {{- with .Values.backend.storage.jobResultsStoragePrefix }}
   JOB_RESULTS_STORAGE_PREFIX: {{ . | quote }}
   {{- end }}
+  {{- if include "soba.storageUsesDefault" . }}
+  STORAGE_PROFILE_DEFAULT_BACKEND: {{ .Values.backend.storage.defaultBackend | quote }}
+  {{- end }}
   {{- if include "soba.storageUsesLocal" . }}
-  # storage-local only: where the file store PVC is mounted and the default profile writes.
   STORAGE_PROFILE_DEFAULT_BASE_PATH: {{ required "backend.storage.defaultBasePath is required for storage-local" .Values.backend.storage.defaultBasePath | quote }}
   {{- end }}
-  {{- with .Values.backend.storage.defaultEndpoint }}
-  # storage-s3 only (non-credential keys; ACCESS_KEY/SECRET_KEY come from a Secret).
-  # A URL (https://host[:port]) also sets SSL, and the port when it has one (else the scheme's
-  # default), making the two keys below optional.
-  STORAGE_PROFILE_DEFAULT_ENDPOINT: {{ . | quote }}
+  {{- if include "soba.storageUsesS3" . }}
+  {{- with .Values.backend.storage.s3 }}
+  STORAGE_PROFILE_S3_BACKEND: "storage-s3"
+  {{- if .prefix }}
+  STORAGE_PROFILE_S3_PREFIX: {{ .prefix | quote }}
   {{- end }}
-  {{- with .Values.backend.storage.defaultBucketName }}
-  STORAGE_PROFILE_DEFAULT_BUCKET_NAME: {{ . | quote }}
+  {{- if .port }}
+  STORAGE_PROFILE_S3_PORT: {{ .port | toString | quote }}
   {{- end }}
-  {{- with .Values.backend.storage.defaultPort }}
-  STORAGE_PROFILE_DEFAULT_PORT: {{ . | quote }}
+  {{- if or (kindIs "bool" .useSsl) .useSsl }}
+  STORAGE_PROFILE_S3_USE_SSL: {{ .useSsl | toString | quote }}
   {{- end }}
-  {{- with .Values.backend.storage.defaultUseSsl }}
-  STORAGE_PROFILE_DEFAULT_USE_SSL: {{ . | quote }}
   {{- end }}
-  {{- if eq .Values.backend.storage.defaultBackend "storage-s3" }}
-  # storage-s3 only: root every object in the default profile is stored under.
-  STORAGE_PROFILE_DEFAULT_PREFIX: {{ required "backend.storage.defaultPrefix is required for storage-s3" .Values.backend.storage.defaultPrefix | quote }}
   {{- end }}

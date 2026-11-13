@@ -1,6 +1,6 @@
 {{- if include "soba.storageUsesLocal" . }}
-# Stored files (attachments, templates) of the default storage profile when it is storage-local,
-# mounted at storage.defaultBasePath. ReadWriteMany, shared by every replica.
+# File store of the default profile, mounted at backend.storage.defaultBasePath. ReadWriteMany,
+# shared by every replica.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

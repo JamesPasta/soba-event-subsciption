@@ -236,6 +236,12 @@ export function resolveJobSettings(source: EnvSource): JobSettings {
     wholeNumberSetting(source, key, fallback, { min: MIN_LEASE_MS });
   const retentionDays = (key: string, fallback: number) =>
     wholeNumberSetting(source, key, fallback, { max: MAX_RETENTION_DAYS });
+  const resultsStoragePrefix = getOptionalEnvFrom(source, 'JOB_RESULTS_STORAGE_PREFIX') ?? 'jobs';
+  if (!isStoragePrefix(resultsStoragePrefix)) {
+    throw new Error(
+      `JOB_RESULTS_STORAGE_PREFIX is not a valid storage prefix, got '${resultsStoragePrefix}'`,
+    );
+  }
   return {
     pools: resolveJobPools(source),
     pollMs: {
@@ -272,16 +278,8 @@ export function resolveJobSettings(source: EnvSource): JobSettings {
     resultRetentionDays: retentionDays('JOB_RESULT_RETENTION_DAYS', 7),
     resultSweepBatch: setting('JOB_RESULT_SWEEP_BATCH', 100),
     resultsStorageProfile: getOptionalEnvFrom(source, 'JOB_RESULTS_STORAGE_PROFILE') ?? 'default',
-    resultsStoragePrefix: resolveResultsPrefix(source),
+    resultsStoragePrefix,
   };
-}
-
-function resolveResultsPrefix(source: EnvSource): string {
-  const prefix = getOptionalEnvFrom(source, 'JOB_RESULTS_STORAGE_PREFIX') ?? 'job-results';
-  if (!isStoragePrefix(prefix)) {
-    throw new Error(`JOB_RESULTS_STORAGE_PREFIX is not a valid storage prefix, got '${prefix}'`);
-  }
-  return prefix;
 }
 
 export interface ShutdownSettings {

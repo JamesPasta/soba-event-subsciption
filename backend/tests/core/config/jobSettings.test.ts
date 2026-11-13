@@ -22,7 +22,7 @@ describe('resolveJobSettings', () => {
       resultRetentionDays: 7,
       resultSweepBatch: 100,
       resultsStorageProfile: 'default',
-      resultsStoragePrefix: 'job-results',
+      resultsStoragePrefix: 'jobs',
     });
   });
 
@@ -50,7 +50,7 @@ describe('resolveJobSettings', () => {
       JOB_RESULT_RETENTION_DAYS: '1',
       JOB_RESULT_SWEEP_BATCH: '20',
       JOB_RESULTS_STORAGE_PROFILE: 'exports',
-      JOB_RESULTS_STORAGE_PREFIX: 'soba/job-results',
+      JOB_RESULTS_STORAGE_PREFIX: 'soba/jobs',
     });
     expect(settings).toMatchObject({
       pollMs: { light: 500, heavy: 5000 },
@@ -71,7 +71,7 @@ describe('resolveJobSettings', () => {
       resultRetentionDays: 1,
       resultSweepBatch: 20,
       resultsStorageProfile: 'exports',
-      resultsStoragePrefix: 'soba/job-results',
+      resultsStoragePrefix: 'soba/jobs',
     });
   });
 
